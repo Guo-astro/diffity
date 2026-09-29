@@ -48,6 +48,11 @@ pub struct PullRequest {
     pub review_decision: Option<String>,
     pub checks: Option<String>,
     pub body: String,
+    #[serde(default)]
+    pub created_at: String,
+    /// Review threads on the PR (resolved or not).
+    #[serde(default)]
+    pub review_thread_count: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -56,6 +61,16 @@ pub enum ReviewEvent {
     Comment,
     Approve,
     RequestChanges,
+}
+
+impl From<diffity_core::types::ReviewVerdict> for ReviewEvent {
+    fn from(v: diffity_core::types::ReviewVerdict) -> Self {
+        match v {
+            diffity_core::types::ReviewVerdict::Comment => ReviewEvent::Comment,
+            diffity_core::types::ReviewVerdict::Approve => ReviewEvent::Approve,
+            diffity_core::types::ReviewVerdict::RequestChanges => ReviewEvent::RequestChanges,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
