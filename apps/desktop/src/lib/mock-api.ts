@@ -264,7 +264,12 @@ const commits: Commit[] = Array.from({ length: 40 }, (_, i) => ({
   ][i % 5],
   author: i % 3 === 0 ? 'Kamran Ahmed' : 'Jane Doe',
   date: new Date(Date.now() - i * 3600_000 * 7).toISOString(),
+  filesChanged: (i % 4) + 1,
+  additions: (i * 13) % 90 + 2,
+  deletions: (i * 7) % 40,
 }));
+
+
 
 const branches: Branch[] = [
   { name: 'feat/cache', isRemote: false, isCurrent: true, upstream: 'origin/feat/cache', ahead: 2, behind: 0 },
@@ -297,6 +302,20 @@ function simulateAgent(args: Args) {
   });
 }
 
+function mockRefLabel(ref: string): string {
+  if (ref === '__tree__') {
+    return 'Files';
+  }
+  if (ref === 'work' || ref === '.') {
+    return 'Uncommitted changes';
+  }
+  const commit = /^([0-9a-f]{7,40})~1\.\.\1$/i.exec(ref);
+  if (commit) {
+    return `Commit ${commit[1].slice(0, 7)}`;
+  }
+  return ref.includes('..') ? ref : `Changes since ${ref}`;
+}
+
 const handlers: Record<string, (args: Args) => unknown> = {
   open_repo: (args) => ({
     path: args.path,
@@ -321,7 +340,7 @@ const handlers: Record<string, (args: Args) => unknown> = {
     const search = typeof args.search === 'string' ? args.search.toLowerCase() : '';
     const skip = Number(args.skip ?? 0);
     const count = Number(args.count ?? 20);
-    return commits.filter((c) => !search || c.subject.toLowerCase().includes(search)).slice(skip, skip + count);
+    return commits.filter((c) => !search || c.subject.toLowerCase().includes(search) || c.sha.startsWith(search) || c.author.toLowerCase().includes(search)).slice(skip, skip + count);
   },
   list_branches: () => branches,
   git_status: () => ({ branch: 'feat/cache', upstream: 'origin/feat/cache', ahead: 2, behind: 0, staged: 1, unstaged: 4, untracked: 2, dirty: true }),
@@ -349,6 +368,38 @@ const handlers: Record<string, (args: Args) => unknown> = {
     [...threads.values()]
       .filter((t) => t.sessionId === args.sessionId)
       .map((t) => ({ ...t, comments: [...t.comments] })),
+  list_repo_threads: (args) => {
+    const bySession = new Map([...sessions.values()].map((session) => [session.id, session]));
+    return [...threads.values()]
+      .filter((t) => bySession.get(t.sessionId)?.repoPath === args.repoPath)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .map((t) => {
+        const ref = bySession.get(t.sessionId)?.ref ?? 'work';
+        const first = t.comments[0];
+        return {
+          id: t.id,
+          sessionId: t.sessionId,
+          ref,
+          refLabel: mockRefLabel(ref),
+          filePath: t.filePath,
+          side: t.side,
+          startLine: t.startLine,
+          endLine: t.endLine,
+          status: t.status,
+          severity: t.severity,
+          anchorContent: t.anchorContent,
+          authorType: first?.authorType ?? 'user',
+          authorName: first?.authorName ?? 'You',
+          excerpt: (first?.body ?? '').replace(/\s+/g, ' ').trim().slice(0, 160),
+          replyCount: Math.max(0, t.comments.length - 1),
+          createdAt: t.createdAt,
+          updatedAt: t.updatedAt,
+          pending: t.pending,
+          anchor: 'current',
+          movedTo: null,
+        };
+      });
+  },
   create_thread: (args) => touch(insertThread(args.input as NewThread)),
   add_reply: (args) => {
     const thread = threads.get(String(args.threadId));

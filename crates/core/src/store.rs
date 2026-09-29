@@ -595,6 +595,33 @@ impl Store {
             .collect()
     }
 
+    /// Every thread in every review session of a repo, with its session, most recently updated first.
+    pub fn list_repo_threads(&self, repo_path: &str) -> Result<Vec<(ReviewSession, Thread)>> {
+        let conn = self.conn()?;
+        let cols = THREAD_COLS
+            .split(", ")
+            .map(|c| format!("t.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut stmt = conn.prepare_cached(&format!(
+            "SELECT {cols}, s.ref FROM threads t JOIN review_sessions s ON s.id = t.session_id \
+             WHERE s.repo_path = ?1 ORDER BY t.updated_at DESC, t.rowid DESC"
+        ))?;
+        let rows = stmt
+            .query_map([repo_path], |r| Ok((row_to_thread(r)?, r.get::<_, String>(13)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.into_iter()
+            .map(|(thread, r#ref)| {
+                let session = ReviewSession {
+                    id: thread.session_id.clone(),
+                    repo_path: repo_path.to_string(),
+                    r#ref,
+                };
+                Ok((session, with_comments(&conn, thread)?))
+            })
+            .collect()
+    }
+
     pub fn get_thread(&self, thread_id: &str) -> Result<Thread> {
         load_thread(&*self.conn()?, thread_id)
     }
@@ -895,7 +922,14 @@ impl Store {
     /// Publishes every pending comment of the session's review and stamps it submitted.
     /// Published comments are re-stamped with the submit time; replies reopen resolved/dismissed threads.
     /// Without a pending review, a non-empty body or a non-comment verdict submits a body-only review.
-    pub fn submit_review(&self, session_id: &str, body: &str, verdict: ReviewVerdict) -> Result<Review> {
+    /// A `None` verdict is a local review (no pull request): it only publishes the comments.
+    pub fn submit_review(
+        &self,
+        session_id: &str,
+        body: &str,
+        verdict: impl Into<Option<ReviewVerdict>>,
+    ) -> Result<Review> {
+        let verdict: Option<ReviewVerdict> = verdict.into();
         let body = body.trim();
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
@@ -908,7 +942,7 @@ impl Store {
             )?,
             None => 0,
         };
-        if pending_count == 0 && body.is_empty() && verdict == ReviewVerdict::Comment {
+        if pending_count == 0 && body.is_empty() && matches!(verdict, None | Some(ReviewVerdict::Comment)) {
             return Err(AppError::invalid("the review has no comments and no summary"));
         }
         let review_id = match pending_id {
@@ -936,7 +970,7 @@ impl Store {
         )?;
         tx.execute(
             "UPDATE reviews SET state = 'submitted', body = ?2, verdict = ?3, submitted_at = ?4 WHERE id = ?1",
-            params![review_id, body, verdict_str(verdict), ts],
+            params![review_id, body, verdict.map(verdict_str), ts],
         )?;
         let review = load_review(&tx, &review_id)?;
         tx.commit()?;

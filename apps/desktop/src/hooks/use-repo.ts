@@ -73,12 +73,16 @@ export function useRepoEvents(repoPath: string) {
         queryClient.invalidateQueries({ queryKey: ['overview'] });
         queryClient.invalidateQueries({ queryKey: ['commits'] });
         queryClient.invalidateQueries({ queryKey: ['git-status'] });
+        queryClient.invalidateQueries({ queryKey: ['repo-meta'] });
+        queryClient.invalidateQueries({ queryKey: ['branches'] });
+        queryClient.invalidateQueries({ queryKey: ['repo-threads'] });
       })
       .then(keep, () => undefined);
     tauri
       .onThreadsChanged((payload) => {
         queryClient.invalidateQueries({ queryKey: ['threads', payload.sessionId] });
         queryClient.invalidateQueries({ queryKey: ['reviews', payload.sessionId] });
+        queryClient.invalidateQueries({ queryKey: ['repo-threads'] });
       })
       .then(keep, () => undefined);
 

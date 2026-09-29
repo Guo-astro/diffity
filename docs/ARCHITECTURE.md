@@ -76,7 +76,7 @@ interface DiffFileSummary { path: string; oldPath: string | null; status: FileSt
 interface OverviewFile { path: string; status: 'staged' | 'modified' | 'added'; }   // dashboard; modified wins over staged, untracked = added
 interface DiffResult { resolved: ResolvedRef; files: DiffFileSummary[]; patch: string; fingerprint: string; }
 interface FileVersions { oldContents: string | null; newContents: string | null; }
-interface Commit { sha: string; shortSha: string; subject: string; author: string; date: string; }
+interface Commit { sha: string; shortSha: string; subject: string; author: string; date: string; filesChanged: number; additions: number; deletions: number; }   // --shortstat
 interface Branch { name: string; isRemote: boolean; isCurrent: boolean; upstream: string | null; ahead: number; behind: number; }
 interface GitStatus { branch: string | null; upstream: string | null; ahead: number; behind: number; staged: number; unstaged: number; untracked: number; dirty: boolean; }
 
@@ -156,6 +156,7 @@ read_file(repoPath, path) -> FileContent        // text up to 2MB, binary flag o
 read_file_base64(repoPath, path) -> string      // for images
 get_session(repoPath, ref) -> ReviewSession     // get-or-create
 list_threads(sessionId) -> Thread[]
+list_repo_threads(repoPath) -> RepoThread[]     // every thread of the repo across views, newest first (see "Finding comments")
 create_thread(input: NewThread) -> Thread
 add_reply(threadId, body, authorType: Option, authorName: Option, pending: Option<bool>) -> Thread   // published user reply reopens
 get_pending_review(sessionId) -> Option<Review>; start_review(sessionId) -> Review; get_review(reviewId) -> Review
@@ -210,6 +211,7 @@ github_set_resolved(threadId, resolved: bool) -> Thread
 - `diffity-mcp` (rmcp, stdio) exposes tools and forwards each call as one NDJSON line `{"token","tool","args"}` → response `{"ok":true,"result":...}` or `{"ok":false,"error":"..."}`.
 - Tools: `get_diff()`, `list_threads(status?)`, `add_comment(file, startLine, endLine?, side?, body, severity?)`, `add_general_comment(body)`, `reply(threadId, body)`, `resolve(threadId, summary?)`, `dismiss(threadId, reason?)`. Thread ids accept 8-char prefixes. `add_comment` validates the file is in the session diff and the line range exists on that side.
 - Tool calls write via `diffity_core::Store` and the desktop emits `threads-changed` (agents crate exposes a callback hook `on_threads_changed(session_id)`).
+- Rejected edits: when the user denies a file write (or an edit/delete/move permission) during a turn, the chat's binding flag `edit_rejected` is set and `resolve` returns `edit_rejected` for the rest of that turn, telling the agent to `reply` instead. The flag resets at the start of each turn.
 - In `ask` / `review` modes the ACP client refuses `fs/write_text_file` and denies write/execute permission requests automatically. In `resolve` / `edit` modes, writes surface as `permissionRequest` with a diff.
 
 ## Frontend structure (`apps/desktop/src`)
@@ -233,7 +235,7 @@ features/welcome/open-repo.ts   folder picker, PR URL parsing
 Adapter mapping (`lib/api.ts`, web endpoint → command):
 - `/api/diff` → `get_diff` + `parseDiff(patch)`; `oldFileLineCount` from `DiffFileSummary.oldLineCount`. `/api/diff-fingerprint` → `diff_fingerprint`.
 - `/api/info` → `open_repo` + `resolve_ref` + `get_session` (description = web labels, `capabilities.revert = canRevert`, `github` parsed from `remoteUrl`). `/api/tree/info` → same with the `__tree__` session.
-- `/api/overview` → `repo_overview`; `/api/commits` → `list_commits` (`hasMore = page full`, relative dates via dayjs; clicking a commit opens `<sha>~1..<sha>`).
+- `/api/overview` → `repo_overview`; `/api/commits` → `list_commits` (`hasMore = page full`, relative dates via dayjs; clicking a commit opens `<sha>~1..<sha>`; for a root commit the backend diffs against the empty tree).
 - `/api/file/:path?ref` → `get_file_versions(...).oldContents`; rich Markdown/SVG diff uses both sides. `/api/tree*` → `list_tree` (entries derived client-side), `read_file`; `/api/tree/raw` → `read_file_base64` data URLs (images, Markdown images).
 - Threads: `list_threads` / `create_thread` / `add_reply` / `set_thread_status` / `edit_comment` / `delete_*`; backend threads are mapped to the web `CommentThread` (`author: {name, type}`, plus `pending`, `reviewId`, `sessionId`). Tree path comments keep the web convention `filePath = "__path__:<path>"`.
 - `revert_file` / `revert_hunk` / `open_in_editor`; GitHub dialog → `github_auth_status`, `github_import_gh_token`, `github_set_token`, `github_logout`, `find_pr`, `github_pushable_threads`, `push_review(threadIds)`, `pull_review` (both on the PR session `origin/<base>...HEAD`).
@@ -299,7 +301,7 @@ Watcher: `watch::WatcherRegistry` (held in a static in `commands/repo.rs`); `wat
 GitHub-style pending reviews plus `@claude` mentions.
 
 - **Pending review.** `create_thread({ ..., pending: true })` / `add_reply(..., pending: true)` put a user comment in the session's pending review (get-or-created; at most one per session, enforced by a unique partial index). A thread is pending iff its first comment is pending (`Thread.pending`); replies to a pending thread are always pending; only user comments can be pending. Pending comments can be edited/deleted with the normal commands. `start_review` creates the empty pending review explicitly (optional).
-- **Submit.** `submit_review(sessionId, body, verdict)` publishes every pending comment (re-stamped `createdAt` = submit time so ordering reflects publication), reopens resolved/dismissed threads that received a review reply, and stamps the review `submitted`. Without a pending review it still submits a body-only review when the body is non-empty or the verdict is not `comment` (else `invalid`). `discard_review` deletes the pending review, its draft threads and draft replies.
+- **Submit.** `submit_review(sessionId, body, verdict)` (verdict `null` = local review, no PR) publishes every pending comment (re-stamped `createdAt` = submit time so ordering reflects publication), reopens resolved/dismissed threads that received a review reply, and stamps the review `submitted`. Without a pending review it still submits a body-only review when the body is non-empty or the verdict is not `comment` (else `invalid`). `discard_review` deletes the pending review, its draft threads and draft replies.
 - **Review fields.** `pendingCount`, `commentCount`, `threadIds` (threads the review started or replied to, in order), `mentionedThreadIds` (threads with a user review comment mentioning `@claude`), `bodyMentionsAgent`.
 - **Visibility.** The MCP bridge hides pending threads and strips pending comments (`tools::visible`); `find`/`reply`/`resolve` on a pending thread → `not_found`. GitHub push never selects pending threads/comments.
 - **Mentions.** `diffity_core::mentions::mentions_agent` (re-exported as `diffity_agents::mentions`, TS mirror `lib/mentions.ts`): case-insensitive `@claude`, whole word (not `bob@claude.ai`, `@claude_bot`, `@claude-code`, `@claude/sdk`), ignored inside inline code and fenced blocks. `Comment.mentionsAgent` is computed on load for user-authored comments only.
@@ -308,6 +310,15 @@ GitHub-style pending reviews plus `@claude` mentions.
 - **GitHub push of a review.** `push_review(..., reviewId)` requires a submitted review; it sends the threads the review started (any status, unsynced, `review::select_review`), posts review replies on already-linked threads via `addPullRequestReviewThreadReply`, and defaults `body`/`event` to the review's body/verdict (`comment→COMMENT`, `approve→APPROVE`, `requestChanges→REQUEST_CHANGES`). The `threadIds` / session paths are unchanged apart from skipping pending threads/comments.
 - **Migration.** `user_version` 1 → 2 in one transaction: create `reviews` (+ indexes), `ALTER TABLE` add `threads.review_id`, `comments.pending`, `comments.review_id`. Fresh DBs run v1 schema then v2.
 - **Smoke.** `cargo run -p diffity-agents --example smoke -- claude - thread` leaves a `@claude` question on the scratch repo and runs the `thread` action.
+
+## Finding comments across views
+
+Threads live in the session of the view they were left in (`work`, a commit `<sha>~1..<sha>`, a range, `__tree__`).
+- **Backend.** `Store::list_repo_threads(repo)` → `(ReviewSession, Thread)` for all sessions of the repo. `diffity_core::repo_threads::list_repo_threads(store, repo)` turns them into `RepoThread { id, sessionId, ref, refLabel, filePath, side, startLine, endLine, status, severity, anchorContent, authorType/authorName (first comment), excerpt, replyCount, createdAt, updatedAt, pending, anchor, movedTo }`. `refLabel` via `ref_label` ("Uncommitted changes", "Commit abc1234 · subject", "main...feature", "Changes since X", "Files"). `anchor` is computed against each view's current diff (one `get_diff` per view with threads): `current` (lines in a hunk, file/general comments), `outdated` (file in diff, lines not), `fileGone`, `viewEmpty` (e.g. `work` after committing), `unknown` (ref no longer resolves). For working-tree views, a non-current thread whose code (same lines, same `anchorContent`) is in HEAD's commit diff gets `movedTo { ref, sha, shortSha, subject }`.
+- **Frontend.** `hooks/use-repo-threads` (`['repo-threads', repoPath]`, invalidated on `threads-changed` and `repo-changed`). `features/comments/`: `CommentsPanel` (right drawer in `RepoLayout`, toggled by the toolbar `CommentsButton` with the open count, or `c`; grouped by view (current first) then file; filters Open/Resolved/All × Everyone/Claude/You), `OtherViewsBanner` (diff + file browser: "N open comments in Uncommitted changes · Show"), `MovedToCommitLink`.
+- **Deep links.** `lib/thread-location.ts`: `threadPath(repo, { ref, threadId })` → `diff?ref=…&thread=<id>` or `tree?thread=<id>`; `diff?ref=…&file=<path>` scrolls to a file. The pages consume and drop the params, set `ui-store.focusThreadId` (collapsed outdated sections expand) and scroll/flash the thread.
+- **Not-in-diff threads.** The diff page shows threads whose file is not in the diff ("N comments on files that are no longer changed in this view") above the files, and every thread of an empty view above the empty state, with reply/resolve and "View in commit abc1234" (`OutsideThreads`, built on `OrphanedThreads`).
+- **Claude runs** keep `ref` and `newThreadIds` on the run record. The status pill shows "on <view>" when you are elsewhere and the comment count links to the run's view; the finish toast says "Claude left 3 comments on Uncommitted changes" with **View** (navigates by hash, so it works from any page).
 
 ## Integration notes
 
