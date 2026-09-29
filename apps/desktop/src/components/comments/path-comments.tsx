@@ -3,9 +3,9 @@ import type { CommentThread as CommentThreadType } from './types';
 import { isThreadResolved, DEFAULT_AUTHOR } from './types';
 import type { CommentActions } from '../../hooks/use-comment-actions';
 import { CommentForm } from './comment-form';
-import { CommentIcon } from '../icons/comment-icon';
 import { ThreadBadge } from '../ui/thread-badge';
 import { ThreadCard } from './thread-card';
+import { CommentIcon } from '../ui/icon';
 
 interface PathCommentsProps {
   pathKey: string;
@@ -13,11 +13,12 @@ interface PathCommentsProps {
   commentActions: CommentActions;
   label: string;
   children?: React.ReactNode;
+  actions?: React.ReactNode;
   focusedThreadId?: string | null;
 }
 
 export function PathComments(props: PathCommentsProps) {
-  const { pathKey, threads, commentActions, label, children, focusedThreadId } = props;
+  const { pathKey, threads, commentActions, label, children, actions, focusedThreadId } = props;
   const [isExpanded, setIsExpanded] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
@@ -49,37 +50,38 @@ export function PathComments(props: PathCommentsProps) {
   };
 
   return (
-    <div className="mb-2.5">
-      <div className="flex items-center gap-1 text-sm">
+    <div className="mb-3">
+      <div className="flex items-center gap-1 min-h-8 text-[13px]">
         {children}
         <div className="flex-1" />
         <button
           onClick={handleToggle}
-          className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-text-muted hover:text-accent hover:bg-hover transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
           title={`Comment on ${label}`}
         >
           <CommentIcon className="w-3.5 h-3.5" />
-          <span className="text-xs">
+          <span className="text-[13px]">
             {threads.length > 0
               ? `${threads.length} comment${threads.length !== 1 ? 's' : ''}`
               : 'Add comment'}
           </span>
         </button>
+        {actions}
       </div>
 
       {isExpanded && (
-        <div className={`mt-3 rounded-lg overflow-hidden ${threads.length > 0 ? 'bg-accent/5' : 'bg-bg-secondary'}`}>
+        <div className={`mt-3 rounded-lg overflow-hidden ${threads.length > 0 ? 'bg-bg-secondary' : 'bg-bg-secondary'}`}>
           <div className="flex items-center gap-2 px-3 py-2 text-sm">
             <CommentIcon className="w-3.5 h-3.5 text-text-muted" />
             <span className="text-text-secondary text-xs">Comments on {label}</span>
             {threads.length > 0 && (
-              <span className="text-xs font-medium bg-accent/15 text-accent px-1.5 py-0.5 rounded-full">{threads.length}</span>
+              <span className="text-xs font-medium bg-fill text-text-secondary px-1.5 py-0.5 rounded-full">{threads.length}</span>
             )}
             <div className="flex-1" />
             {!showForm && (
               <button
                 onClick={() => setShowForm(true)}
-                className="text-xs text-accent hover:text-accent-hover transition-colors cursor-pointer"
+                className="h-7 px-2.5 -ml-2.5 rounded-md text-[13px] text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
               >
                 Add comment
               </button>

@@ -1,8 +1,6 @@
 import type { DiffHunk } from '@diffity/parser';
-import { ArrowUpIcon } from '../icons/arrow-up-icon';
-import { ArrowDownIcon } from '../icons/arrow-down-icon';
-import { ChevronUpDownIcon } from '../icons/chevron-up-down-icon';
 import { Spinner } from '../icons/spinner';
+import { ExpandBothIcon, ExpandDownIcon, ExpandUpIcon } from '../ui/icon';
 
 export interface ExpandControls {
   position: 'top' | 'between' | 'bottom';
@@ -30,13 +28,13 @@ export function formatHunkHeader(hunk: DiffHunk): string {
 const SMALL_GAP_THRESHOLD = 40;
 
 const gutterCell = 'w-[25px] min-w-[25px] bg-diff-hunk-bg border-r border-border-muted p-0';
-const expandBtn = 'flex items-center justify-center w-full h-[18px] cursor-pointer text-diff-hunk-text/70 hover:text-diff-hunk-text transition-colors';
+const expandBtn = 'flex items-center justify-center w-full h-6 cursor-pointer text-diff-hunk-text/70 hover:text-diff-hunk-text transition-colors';
 const expandRow = 'bg-diff-hunk-bg';
 
 function SpinnerCell() {
   return (
     <td className={gutterCell}>
-      <div className="flex items-center justify-center h-[18px]">
+      <div className="flex items-center justify-center h-6">
         <Spinner />
       </div>
     </td>
@@ -49,7 +47,7 @@ export function HunkHeader(props: HunkHeaderProps) {
   if (!expandControls) {
     return (
       <tr className="bg-diff-hunk-bg group/hunk">
-        <td colSpan={4} className="px-3 py-1 font-mono text-xs text-diff-hunk-text select-none">
+        <td colSpan={4} className="px-3 py-0.5 code-text text-diff-hunk-text select-none">
           {formatHunkHeader(hunk)}
         </td>
       </tr>
@@ -64,7 +62,7 @@ export function HunkHeader(props: HunkHeaderProps) {
     }
     return (
       <tr className="bg-diff-hunk-bg group/hunk">
-        <td colSpan={4} className="px-3 py-1 font-mono text-xs text-diff-hunk-text select-none">
+        <td colSpan={4} className="px-3 py-0.5 code-text text-diff-hunk-text select-none">
           {formatHunkHeader(hunk)}
         </td>
       </tr>
@@ -81,11 +79,11 @@ export function HunkHeader(props: HunkHeaderProps) {
         {loadingDirection ? <SpinnerCell /> : (
           <td className={gutterCell}>
             <button className={expandBtn} onClick={() => onExpand('up')} title={`Expand ${Math.min(remainingLines, 20)} lines`}>
-              <ArrowUpIcon />
+              <ExpandUpIcon />
             </button>
           </td>
         )}
-        <td colSpan={3} className="px-3 py-1 font-mono text-xs text-diff-hunk-text select-none">
+        <td colSpan={3} className="px-3 py-0.5 code-text text-diff-hunk-text select-none">
           {formatHunkHeader(hunk)}
         </td>
       </tr>
@@ -102,11 +100,11 @@ export function HunkHeader(props: HunkHeaderProps) {
               onClick={() => onExpand(isSmallGap ? 'all' : showUp ? 'up' : 'down')}
               title={isSmallGap ? `Expand all ${remainingLines} lines` : `Expand ${Math.min(remainingLines, 20)} lines`}
             >
-              {isSmallGap ? <ChevronUpDownIcon /> : showUp ? <ArrowUpIcon /> : <ArrowDownIcon />}
+              {isSmallGap ? <ExpandBothIcon /> : showUp ? <ExpandUpIcon /> : <ExpandDownIcon />}
             </button>
           </td>
         )}
-        <td colSpan={3} className="px-3 py-1 font-mono text-xs text-diff-hunk-text select-none">
+        <td colSpan={3} className="px-3 py-0.5 code-text text-diff-hunk-text select-none">
           {formatHunkHeader(hunk)}
         </td>
       </tr>
@@ -119,7 +117,7 @@ export function HunkHeader(props: HunkHeaderProps) {
         {loadingDirection === 'down' ? <SpinnerCell /> : (
           <td className={gutterCell}>
             <button className={expandBtn} onClick={() => onExpand('down')} title="Expand down">
-              <ArrowDownIcon />
+              <ExpandDownIcon />
             </button>
           </td>
         )}
@@ -127,7 +125,7 @@ export function HunkHeader(props: HunkHeaderProps) {
       </tr>
       <tr className="bg-diff-hunk-bg group/hunk">
         <td className={gutterCell} />
-        <td colSpan={3} className="px-3 py-1 font-mono text-xs text-diff-hunk-text select-none">
+        <td colSpan={3} className="px-3 py-0.5 code-text text-diff-hunk-text select-none">
           {formatHunkHeader(hunk)}
         </td>
       </tr>
@@ -135,7 +133,7 @@ export function HunkHeader(props: HunkHeaderProps) {
         {loadingDirection === 'up' ? <SpinnerCell /> : (
           <td className={gutterCell}>
             <button className={expandBtn} onClick={() => onExpand('up')} title="Expand up">
-              <ArrowUpIcon />
+              <ExpandUpIcon />
             </button>
           </td>
         )}

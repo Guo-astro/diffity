@@ -5,10 +5,15 @@ import { toast } from 'sonner';
 import * as tauri from '../../lib/tauri';
 import { getRepoPath } from '../../lib/api';
 import type { GitOpResult } from '../../lib/types';
-import { RefreshIcon } from '../icons/refresh-icon';
-import { DownloadIcon } from '../icons/download-icon';
-import { UploadIcon } from '../icons/upload-icon';
 import { Spinner } from '../icons/spinner';
+import { cn } from '../../lib/cn';
+import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import { FetchIcon, PullIcon, PushIcon } from '../ui/icon';
+
+dayjs.extend(relativeTime);
+
+const lastFetched = new Map<string, number>();
 
 type GitOp = 'fetch' | 'pull' | 'push';
 
@@ -24,7 +29,7 @@ const RUNNERS: Record<GitOp, (repoPath: string) => Promise<GitOpResult>> = {
   push: tauri.gitPush,
 };
 
-const buttonClass = 'flex items-center gap-1 px-2 py-1 text-xs text-text-muted hover:bg-hover hover:text-text transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default';
+const itemClass = 'flex items-center gap-1 h-full px-2 text-[11px] font-medium text-text-secondary hover:bg-control-hover hover:text-text transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default disabled:hover:bg-transparent aria-disabled:opacity-50 aria-disabled:cursor-default aria-disabled:hover:bg-transparent aria-disabled:hover:text-text-secondary';
 
 export function GitSyncActions() {
   const queryClient = useQueryClient();
@@ -36,14 +41,19 @@ export function GitSyncActions() {
     return null;
   }
 
+  const repoPath = getRepoPath();
+
   const run = async (op: GitOp) => {
     setRunning(op);
     const id = toast.loading(OP_LABELS[op].busy);
     try {
-      const result = await RUNNERS[op](getRepoPath());
+      const result = await RUNNERS[op](repoPath);
       const output = result.output.trim();
       if (result.ok) {
         toast.success(OP_LABELS[op].done, { id, description: output || undefined });
+        if (op !== 'push') {
+          lastFetched.set(repoPath, Date.now());
+        }
       } else {
         toast.error(OP_LABELS[op].failed, { id, description: output || undefined });
       }
@@ -59,20 +69,45 @@ export function GitSyncActions() {
   };
 
   const icon = (op: GitOp, node: React.ReactNode) => (running === op ? <Spinner className="w-3 h-3" /> : node);
-  const upstreamTitle = status.upstream ? ` (${status.upstream})` : '';
+  const upstream = status.upstream;
+  const fetchedAt = lastFetched.get(repoPath);
+  const fetchTitle = `Fetch new commits from the remote without changing your files. ${fetchedAt ? `Last fetched ${dayjs(fetchedAt).fromNow()}` : 'Not fetched since the app opened'}`;
+  const nothingToPush = !!upstream && status.ahead === 0;
+  const plural = (count: number) => `${count} commit${count === 1 ? '' : 's'}`;
 
   return (
-    <div className="flex items-stretch bg-bg-tertiary rounded-md overflow-hidden">
-      <button className={buttonClass} disabled={running !== null} onClick={() => run('fetch')} title={`Fetch: download new commits without changing your files${upstreamTitle}`}>
-        {icon('fetch', <RefreshIcon className="w-3.5 h-3.5" />)}
+    <div className="flex items-stretch h-6 rounded-md border border-control-border bg-raised overflow-hidden divide-x divide-control-border">
+      <button className={itemClass} disabled={running !== null} onClick={() => run('fetch')} title={fetchTitle}>
+        {icon('fetch', <FetchIcon size="xs" />)}
+        Fetch
       </button>
-      <button className={buttonClass} disabled={running !== null} onClick={() => run('pull')} title={status.behind > 0 ? `Pull ${status.behind} commit${status.behind === 1 ? '' : 's'}${upstreamTitle}` : `Pull${upstreamTitle}`}>
-        {icon('pull', <DownloadIcon className="w-3.5 h-3.5" />)}
-        {status.behind > 0 && <span className="tabular-nums">{status.behind}</span>}
-      </button>
-      <button className={buttonClass} disabled={running !== null} onClick={() => run('push')} title={status.upstream ? (status.ahead > 0 ? `Push ${status.ahead} commit${status.ahead === 1 ? '' : 's'}${upstreamTitle}` : `Push${upstreamTitle}`) : 'Publish this branch to the remote'}>
-        {icon('push', <UploadIcon className="w-3.5 h-3.5" />)}
-        {status.ahead > 0 && <span className="tabular-nums">{status.ahead}</span>}
+      {upstream && (
+        <button
+          className={cn(itemClass, status.behind > 0 && 'bg-pull/10 text-pull hover:bg-pull/15 hover:text-pull')}
+          disabled={running !== null}
+          onClick={() => run('pull')}
+          title={status.behind > 0 ? `Pull ${plural(status.behind)} from ${upstream}` : `Nothing new on ${upstream} since the last fetch. Pull anyway`}
+        >
+          {icon('pull', <PullIcon size="xs" />)}
+          Pull
+          {status.behind > 0 && <span className="tabular-nums">{status.behind}</span>}
+        </button>
+      )}
+      <button
+        className={cn(itemClass, !nothingToPush && 'bg-push/10 text-push hover:bg-push/15 hover:text-push')}
+        disabled={running !== null}
+        aria-disabled={nothingToPush}
+        onClick={() => {
+          if (nothingToPush) {
+            return;
+          }
+          void run('push');
+        }}
+        title={!upstream ? `Publish ${status.branch} to the remote and track it` : status.ahead > 0 ? `Push ${plural(status.ahead)} to ${upstream}` : `Nothing to push: ${upstream} already has your commits`}
+      >
+        {icon('push', <PushIcon size="xs" />)}
+        {upstream ? 'Push' : 'Publish branch'}
+        {!!upstream && status.ahead > 0 && <span className="tabular-nums">{status.ahead}</span>}
       </button>
     </div>
   );

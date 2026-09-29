@@ -47,7 +47,7 @@ export function DiffLine(props: DiffLineProps) {
   const gutterBg = expanded ? 'bg-diff-expanded-gutter' : '';
 
   return (
-    <tr className={cn('group/row font-mono text-sm leading-6 hover:brightness-[0.97]', expanded ? 'bg-diff-expanded-bg' : getLineBg(line.type))}>
+    <tr className={cn('group/row code-text', expanded ? 'bg-diff-expanded-bg' : getLineBg(line.type))}>
       <CommentLineNumber
         lineNumber={line.oldLineNumber}
         className={cn('border-r border-border-muted', gutterBg)}
@@ -69,7 +69,7 @@ export function DiffLine(props: DiffLineProps) {
       <td className={cn('w-5 min-w-5 px-1 text-center select-none align-top', getPrefixColor(line.type), isSelected && 'bg-diff-comment-bg')}>
         {getPrefix(line.type)}
       </td>
-      <td className={cn('px-3 whitespace-pre-wrap break-all', isSelected && 'bg-diff-comment-bg')}>
+      <td className={cn('px-3 whitespace-pre-wrap [overflow-wrap:anywhere]', isSelected && 'bg-diff-comment-bg')}>
         <span className="inline">{renderContent(line, syntaxTokens)}</span>
       </td>
     </tr>

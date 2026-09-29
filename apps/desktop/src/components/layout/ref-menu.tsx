@@ -1,22 +1,23 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { useRepoNav } from '../../hooks/use-repo';
-import { useDismiss } from '../../hooks/use-dismiss';
-import { useBaseBranch, useGitHubPr, useGitStatus, useRecentCommits } from '../../hooks/use-repo-state';
-import { commitRef, descriptionForRef, parseCommitRef, type GitHubDetails } from '../../lib/api';
+import { useBaseBranch, useGitHubPr, useGitStatus, useHasGitHubRemote } from '../../hooks/use-repo-state';
+import { openPullRequests } from '../../lib/ui-store';
+import { commitRef, descriptionForRef, fetchCommits, parseCommitRef, type Commit, type GitHubDetails } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import { ChevronDownIcon } from '../icons/chevron-down-icon';
-import { CheckIcon } from '../icons/check-icon';
-import { GitBranchIcon } from '../icons/git-branch-icon';
-import { GitCommitIcon } from '../icons/git-commit-icon';
-import { GitCompareIcon } from '../icons/git-compare-icon';
-import { GitPullRequestIcon } from '../icons/git-pull-request-icon';
-import { PencilIcon } from '../icons/pencil-icon';
+import { buttonOutline, inputField } from '../ui/button-styles';
 import { Spinner } from '../icons/spinner';
+import { useCommitDetails } from './diff-context-bar';
+import { CheckIcon, ChevronDownIcon, GitBranchIcon, GitCommitIcon, GitCompareIcon, GitPullRequestIcon, HomeIcon, PencilIcon, SearchIcon, XIcon } from '../ui/icon';
+import { Popover } from '../ui/popover';
 
 interface RefMenuProps {
   diffRef: string;
   branch: string | null;
 }
+
+export const HOME_REF = '__home__';
 
 export function prDiffRef(details: GitHubDetails): string {
   return `origin/${details.baseRef}...HEAD`;
@@ -26,26 +27,43 @@ function shortBase(base: string): string {
   return base.replace(/^origin\//, '');
 }
 
+function shortRef(ref: string): string {
+  const name = shortBase(ref);
+  return /^[0-9a-f]{8,40}$/i.test(name) ? name.slice(0, 7) : name;
+}
+
+export function rangeParts(diffRef: string): { base: string; head: string } {
+  const [base, head] = diffRef.split(/\.{2,3}/);
+  return { base: shortRef(base.replace(/~1$/, '')), head: shortRef(head || 'HEAD') };
+}
+
 /** Short, human label for what is being reviewed. */
 export function useTargetLabel(diffRef: string, branch: string | null): { label: string; icon: ReactNode } {
   const { details } = useGitHubPr();
   const base = useBaseBranch(details?.baseRef ?? null, branch);
+  const commitSha = parseCommitRef(diffRef);
+  const { data: commit } = useCommitDetails(commitSha);
+  if (diffRef === HOME_REF) {
+    return { label: 'Home', icon: <HomeIcon className="w-3.5 h-3.5" /> };
+  }
   if (details && diffRef === prDiffRef(details)) {
-    return { label: `Pull request #${details.prNumber}`, icon: <GitPullRequestIcon className="w-3.5 h-3.5" /> };
+    return { label: `PR #${details.prNumber} · ${details.prTitle}`, icon: <GitPullRequestIcon className="w-3.5 h-3.5" /> };
   }
   if (base && branch && diffRef === `${base}...HEAD`) {
     return { label: `${branch} vs ${shortBase(base)}`, icon: <GitCompareIcon className="w-3.5 h-3.5" /> };
   }
-  if (parseCommitRef(diffRef)) {
-    return { label: descriptionForRef(diffRef), icon: <GitCommitIcon className="w-3.5 h-3.5" /> };
+  if (commitSha) {
+    const short = commitSha.slice(0, 7);
+    return { label: commit ? `Commit ${short} · ${commit.message}` : `Commit ${short}`, icon: <GitCommitIcon className="w-3.5 h-3.5" /> };
   }
   if (diffRef.includes('..')) {
-    return { label: diffRef, icon: <GitCompareIcon className="w-3.5 h-3.5" /> };
+    const { base: from, head: to } = rangeParts(diffRef);
+    return { label: `${from} → ${to}`, icon: <GitCompareIcon className="w-3.5 h-3.5" /> };
   }
   return { label: descriptionForRef(diffRef), icon: <PencilIcon className="w-3.5 h-3.5" /> };
 }
 
-const sectionClass = 'px-3 pt-2 pb-1 text-[10px] font-semibold text-text-muted uppercase tracking-widest';
+const sectionClass = 'px-2.5 pt-2.5 pb-1 text-[11px] font-medium text-text-secondary';
 
 interface ItemProps {
   selected: boolean;
@@ -53,38 +71,80 @@ interface ItemProps {
   title: ReactNode;
   hint?: ReactNode;
   meta?: ReactNode;
+  tooltip?: string;
   onClick: () => void;
 }
 
 function Item(props: ItemProps) {
-  const { selected, icon, title, hint, meta, onClick } = props;
+  const { selected, icon, title, hint, meta, tooltip, onClick } = props;
 
   return (
     <button
       onClick={onClick}
+      title={tooltip}
       className={cn(
-        'flex items-start gap-2.5 w-full px-3 py-1.5 text-left transition-colors cursor-pointer hover:bg-hover',
-        selected && 'bg-hover',
+        'flex items-center gap-2.5 w-full min-h-8 px-2.5 py-1 rounded-md text-left transition-colors cursor-pointer',
+        selected ? 'bg-selected' : 'hover:bg-hover',
       )}
     >
-      <span className={cn('mt-0.5 shrink-0', selected ? 'text-accent' : 'text-text-muted')}>{icon}</span>
+      <span className={cn('flex items-center shrink-0', selected ? 'text-text' : 'text-text-secondary')}>{icon}</span>
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-2">
-          <span className={cn('text-xs truncate', selected ? 'text-text font-medium' : 'text-text-secondary')}>{title}</span>
-          {selected && <CheckIcon className="w-3 h-3 text-accent shrink-0" />}
-        </span>
-        {hint && <span className="block text-[11px] text-text-muted truncate">{hint}</span>}
+        <span className="block text-[13px] leading-5 truncate text-text">{title}</span>
+        {hint && <span className="block text-xs leading-4 text-text-secondary truncate">{hint}</span>}
       </span>
-      {meta && <span className="shrink-0 text-[11px] text-text-muted tabular-nums mt-0.5">{meta}</span>}
+      {meta && <span className="shrink-0 text-xs text-text-secondary tabular-nums">{meta}</span>}
+      <span className="w-3.5 shrink-0 flex items-center">{selected && <CheckIcon className="w-3.5 h-3.5 text-text-secondary" />}</span>
     </button>
   );
 }
 
-function count(n: number | undefined) {
-  if (n === undefined) {
-    return null;
+function CommitItem(props: { commit: Commit; selected: boolean; onClick: () => void }) {
+  const { commit, selected, onClick } = props;
+
+  return (
+    <button
+      onClick={onClick}
+      title={`${commit.message}\n${commit.author} · ${commit.relativeDate}`}
+      className={cn(
+        'flex items-center gap-2.5 w-full h-8 px-2.5 rounded-md text-left transition-colors cursor-pointer',
+        selected ? 'bg-selected' : 'hover:bg-hover',
+      )}
+    >
+      <code className={cn('shrink-0 font-mono text-[11px] w-[52px]', selected ? 'text-text-secondary' : 'text-text-muted')}>{commit.shortHash}</code>
+      <span className="min-w-0 flex-1 truncate text-[13px] text-text">{commit.message}</span>
+      <span className="shrink-0 text-xs text-text-muted whitespace-nowrap">{shortRelative(commit.date)}</span>
+      <span className="w-3.5 shrink-0 flex items-center">{selected && <CheckIcon className="w-3.5 h-3.5 text-text-secondary" />}</span>
+    </button>
+  );
+}
+
+function shortRelative(date: string): string {
+  const minutes = Math.max(0, dayjs().diff(dayjs(date), 'minute'));
+  if (minutes < 1) {
+    return 'now';
   }
-  return n === 0 ? 'none' : `${n} file${n === 1 ? '' : 's'}`;
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+  const days = Math.floor(hours / 24);
+  if (days < 30) {
+    return `${days}d`;
+  }
+  return dayjs(date).format('MMM D');
+}
+
+const WORK_SEGMENTS: { value: string; label: string; tooltip: string }[] = [
+  { value: 'work', label: 'All', tooltip: 'Staged, unstaged and new files together' },
+  { value: 'staged', label: 'Staged', tooltip: 'What the next commit will contain' },
+  { value: 'unstaged', label: 'Unstaged', tooltip: 'Edits not added to the index yet, plus new files' },
+];
+
+function looksLikeRef(text: string) {
+  return /\.\./.test(text) || /^[0-9a-f]{7,40}$/i.test(text) || /^(HEAD|origin\/)/.test(text);
 }
 
 export function RefMenu(props: RefMenuProps) {
@@ -93,24 +153,34 @@ export function RefMenu(props: RefMenuProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  useDismiss(ref, open, close);
   const target = useTargetLabel(diffRef, branch);
 
+  const isDefault = diffRef === 'work' || diffRef === HOME_REF;
+
   return (
-    <div className="relative min-w-0" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className={cn(
-          'inline-flex items-center gap-1.5 max-w-full px-2 py-1 rounded-md text-xs transition-colors cursor-pointer',
-          open ? 'bg-hover text-text' : 'bg-bg-tertiary text-text-secondary hover:bg-hover hover:text-text',
+    <div className="relative min-w-0 flex items-center" ref={ref}>
+      <div className={cn(buttonOutline, 'max-w-[460px] min-w-0 p-0 gap-0', open && 'bg-control-hover')}>
+        <button
+          onClick={() => setOpen(!open)}
+          className="flex items-center gap-1.5 min-w-0 h-full pl-2.5 pr-2 cursor-pointer"
+          title="Choose what to review"
+        >
+          <span className="shrink-0 text-text-secondary">{target.icon}</span>
+          <span className="truncate font-medium">{target.label}</span>
+          <ChevronDownIcon size="xs" className="shrink-0 text-text-secondary" />
+        </button>
+        {!isDefault && (
+          <button
+            onClick={() => nav.toDiff('work')}
+            className="flex items-center justify-center w-6 h-full border-l border-control-border text-text-muted hover:text-text hover:bg-control-hover cursor-pointer"
+            title="Back to uncommitted changes"
+            aria-label="Back to uncommitted changes"
+          >
+            <XIcon size="xs" />
+          </button>
         )}
-        title="Choose what to review"
-      >
-        <span className="shrink-0 text-text-muted">{target.icon}</span>
-        <span className="truncate font-medium">{target.label}</span>
-        <ChevronDownIcon className="w-3 h-3 shrink-0" />
-      </button>
-      {open && (
+      </div>
+      <Popover open={open} onClose={close} anchorRef={ref} width={440} className="p-0 overflow-hidden flex flex-col">
         <RefMenuPanel
           diffRef={diffRef}
           branch={branch}
@@ -122,104 +192,208 @@ export function RefMenu(props: RefMenuProps) {
             close();
             nav.toOverview();
           }}
+          onPullRequests={() => {
+            close();
+            openPullRequests();
+          }}
         />
-      )}
+      </Popover>
     </div>
   );
 }
 
-function RefMenuPanel(props: { diffRef: string; branch: string | null; onPick: (ref: string) => void; onOverview: () => void }) {
-  const { diffRef, branch, onPick, onOverview } = props;
+function RefMenuPanel(props: { diffRef: string; branch: string | null; onPick: (ref: string) => void; onOverview: () => void; onPullRequests: () => void }) {
+  const { diffRef, branch, onPick, onOverview, onPullRequests } = props;
+  const hasGitHubRemote = useHasGitHubRemote();
   const { data: status } = useGitStatus();
   const { details, loading: prLoading } = useGitHubPr();
   const base = useBaseBranch(details?.baseRef ?? null, branch);
-  const { data: recent, isLoading: commitsLoading } = useRecentCommits(6);
-  const unstagedCount = status ? status.unstaged + status.untracked : undefined;
-  const allCount = status ? status.staged + status.unstaged + status.untracked : undefined;
+  const [search, setSearch] = useState('');
+  const [term, setTerm] = useState('');
+  const sentinel = useRef<HTMLDivElement>(null);
   const branchRef = base ? `${base}...HEAD` : null;
+  const trimmed = search.trim();
+
+  useEffect(() => {
+    const timer = setTimeout(() => setTerm(trimmed), 200);
+    return () => clearTimeout(timer);
+  }, [trimmed]);
+
+  const commitsQuery = useInfiniteQuery({
+    queryKey: ['commits', 'list', term],
+    queryFn: ({ pageParam }) => fetchCommits(pageParam, 30, term || undefined),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) => (last.hasMore ? pages.reduce((sum, page) => sum + page.commits.length, 0) : undefined),
+  });
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = commitsQuery;
+  const commits = commitsQuery.data?.pages.flatMap((page) => page.commits) ?? [];
+
+  useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !hasNextPage) {
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting) && !isFetchingNextPage) {
+        void fetchNextPage();
+      }
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const counts: Record<string, number | undefined> = {
+    work: status ? status.staged + status.unstaged + status.untracked : undefined,
+    staged: status?.staged,
+    unstaged: status ? status.unstaged + status.untracked : undefined,
+  };
+  const workSelected = diffRef === 'work' || diffRef === 'staged' || diffRef === 'unstaged';
+  const showWork = !trimmed;
 
   return (
-    <div className="absolute left-0 top-full mt-1 w-[360px] max-h-[70vh] overflow-y-auto py-1 bg-bg-secondary rounded-md shadow-lg ring-1 ring-border z-50 font-sans">
-      <div className={sectionClass}>Uncommitted</div>
-      <Item
-        selected={diffRef === 'work'}
-        icon={<PencilIcon className="w-3.5 h-3.5" />}
-        title="Uncommitted changes"
-        hint="Staged, unstaged and new files together"
-        meta={count(allCount)}
-        onClick={() => onPick('work')}
-      />
-      <Item
-        selected={diffRef === 'staged'}
-        icon={<PencilIcon className="w-3.5 h-3.5" />}
-        title="Staged only"
-        hint="What the next commit will contain"
-        meta={count(status?.staged)}
-        onClick={() => onPick('staged')}
-      />
-      <Item
-        selected={diffRef === 'unstaged'}
-        icon={<PencilIcon className="w-3.5 h-3.5" />}
-        title="Unstaged only"
-        hint="Edits not added to the index yet, plus new files"
-        meta={count(unstagedCount)}
-        onClick={() => onPick('unstaged')}
-      />
-
-      {(details || prLoading || (branchRef && branch)) && <div className={sectionClass}>Branch</div>}
-      {prLoading && !details && (
-        <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-text-muted">
-          <Spinner className="w-3 h-3" />
-          Looking for a pull request…
+    <div className="max-h-[min(560px,75vh)] flex flex-col font-sans overflow-hidden">
+      <div className="shrink-0 p-1.5 border-b border-overlay-border">
+        <div className="relative">
+          <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+          <input
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            autoFocus
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && trimmed && looksLikeRef(trimmed)) {
+                onPick(trimmed);
+              }
+            }}
+            placeholder="Search commits, or type a sha or range"
+            className={cn(inputField, 'pl-8 border-transparent bg-transparent hover:border-transparent focus:border-transparent focus:hover:border-transparent')}
+          />
         </div>
-      )}
-      {details && (
-        <Item
-          selected={diffRef === prDiffRef(details)}
-          icon={<GitPullRequestIcon className="w-3.5 h-3.5" />}
-          title={`Pull request #${details.prNumber}`}
-          hint={details.prTitle}
-          meta={`into ${details.baseRef}`}
-          onClick={() => onPick(prDiffRef(details))}
-        />
-      )}
-      {!details && branchRef && branch && (
-        <Item
-          selected={diffRef === branchRef}
-          icon={<GitCompareIcon className="w-3.5 h-3.5" />}
-          title={`${branch} vs ${shortBase(base ?? '')}`}
-          hint={`Every commit on ${branch} that is not on ${shortBase(base ?? '')}`}
-          onClick={() => onPick(branchRef)}
-        />
-      )}
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto p-1">
+        {trimmed && looksLikeRef(trimmed) && (
+          <Item
+            selected={false}
+            icon={<GitCompareIcon className="w-3.5 h-3.5" />}
+            title={<>Open <span className="font-mono text-xs">{trimmed}</span></>}
+            hint={trimmed.includes('..') ? 'Compare this range' : 'Review this commit or ref'}
+            onClick={() => onPick(trimmed)}
+          />
+        )}
+        {showWork && (
+          <div
+            className={cn(
+              'flex items-center gap-2.5 w-full h-8 pl-2.5 pr-1 rounded-md transition-colors',
+              workSelected ? 'bg-selected' : 'hover:bg-hover',
+            )}
+          >
+            <button
+              onClick={() => onPick('work')}
+              className="flex items-center gap-2.5 min-w-0 flex-1 h-full text-left cursor-pointer"
+              title="Staged, unstaged and new files together"
+            >
+              <PencilIcon className={cn('w-3.5 h-3.5 shrink-0', workSelected ? 'text-text' : 'text-text-secondary')} />
+              <span className={cn('text-[13px] truncate', counts.work === 0 ? 'text-text-secondary' : 'text-text')}>
+                {counts.work === 0 ? 'No uncommitted changes' : 'Uncommitted changes'}
+              </span>
+              {!!counts.work && <span className="text-xs text-text-muted shrink-0 tabular-nums">{counts.work}</span>}
+            </button>
+            {!!counts.work && (
+              <div className="flex items-center gap-0.5 shrink-0">
+                {WORK_SEGMENTS.map((segment) => {
+                  const count = counts[segment.value];
+                  const empty = segment.value !== 'work' && count === 0;
+                  const active = diffRef === segment.value;
+                  return (
+                    <button
+                      key={segment.value}
+                      disabled={empty}
+                      title={empty ? `${segment.tooltip} (nothing right now)` : segment.tooltip}
+                      onClick={() => onPick(segment.value)}
+                      className={cn(
+                        'h-6 px-1.5 rounded text-xs transition-colors',
+                        active ? 'bg-active text-text font-medium' : 'text-text-secondary hover:text-text hover:bg-hover cursor-pointer',
+                        empty && 'text-text-muted/60 hover:text-text-muted/60 hover:bg-transparent cursor-default',
+                      )}
+                    >
+                      {segment.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <span className="w-3.5 shrink-0 flex items-center">{diffRef === 'work' && <CheckIcon className="w-3.5 h-3.5 text-text-secondary" />}</span>
+          </div>
+        )}
 
-      <div className={sectionClass}>Recent commits</div>
-      {commitsLoading && (
-        <div className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-text-muted">
-          <Spinner className="w-3 h-3" />
-          Loading commits…
-        </div>
-      )}
-      {recent && recent.commits.length === 0 && <div className="px-3 py-1.5 text-[11px] text-text-muted">No commits yet</div>}
-      {recent?.commits.map((commit) => (
-        <Item
-          key={commit.hash}
-          selected={parseCommitRef(diffRef) === commit.hash}
-          icon={<GitCommitIcon className="w-3.5 h-3.5" />}
-          title={commit.message}
-          hint={
-            <>
-              <span className="font-mono">{commit.shortHash}</span> · {commit.author} · {commit.relativeDate}
-            </>
-          }
-          onClick={() => onPick(commitRef(commit.hash))}
-        />
-      ))}
-      <div className="border-t border-border my-1" />
-      <button className="flex items-center gap-2.5 w-full px-3 py-1.5 text-xs text-text-secondary hover:bg-hover hover:text-text transition-colors cursor-pointer" onClick={onOverview}>
-        <GitBranchIcon className="w-3.5 h-3.5" />
-        All commits, ranges and branches…
-      </button>
+        {showWork && (details || prLoading || hasGitHubRemote || (branchRef && branch)) && <div className={sectionClass}>Branch</div>}
+        {showWork && prLoading && !details && (
+          <div className="flex items-center gap-2 px-2.5 h-8 text-xs text-text-secondary">
+            <Spinner className="w-3 h-3" />
+            Looking for a pull request…
+          </div>
+        )}
+        {showWork && details && (
+          <Item
+            selected={diffRef === prDiffRef(details)}
+            icon={<GitPullRequestIcon className="w-3.5 h-3.5" />}
+            title={`#${details.prNumber} ${details.prTitle}`}
+            meta={`into ${details.baseRef}`}
+            onClick={() => onPick(prDiffRef(details))}
+          />
+        )}
+        {showWork && !details && branchRef && branch && (
+          <Item
+            selected={diffRef === branchRef}
+            icon={<GitCompareIcon className="w-3.5 h-3.5" />}
+            title={`${branch} vs ${shortBase(base ?? '')}`}
+            tooltip={`Every commit on ${branch} that is not on ${shortBase(base ?? '')}`}
+            onClick={() => onPick(branchRef)}
+          />
+        )}
+        {showWork && hasGitHubRemote && (
+          <Item
+            selected={false}
+            icon={<GitPullRequestIcon className="w-3.5 h-3.5" />}
+            title="Pull requests…"
+            tooltip="Check out an open pull request, or paste a URL or number"
+            onClick={onPullRequests}
+          />
+        )}
+
+        <div className={sectionClass}>{trimmed ? 'Matching commits' : 'Commits'}</div>
+        {commitsQuery.isLoading && (
+          <div className="flex items-center gap-2 px-2.5 h-8 text-xs text-text-secondary">
+            <Spinner className="w-3 h-3" />
+            Loading commits…
+          </div>
+        )}
+        {!commitsQuery.isLoading && commits.length === 0 && (
+          <div className="px-2.5 h-8 flex items-center text-xs text-text-secondary">{trimmed ? `No commits match “${trimmed}”` : 'No commits yet'}</div>
+        )}
+        {commits.map((commit) => (
+          <CommitItem
+            key={commit.hash}
+            commit={commit}
+            selected={parseCommitRef(diffRef) === commit.hash}
+            onClick={() => onPick(commitRef(commit.hash))}
+          />
+        ))}
+        <div ref={sentinel} />
+        {isFetchingNextPage && (
+          <div className="flex items-center justify-center gap-2 h-8 text-xs text-text-secondary">
+            <Spinner className="w-3 h-3" />
+          </div>
+        )}
+      </div>
+      <div className="shrink-0 p-1 border-t border-overlay-border">
+        <button className="flex items-center gap-2.5 w-full h-8 px-2.5 rounded-md text-[13px] text-text hover:bg-hover transition-colors cursor-pointer" onClick={onOverview}>
+          <GitBranchIcon className="w-3.5 h-3.5 text-text-secondary" />
+          All commits, ranges and branches…
+        </button>
+      </div>
     </div>
   );
 }

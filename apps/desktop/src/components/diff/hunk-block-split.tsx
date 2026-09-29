@@ -9,7 +9,7 @@ import { HunkHeader, type ExpandControls } from './hunk-header';
 import { CommentLineNumber } from '../comments/comment-line-number';
 import { CommentThread } from '../comments/comment-thread';
 import { CommentFormRow } from '../comments/comment-form-row';
-import { UndoIcon } from '../icons/undo-icon';
+import { UndoIcon } from '../ui/icon';
 
 interface HunkBlockSplitProps {
   hunk: DiffHunk;
@@ -144,7 +144,7 @@ function SplitCell(props: {
         onCommentClick={onCommentClick}
       />
       <td
-        className={cn('px-3 whitespace-pre-wrap break-all border-r border-border-muted align-top', isSelected ? 'bg-diff-comment-bg' : contentBgClass)}
+        className={cn('px-3 whitespace-pre-wrap [overflow-wrap:anywhere] border-r border-border-muted align-top', isSelected ? 'bg-diff-comment-bg' : contentBgClass)}
         onMouseEnter={() => setContentHovered(true)}
         onMouseLeave={() => setContentHovered(false)}
       >
@@ -172,7 +172,7 @@ export function renderSplitRows(
     const rightNum = rightLine?.newLineNumber ?? null;
 
     result.push(
-      <tr key={`${keyPrefix}-${i}`} className="group/split-row font-mono text-sm leading-6">
+      <tr key={`${keyPrefix}-${i}`} className="group/split-row code-text">
         <SplitCell
           line={leftLine}
           side="left"
@@ -352,7 +352,7 @@ export function HunkBlockSplit(props: HunkBlockSplitProps) {
               <div className="absolute right-3 bottom-0 z-10 flex items-center gap-1.5 opacity-0 group-hover/undo:opacity-100 pointer-events-none group-hover/undo:pointer-events-auto">
                 <button
                   onClick={() => onRevertChange(hunk, group.startIndex, group.endIndex)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-deleted/40 bg-bg text-deleted hover:bg-deleted hover:text-white transition-colors cursor-pointer shadow-md"
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-md border border-deleted/40 bg-bg text-deleted hover:bg-deleted hover:text-white transition-colors cursor-pointer"
                   title="Undo this change"
                 >
                   <UndoIcon className="w-3 h-3" />

@@ -1,91 +1,201 @@
 @import "tailwindcss";
 
 @theme {
-  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono',
-    'Consolas', 'Menlo', monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans',
-    Helvetica, Arial, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, system-ui, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+
+  --text-xs: 12px;
+  --text-xs--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 20px;
+  --text-base: 14px;
+  --text-base--line-height: 20px;
+  --text-lg: 16px;
+  --text-lg--line-height: 24px;
 
   --color-bg: #ffffff;
-  --color-bg-secondary: #f6f8fa;
-  --color-bg-tertiary: #eaeef2;
-  --color-border: #d0d7de;
-  --color-border-muted: #d8dee4;
+  --color-bg-secondary: #f7f8fa;
+  --color-bg-tertiary: #eef0f3;
+  --color-frame: #eaecef;
+  --color-frame-border: #d6dae0;
+  --color-sidebar: #f6f7f9;
+  --color-border: #dee1e6;
+  --color-border-muted: #eaecef;
 
-  --color-text: #1f2328;
-  --color-text-secondary: #656d76;
-  --color-text-muted: #8b949e;
+  --color-text: #15181c;
+  --color-text-secondary: #4b535d;
+  --color-text-muted: #646c76;
 
-  --color-diff-add-bg: #dafbe1;
-  --color-diff-add-line: #ccffd8;
-  --color-diff-add-word: #abf2bc;
-  --color-diff-del-bg: #ffebe9;
-  --color-diff-del-line: #ffd7d5;
-  --color-diff-del-word: #ff818266;
-  --color-diff-hunk-bg: #ddf4ff;
-  --color-diff-hunk-text: #0969da;
-  --color-diff-expanded-bg: #f6fcff;
-  --color-diff-expanded-gutter: #edf7ff;
-  --color-diff-comment-bg: #fff8c5;
+  --color-diff-add-bg: #edfcf1;
+  --color-diff-add-line: #d9f6e1;
+  --color-diff-add-word: #b3eac2;
+  --color-diff-del-bg: #fef1f0;
+  --color-diff-del-line: #fcdfdd;
+  --color-diff-del-word: #f7bdbb;
+  --color-diff-hunk-bg: #f3f6fa;
+  --color-diff-hunk-text: #52637c;
+  --color-diff-expanded-bg: #f9fafc;
+  --color-diff-expanded-gutter: #f3f6fa;
+  --color-diff-comment-bg: #fff8d6;
   --color-diff-comment-gutter: #ecd364;
 
   --color-accent: #0969da;
-  --color-accent-hover: #0550ae;
+  --color-claude: #c96442;
+  --color-claude-hover: #b5563a;
+  --color-primary: #0969da;
+  --color-primary-hover: #0757b8;
+  --color-pull: #0969da;
+  --color-push: #1a7f37;
+  --color-accent-hover: #0757b8;
 
   --color-added: #1a7f37;
   --color-deleted: #cf222e;
   --color-modified: #9a6700;
   --color-renamed: #0969da;
 
-  --color-hover: rgba(208, 215, 222, 0.32);
-  --color-active: rgba(208, 215, 222, 0.48);
+  --color-raised: #ffffff;
+  --color-control-border: #d2d6dc;
+  --color-control-hover: #f4f5f7;
+  --color-toggle: #ffffff;
+  --color-overlay: #ffffff;
+  --color-overlay-border: #d2d6dc;
+  --color-fill: #eceef1;
+  --color-fill-hover: #e3e6ea;
+  --color-hover: rgba(16, 24, 40, 0.05);
+  --color-active: rgba(16, 24, 40, 0.085);
+  --color-selected: rgba(16, 24, 40, 0.075);
+  --color-focus: #8b95a1;
 
-  --shadow-sticky: 0 1px 2px rgba(27, 31, 36, 0.08);
+  --shadow-sticky: 0 1px 0 var(--color-border);
   --shadow-md: 0 2px 8px rgba(140, 149, 159, 0.12);
+  --shadow-overlay: 0 8px 24px rgba(66, 74, 83, 0.14), 0 1px 3px rgba(66, 74, 83, 0.08);
 }
 
 [data-theme='dark'] {
-  --color-bg: #171717;
-  --color-bg-secondary: #1a1a1a;
-  --color-bg-tertiary: #262626;
-  --color-border: #262626;
-  --color-border-muted: #1f1f1f;
+  --color-bg: #19191c;
+  --color-bg-secondary: #1e1e21;
+  --color-bg-tertiary: #27272b;
+  --color-frame: #0e0e10;
+  --color-frame-border: #27272b;
+  --color-sidebar: #141416;
+  --color-border: #2d2d32;
+  --color-border-muted: #242428;
 
-  --color-text: #e5e5e5;
-  --color-text-secondary: #a3a3a3;
-  --color-text-muted: #737373;
+  --color-text: #ededf0;
+  --color-text-secondary: #b5b5bd;
+  --color-text-muted: #8f8f99;
 
-  --color-diff-add-bg: rgba(34, 197, 94, 0.1);
-  --color-diff-add-line: rgba(34, 197, 94, 0.18);
-  --color-diff-add-word: rgba(34, 197, 94, 0.35);
-  --color-diff-del-bg: rgba(239, 68, 68, 0.1);
-  --color-diff-del-line: rgba(239, 68, 68, 0.18);
-  --color-diff-del-word: rgba(239, 68, 68, 0.35);
-  --color-diff-hunk-bg: rgba(96, 165, 250, 0.1);
-  --color-diff-hunk-text: #60a5fa;
-  --color-diff-expanded-bg: rgba(96, 165, 250, 0.05);
-  --color-diff-expanded-gutter: rgba(96, 165, 250, 0.08);
+  --color-diff-add-bg: #182b1f;
+  --color-diff-add-line: #15261b;
+  --color-diff-add-word: #27553a;
+  --color-diff-del-bg: #2f191b;
+  --color-diff-del-line: #291617;
+  --color-diff-del-word: #5e2629;
+  --color-diff-hunk-bg: #1f2024;
+  --color-diff-hunk-text: #8e9bb2;
+  --color-diff-expanded-bg: #1c1c1f;
+  --color-diff-expanded-gutter: #1f2024;
   --color-diff-comment-bg: rgba(234, 179, 8, 0.1);
   --color-diff-comment-gutter: rgba(234, 179, 8, 0.3);
 
-  --color-accent: #60a5fa;
-  --color-accent-hover: #93c5fd;
+  --color-accent: #3b82f6;
+  --color-claude: #e08a6d;
+  --color-claude-hover: #e89b80;
+  --color-primary: #3b82f6;
+  --color-primary-hover: #60a5fa;
+  --color-pull: #60a5fa;
+  --color-push: #4ade80;
+  --color-accent-hover: #60a5fa;
 
   --color-added: #4ade80;
   --color-deleted: #f87171;
-  --color-modified: #facc15;
+  --color-modified: #e3b341;
   --color-renamed: #60a5fa;
 
-  --color-hover: rgba(161, 161, 170, 0.1);
-  --color-active: rgba(161, 161, 170, 0.18);
+  --color-raised: #242428;
+  --color-control-border: #3a3a41;
+  --color-control-hover: #2c2c31;
+  --color-toggle: #3a3a41;
+  --color-overlay: #232327;
+  --color-overlay-border: #3a3a41;
+  --color-fill: #26262a;
+  --color-fill-hover: #2e2e33;
+  --color-hover: rgba(255, 255, 255, 0.055);
+  --color-active: rgba(255, 255, 255, 0.1);
+  --color-selected: rgba(255, 255, 255, 0.085);
+  --color-focus: #62626c;
 
-  --shadow-sticky: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-sticky: 0 1px 0 var(--color-border);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+:root {
+  --code-size: 13px;
+  --code-line: 22px;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+code,
+kbd,
+pre,
+.font-mono {
+  font-variant-ligatures: none;
+}
+
+.code-text {
+  font-family: var(--font-mono);
+  font-size: var(--code-size);
+  line-height: var(--code-line);
+  font-variant-ligatures: none;
+}
+
+td.diff-gutter {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+tr.bg-diff-add-bg > td.diff-gutter:not(.bg-diff-comment-gutter),
+td.diff-gutter.bg-diff-add-bg {
+  background-color: var(--color-diff-add-line);
+  color: color-mix(in srgb, var(--color-added) 75%, transparent);
+}
+
+tr.bg-diff-del-bg > td.diff-gutter:not(.bg-diff-comment-gutter),
+td.diff-gutter.bg-diff-del-bg {
+  background-color: var(--color-diff-del-line);
+  color: color-mix(in srgb, var(--color-deleted) 75%, transparent);
+}
+
+tr.bg-diff-add-bg > td.diff-gutter:first-child,
+td.diff-gutter.bg-diff-add-bg {
+  box-shadow: inset 2px 0 0 var(--color-added);
+}
+
+tr.bg-diff-del-bg > td.diff-gutter:first-child,
+td.diff-gutter.bg-diff-del-bg {
+  box-shadow: inset 2px 0 0 var(--color-deleted);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-border) var(--color-bg-secondary);
+  scrollbar-color: var(--color-border) transparent;
 }
 
 dialog {
@@ -99,12 +209,14 @@ dialog {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-bg-secondary);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-border);
-  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 6px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -141,6 +253,21 @@ dialog {
   to {
     transform: translateX(0);
     opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.18s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -190,9 +317,9 @@ dialog {
 
 /* GitHub-flavored markdown body */
 .gh-md-body {
-  padding: 32px;
+  padding: 24px 28px;
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.5;
   word-wrap: break-word;
   color: var(--color-text);

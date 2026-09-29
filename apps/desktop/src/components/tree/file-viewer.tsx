@@ -213,7 +213,7 @@ export function FileViewer(props: FileViewerProps) {
         />
         <td
           className={cn(
-            'px-4 py-0 font-mono text-[13px] leading-6 whitespace-pre',
+            'px-4 py-0 code-text whitespace-pre',
             highlightType === 'base' && 'bg-diff-comment-bg/40',
             highlightType === 'focus' && 'bg-diff-comment-bg',
             highlightType === 'selected' && 'bg-diff-comment-bg',

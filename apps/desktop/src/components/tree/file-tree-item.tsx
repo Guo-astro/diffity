@@ -1,10 +1,11 @@
 import type { TreeNode } from '../../lib/file-tree';
 import { cn } from '../../lib/cn';
-import { StatusBadge } from '../ui/status-badge';
-import { ChevronIcon } from '../icons/chevron-icon';
-import { FolderIcon } from '../icons/folder-icon';
-import { FileIcon } from '../icons/file-icon';
-import { CommentIcon } from '../icons/comment-icon';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { ChevronIcon, CollapseAllIcon, CopyIcon, EditorIcon, FileIcon, FolderIcon } from '../ui/icon';
+import { ContextMenu, MenuItem, MenuSeparator } from '../ui/popover';
+import { errorMessage, openInEditor } from '../../lib/api';
+import { useEditorName } from '../../hooks/use-editor-name';
 
 interface FileTreeItemProps {
   node: TreeNode;
@@ -17,6 +18,117 @@ interface FileTreeItemProps {
   onCollapseDir?: (path: string) => void;
   onExpandOnly?: (path: string) => void;
   onFileClick: (path: string) => void;
+}
+
+const INDENT = 12;
+const BASE_PADDING = 8;
+const CHEVRON = 16;
+
+const rowClass = 'relative flex items-center gap-1.5 w-full h-7 pr-2 rounded-md text-left text-[13px] cursor-pointer';
+
+export function statusLetter(status: string): { letter: string; className: string; label: string } {
+  switch (status) {
+    case 'added':
+      return { letter: 'A', className: 'text-added', label: 'Added' };
+    case 'deleted':
+      return { letter: 'D', className: 'text-deleted', label: 'Deleted' };
+    case 'renamed':
+      return { letter: 'R', className: 'text-renamed', label: 'Renamed' };
+    case 'copied':
+      return { letter: 'C', className: 'text-renamed', label: 'Copied' };
+    default:
+      return { letter: 'M', className: 'text-modified', label: 'Modified' };
+  }
+}
+
+export function CommentCount(props: { count: number }) {
+  const { count } = props;
+
+  if (count <= 0) {
+    return null;
+  }
+  return (
+    <span
+      className="shrink-0 min-w-4 h-4 px-1 rounded-full bg-fill text-text-secondary text-[10px] font-semibold leading-4 text-center tabular-nums"
+      title={`${count} open comment thread${count === 1 ? '' : 's'}`}
+    >
+      {count}
+    </span>
+  );
+}
+
+export function StatusLetter(props: { status: string }) {
+  const { status } = props;
+  const info = statusLetter(status);
+
+  return (
+    <span className={cn('shrink-0 w-3 text-center font-mono text-[11px] font-semibold', info.className)} title={info.label}>
+      {info.letter}
+    </span>
+  );
+}
+
+function IndentGuides(props: { depth: number }) {
+  const { depth } = props;
+
+  if (depth === 0) {
+    return null;
+  }
+  return (
+    <>
+      {Array.from({ length: depth }, (_, level) => (
+        <span
+          key={level}
+          aria-hidden
+          className="absolute top-0 bottom-0 w-px bg-border"
+          style={{ left: BASE_PADDING + level * INDENT + CHEVRON / 2 - 0.5 }}
+        />
+      ))}
+    </>
+  );
+}
+
+interface TreeItemMenuProps {
+  path: string;
+  position: { x: number; y: number } | null;
+  onClose: () => void;
+  onFocusFolder?: () => void;
+}
+
+function TreeItemMenu(props: TreeItemMenuProps) {
+  const { path, position, onClose, onFocusFolder } = props;
+  const editor = useEditorName();
+
+  const run = (action: () => void) => () => {
+    onClose();
+    action();
+  };
+
+  return (
+    <ContextMenu position={position} onClose={onClose}>
+      <MenuItem
+        icon={<EditorIcon size="sm" />}
+        label={`Open in ${editor}`}
+        onSelect={run(() => {
+          openInEditor(path).catch((error) => toast.error('Could not open the editor', { description: errorMessage(error) }));
+        })}
+      />
+      <MenuItem
+        icon={<CopyIcon size="sm" />}
+        label="Copy path"
+        onSelect={run(() => {
+          void navigator.clipboard.writeText(path);
+          toast.success('Path copied');
+        })}
+      />
+      {onFocusFolder && (
+        <>
+          <MenuSeparator />
+          <MenuItem icon={<CollapseAllIcon size="sm" />} label="Collapse other folders" onSelect={run(onFocusFolder)} />
+        </>
+      )}
+    </ContextMenu>
+  );
 }
 
 export function FileTreeItem(props: FileTreeItemProps) {
@@ -32,48 +144,48 @@ export function FileTreeItem(props: FileTreeItemProps) {
     onExpandOnly,
     onFileClick,
   } = props;
-  const paddingLeft = depth * 12 + 8;
+  const paddingLeft = BASE_PADDING + depth * INDENT;
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const openMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY });
+  };
 
   if (node.type === 'dir') {
     const isExpanded = expandedDirs.has(node.path);
 
-    const handleRowClick = () => {
-      onToggleDir(node.path);
-    };
-
-    const handleContextMenu = (e: React.MouseEvent) => {
-      if (!onExpandOnly) {
-        return;
-      }
-      e.preventDefault();
-      onExpandOnly(node.path);
-      onToggleDir(node.path);
-    };
-
-    const handleChevronClick = (e: React.MouseEvent) => {
-      e.stopPropagation();
+    const handleChevronClick = (event: React.MouseEvent) => {
+      event.stopPropagation();
       if (onCollapseDir && isExpanded) {
         onCollapseDir(node.path);
-      } else {
-        onToggleDir(node.path);
+        return;
       }
+      onToggleDir(node.path);
     };
 
     return (
       <>
         <button
-          className="flex items-center gap-1.5 w-full py-1 pr-2 text-left text-[13px] hover:bg-hover cursor-pointer"
-          style={{ paddingLeft: `${paddingLeft}px` }}
-          onClick={handleRowClick}
-          onContextMenu={handleContextMenu}
+          className={cn(rowClass, 'hover:bg-hover')}
+          style={{ paddingLeft }}
+          onClick={() => onToggleDir(node.path)}
+          onContextMenu={openMenu}
+          title={node.path}
         >
-          <span onClick={handleChevronClick} className="relative flex items-center rounded p-0.5 hover:bg-border/70 transition-colors">
+          <IndentGuides depth={depth} />
+          <span onClick={handleChevronClick} className="flex items-center justify-center w-4 h-4 shrink-0 rounded hover:bg-hover">
             <ChevronIcon expanded={isExpanded} />
           </span>
           <FolderIcon open={isExpanded} />
           <span className="truncate text-text">{node.name}</span>
         </button>
-        {isExpanded && node.children.map(child => (
+        <TreeItemMenu
+          path={node.path}
+          position={menu}
+          onClose={() => setMenu(null)}
+          onFocusFolder={onExpandOnly ? () => onExpandOnly(node.path) : undefined}
+        />
+        {isExpanded && node.children.map((child) => (
           <FileTreeItem
             key={child.path}
             node={child}
@@ -95,49 +207,34 @@ export function FileTreeItem(props: FileTreeItemProps) {
   const isActive = activeFile === node.path;
   const isReviewed = reviewedFiles.has(node.path);
   const threadCount = commentCountsByFile.get(node.path) ?? 0;
-  const hasComments = threadCount > 0;
 
   return (
+    <>
     <button
-      className={cn(
-        'flex items-center gap-1.5 w-full py-1 pr-2 text-left text-[13px] cursor-pointer border-l-2',
-        isActive
-          ? 'bg-active border-l-accent'
-          : 'border-l-transparent hover:bg-hover',
-        isReviewed && 'opacity-50'
-      )}
-      style={{ paddingLeft: `${paddingLeft + 15}px` }}
+      className={cn(rowClass, isActive ? 'bg-selected' : 'hover:bg-hover')}
+      style={{ paddingLeft: paddingLeft + CHEVRON + 6 }}
       onClick={() => onFileClick(node.path)}
-      onContextMenu={(e) => {
-        if (!onExpandOnly) {
-          return;
-        }
-        e.preventDefault();
-        const parts = node.path.split('/');
-        if (parts.length > 1) {
-          onExpandOnly(parts.slice(0, -1).join('/'));
-        } else {
-          onExpandOnly('');
-        }
-        onFileClick(node.path);
-      }}
+      title={node.path}
+      onContextMenu={openMenu}
     >
-      {node.file ? <StatusBadge status={node.file.status} compact /> : <FileIcon className="w-4 h-4 shrink-0 text-text-muted" />}
-      <span className={cn('flex-1 min-w-0 truncate text-text', isReviewed && 'line-through')}>
+      <IndentGuides depth={depth} />
+      <FileIcon className={cn('w-3.5 h-3.5 shrink-0', isActive ? 'text-text-secondary' : 'text-text-muted')} />
+      <span className={cn('flex-1 min-w-0 truncate', isActive ? 'text-text font-medium' : 'text-text', isReviewed && 'text-text-muted line-through decoration-text-muted/60')}>
         {node.name}
       </span>
-      {hasComments && (
-        <span
-          className="flex items-center gap-1 text-accent shrink-0"
-          title={`${threadCount} open comment thread${threadCount === 1 ? '' : 's'}`}
-        >
-          <CommentIcon className="w-3 h-3" />
-          <span className="text-[10px] font-semibold leading-none">{threadCount}</span>
-        </span>
-      )}
-      {isReviewed && (
-        <span className="text-added text-[10px] shrink-0" title="Viewed">&#10003;</span>
-      )}
+      <CommentCount count={threadCount} />
+      {isReviewed && <span className="text-added text-[11px] shrink-0" title="Viewed">&#10003;</span>}
+      {node.file && <StatusLetter status={node.file.status} />}
     </button>
+      <TreeItemMenu
+        path={node.path}
+        position={menu}
+        onClose={() => setMenu(null)}
+        onFocusFolder={onExpandOnly ? () => {
+          const parts = node.path.split('/');
+          onExpandOnly(parts.length > 1 ? parts.slice(0, -1).join('/') : '');
+        } : undefined}
+      />
+    </>
   );
 }

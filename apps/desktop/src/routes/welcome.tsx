@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { useHotkeys } from 'react-hotkeys-hook';
@@ -10,61 +9,19 @@ import * as tauri from '../lib/tauri';
 import { isTauri, modKey } from '../lib/platform';
 import { setRepoPath } from '../lib/api';
 import type { RecentRepo } from '../lib/types';
-import { openRepoInNewWindow, repoRoute } from '../lib/window';
 import { parsePrUrl, pickFolder, remoteMatches } from '../features/welcome/open-repo';
+import { openRepoAt, parentPath, useRecentRepos } from '../features/welcome/recent-repos';
+import { RepoBadge } from '../features/welcome/repo-badge';
 import { useTheme } from '../hooks/use-theme';
 import { BrandLogo } from '../components/icons/brand-logo';
-import { FolderOpenIcon } from '../components/icons/folder-open-icon';
-import { GitBranchIcon } from '../components/icons/git-branch-icon';
-import { GitHubIcon } from '../components/icons/github-icon';
-import { XIcon } from '../components/icons/x-icon';
-import { PlusIcon } from '../components/icons/plus-icon';
-import { SunIcon } from '../components/icons/sun-icon';
-import { MoonIcon } from '../components/icons/moon-icon';
 import { hasOverlayTitleBar } from '../components/layout/title-bar';
 import { hideStaticSplash } from '../components/layout/skeleton';
-import { SettingsIcon } from '../components/icons/settings-icon';
 import { openSettings } from '../lib/ui-store';
 import { cn } from '../lib/cn';
+import { buttonIcon, buttonPrimary, inputField } from '../components/ui/button-styles';
+import { DownloadIcon, FolderOpenIcon, GitHubIcon, GitPullRequestIcon, MoonIcon, SettingsIcon, SunIcon, XIcon } from '../components/ui/icon';
 
 dayjs.extend(relativeTime);
-
-const HIDDEN_KEY = 'welcome.hiddenRepos';
-
-function parseHidden(value: string | null | undefined): Record<string, string> {
-  if (!value) {
-    return {};
-  }
-  try {
-    const parsed = JSON.parse(value);
-    return typeof parsed === 'object' && parsed ? (parsed as Record<string, string>) : {};
-  } catch {
-    return {};
-  }
-}
-
-function useRecentRepos() {
-  const queryClient = useQueryClient();
-  const recent = useQuery({ queryKey: ['recent-repos'], queryFn: tauri.recentRepos });
-  const hiddenQuery = useQuery({ queryKey: ['setting', HIDDEN_KEY], queryFn: () => tauri.getSetting(HIDDEN_KEY) });
-  const hidden = parseHidden(hiddenQuery.data);
-  const repos = (recent.data ?? []).filter((repo) => {
-    const hiddenAt = hidden[repo.path];
-    return !hiddenAt || repo.lastOpenedAt > hiddenAt;
-  });
-
-  const remove = async (path: string) => {
-    const value = JSON.stringify({ ...hidden, [path]: new Date().toISOString() });
-    queryClient.setQueryData(['setting', HIDDEN_KEY], value);
-    try {
-      await tauri.setSetting(HIDDEN_KEY, value);
-    } catch (error) {
-      toast.error('Could not update recent repositories', { description: tauri.errorMessage(error) });
-    }
-  };
-
-  return { repos, all: recent.data ?? [], loading: recent.isLoading, remove };
-}
 
 function useFolderDrop(onDrop: (path: string) => void, setDragging: (dragging: boolean) => void) {
   useEffect(() => {
@@ -105,6 +62,7 @@ export function WelcomePage() {
   const { theme, toggleTheme } = useTheme();
   const recent = useRecentRepos();
   const [dragging, setDragging] = useState(false);
+  const [mode, setMode] = useState<'clone' | 'pr' | null>(null);
 
   useEffect(() => {
     setRepoPath(null);
@@ -112,24 +70,7 @@ export function WelcomePage() {
     hideStaticSplash();
   }, []);
 
-  const openRepo = async (path: string, newWindow = false, extra?: Record<string, string>) => {
-    try {
-      const info = await tauri.openRepo(path);
-      if (!info.isGit) {
-        toast.error(`${info.name} is not a Git repository`, {
-          description: 'Diffity reviews changes tracked by Git. Run `git init` in that folder, or pick the repository root.',
-        });
-        return;
-      }
-      if (newWindow) {
-        await openRepoInNewWindow(info.path, extra);
-        return;
-      }
-      navigate(repoRoute(info.path, extra));
-    } catch (error) {
-      toast.error('Could not open the folder', { description: `${tauri.errorMessage(error)}. It may have been moved or deleted.` });
-    }
-  };
+  const openRepo = (path: string, newWindow = false, extra?: Record<string, string>) => openRepoAt(path, navigate, { newWindow, extra });
 
   const openFolder = async (newWindow = false) => {
     const path = await pickFolder();
@@ -148,74 +89,63 @@ export function WelcomePage() {
 
   return (
     <div className="relative flex flex-col h-screen bg-bg text-text font-sans">
-      <div data-tauri-drag-region className={cn('flex items-center justify-end gap-1 h-11 shrink-0 px-3', hasOverlayTitleBar && 'pl-[92px]')}>
-        <button
-          onClick={openSettings}
-          className="p-1.5 rounded-md text-text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
-          title={`Settings (${modKey},)`}
-        >
+      <div data-tauri-drag-region className={cn('flex items-center justify-end gap-0.5 h-11 shrink-0 px-2', hasOverlayTitleBar && 'pl-[84px]')}>
+        <button onClick={openSettings} className={buttonIcon} title={`Settings (${modKey},)`}>
           <SettingsIcon className="w-4 h-4" />
         </button>
-        <button
-          onClick={toggleTheme}
-          className="p-1.5 rounded-md text-text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
-          title={theme === 'light' ? 'Dark mode' : 'Light mode'}
-        >
+        <button onClick={toggleTheme} className={buttonIcon} title={theme === 'light' ? 'Dark mode' : 'Light mode'}>
           {theme === 'light' ? <MoonIcon className="w-4 h-4" /> : <SunIcon className="w-4 h-4" />}
         </button>
       </div>
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-xl mx-auto px-6 pt-[6vh] pb-10 space-y-6">
+        <div className="max-w-[640px] mx-auto px-6 pt-[9vh] pb-12">
           <div className="flex items-center gap-3">
-            <BrandLogo className="w-10 h-10 shrink-0" />
-            <div>
-              <h1 className="text-lg font-semibold text-text">diffity</h1>
-              <p className="text-xs text-text-muted">Review diffs, leave comments and hand them to Claude Code.</p>
+            <BrandLogo className="w-9 h-9 shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-[17px] font-semibold text-text leading-6">diffity</h1>
+              <p className="text-[13px] text-text-secondary truncate">Review code and hand comments to Claude</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
+          <div className="mt-8 grid grid-cols-3 gap-3">
+            <StartCard
+              icon={<FolderOpenIcon className="w-[18px] h-[18px]" />}
+              title="Open folder"
+              detail={`A local Git repository · ${modKey}O`}
               onClick={() => void openFolder()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors cursor-pointer"
-            >
-              <FolderOpenIcon className="w-3.5 h-3.5" />
-              Open folder
-              <span className="ml-1 text-white/70">{modKey}O</span>
-            </button>
-            <button
-              onClick={() => void openFolder(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-bg-tertiary text-text-secondary hover:bg-hover hover:text-text transition-colors cursor-pointer"
-            >
-              <PlusIcon className="w-3.5 h-3.5" />
-              Open in new window
-            </button>
+            />
+            <StartCard
+              icon={<DownloadIcon className="w-[18px] h-[18px]" />}
+              title="Clone"
+              detail="From a GitHub URL"
+              active={mode === 'clone'}
+              onClick={() => setMode(mode === 'clone' ? null : 'clone')}
+            />
+            <StartCard
+              icon={<GitPullRequestIcon className="w-[18px] h-[18px]" />}
+              title="Pull request"
+              detail="Review a PR by URL"
+              active={mode === 'pr'}
+              onClick={() => setMode(mode === 'pr' ? null : 'pr')}
+            />
           </div>
-
-          <PrUrlCard recent={recent.all} onOpen={openRepo} />
-
-          <div className="border border-border rounded-lg bg-bg-secondary overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <div className="flex items-center gap-2">
-                <h3 className="font-medium text-text text-sm">Recent repositories</h3>
-                {recent.repos.length > 0 && (
-                  <span className="px-2 py-0.5 text-xs font-mono rounded-full bg-bg-tertiary text-text-secondary">
-                    {recent.repos.length}
-                  </span>
-                )}
-              </div>
-              {recent.repos.length > 0 && (
-                <span className="text-[11px] text-text-muted">{modKey}-click opens a new window</span>
-              )}
+          {mode === 'clone' && (
+            <div className="mt-3">
+              <CloneForm onCloned={(path) => void openRepo(path)} />
             </div>
-            <RecentList repos={recent.repos} loading={recent.loading} onOpen={openRepo} onRemove={recent.remove} />
-          </div>
+          )}
+          {mode === 'pr' && (
+            <div className="mt-3">
+              <PrUrlForm recent={recent.all} onOpen={openRepo} />
+            </div>
+          )}
 
-          <p className="text-center text-[11px] text-text-muted">Drop a folder on this window to open it</p>
+          <RecentList repos={recent.repos} loading={recent.loading} onOpen={openRepo} onRemove={recent.remove} />
+          <p className="mt-6 text-center text-xs text-text-muted">Or drop a folder anywhere on this window</p>
         </div>
       </div>
       {dragging && (
-        <div className="pointer-events-none absolute inset-3 flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-accent bg-accent/5 text-sm font-medium text-accent">
+        <div className="pointer-events-none absolute inset-3 flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-text-muted/50 bg-hover text-sm font-medium text-text">
           <FolderOpenIcon className="w-6 h-6" />
           Drop a folder to open it
         </div>
@@ -231,6 +161,17 @@ interface RecentListProps {
   onRemove: (path: string) => void;
 }
 
+function groupLabel(date: string) {
+  const days = dayjs().startOf('day').diff(dayjs(date).startOf('day'), 'day');
+  if (days <= 0) {
+    return 'Today';
+  }
+  if (days < 7) {
+    return 'This week';
+  }
+  return 'Earlier';
+}
+
 function RecentList(props: RecentListProps) {
   const { repos, loading, onOpen, onRemove } = props;
 
@@ -238,48 +179,58 @@ function RecentList(props: RecentListProps) {
     return <div className="h-24" />;
   }
   if (repos.length === 0) {
-    return <p className="text-sm text-text-muted px-4 py-3">No recent repositories yet</p>;
+    return (
+      <p className="mt-10 text-[13px] text-text-secondary px-3 py-6 rounded-lg bg-bg-secondary text-center">
+        Repositories you open show up here
+      </p>
+    );
+  }
+  const groups: { label: string; repos: RecentRepo[] }[] = [];
+  for (const repo of repos) {
+    const label = groupLabel(repo.lastOpenedAt);
+    const last = groups[groups.length - 1];
+    if (last && last.label === label) {
+      last.repos.push(repo);
+      continue;
+    }
+    groups.push({ label, repos: [repo] });
   }
   return (
-    <ul className="divide-y divide-border">
-      {repos.map((repo) => (
-        <RecentRow key={repo.path} repo={repo} onOpen={onOpen} onRemove={onRemove} />
+    <div className="mt-10 space-y-5">
+      {groups.map((group) => (
+        <section key={group.label}>
+          <h2 className="px-1 mb-1.5 text-xs font-medium text-text-secondary">{group.label}</h2>
+          <ul className="rounded-lg border border-border bg-bg p-1">
+            {group.repos.map((repo) => (
+              <RecentRow key={repo.path} repo={repo} onOpen={onOpen} onRemove={onRemove} />
+            ))}
+          </ul>
+        </section>
       ))}
-    </ul>
+    </div>
   );
 }
 
 function RecentRow(props: { repo: RecentRepo; onOpen: (path: string, newWindow?: boolean) => void; onRemove: (path: string) => void }) {
   const { repo, onOpen, onRemove } = props;
-  const { data: status } = useQuery({
-    queryKey: ['recent-status', repo.path],
-    queryFn: () => tauri.gitStatus(repo.path),
-    staleTime: 60_000,
-  });
 
   return (
-    <li className="group relative flex items-center hover:bg-bg-tertiary transition-colors">
+    <li className="group relative flex items-center rounded-md hover:bg-hover transition-colors">
       <button
         onClick={(event) => onOpen(repo.path, event.metaKey || event.ctrlKey)}
-        className="flex flex-1 min-w-0 items-center gap-3 px-4 py-2.5 text-left cursor-pointer"
+        className="flex flex-1 min-w-0 items-center gap-3 h-11 px-2 text-left cursor-pointer"
+        title={`${repo.path}\n${modKey}-click to open in a new window`}
       >
+        <RepoBadge name={repo.name} className="w-7 h-7 rounded-lg text-[11px]" />
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2 min-w-0">
-            <span className="text-sm font-medium text-text truncate">{repo.name}</span>
-            {status?.branch && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-diff-hunk-bg text-diff-hunk-text rounded font-mono text-[11px] shrink-0">
-                <GitBranchIcon className="w-3 h-3" />
-                {status.branch}
-              </span>
-            )}
-          </span>
-          <span className="block text-xs text-text-muted font-mono truncate mt-0.5">{repo.path.replace(/^\/Users\/[^/]+/, '~')}</span>
+          <span className="block text-[13px] font-medium text-text truncate">{repo.name}</span>
+          <span className="block text-xs text-text-muted truncate">{parentPath(repo.path)}</span>
         </span>
         <span className="text-xs text-text-muted shrink-0 group-hover:invisible">{dayjs(repo.lastOpenedAt).fromNow()}</span>
       </button>
       <button
         onClick={() => onRemove(repo.path)}
-        className="absolute right-3 p-1 rounded-md text-text-muted hover:text-text hover:bg-hover invisible group-hover:visible cursor-pointer"
+        className="absolute right-2 w-6 h-6 inline-flex items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-hover invisible group-hover:visible cursor-pointer"
         title="Remove from recent"
       >
         <XIcon className="w-3.5 h-3.5" />
@@ -288,7 +239,82 @@ function RecentRow(props: { repo: RecentRepo; onOpen: (path: string, newWindow?:
   );
 }
 
-function PrUrlCard(props: { recent: RecentRepo[]; onOpen: (path: string, newWindow?: boolean, extra?: Record<string, string>) => Promise<void> }) {
+function StartCard(props: { icon: ReactNode; title: string; detail: string; active?: boolean; onClick: () => void }) {
+  const { icon, title, detail, active = false, onClick } = props;
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'flex flex-col items-start gap-2.5 p-3.5 rounded-lg border text-left transition-colors cursor-pointer',
+        active ? 'border-control-border bg-selected' : 'border-border bg-bg hover:bg-hover',
+      )}
+    >
+      <span className="flex items-center justify-center w-8 h-8 rounded-md bg-fill text-text-secondary">{icon}</span>
+      <span>
+        <span className="block text-[13px] font-medium text-text">{title}</span>
+        <span className="block text-xs text-text-secondary">{detail}</span>
+      </span>
+    </button>
+  );
+}
+
+function CloneForm(props: { onCloned: (path: string) => void }) {
+  const { onCloned } = props;
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    if (!url.trim()) {
+      return;
+    }
+    const parent = await pickFolder();
+    if (!parent) {
+      return;
+    }
+    setBusy(true);
+    const id = toast.loading('Cloning…');
+    try {
+      const path = await tauri.gitClone(parent, url.trim());
+      toast.success('Cloned', { id, description: parentPath(path) });
+      onCloned(path);
+    } catch (error) {
+      toast.error('Could not clone', { id, description: tauri.errorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <div className="relative flex-1 min-w-0">
+        <GitHubIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+        <input
+          autoFocus
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          type="text"
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder="https://github.com/owner/repo or owner/repo"
+          className={cn(inputField, 'pl-8')}
+        />
+      </div>
+      <button type="submit" disabled={busy || !url.trim()} className={buttonPrimary} title="Choose where to put it, then clone">
+        {busy ? 'Cloning…' : 'Clone to…'}
+      </button>
+    </form>
+  );
+}
+
+function PrUrlForm(props: { recent: RecentRepo[]; onOpen: (path: string, newWindow?: boolean, extra?: Record<string, string>) => Promise<void> }) {
   const { recent, onOpen } = props;
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
@@ -320,35 +346,30 @@ function PrUrlCard(props: { recent: RecentRepo[]; onOpen: (path: string, newWind
   };
 
   return (
-    <div className="border border-border rounded-lg bg-bg-secondary overflow-hidden">
-      <div className="px-4 py-3 border-b border-border">
-        <h3 className="font-medium text-text text-sm">Open a pull request</h3>
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <div className="relative flex-1 min-w-0">
+        <GitHubIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
+        <input
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          type="text"
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+          autoFocus
+          placeholder="https://github.com/owner/repo/pull/123"
+          className={cn(inputField, 'pl-8')}
+        />
       </div>
-      <form
-        className="flex items-center gap-2 px-4 py-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        <div className="relative flex-1 min-w-0">
-          <GitHubIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
-          <input
-            type="text"
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://github.com/owner/repo/pull/123"
-            className="w-full text-sm bg-bg border border-border rounded-md pl-8 pr-3 py-1.5 text-text placeholder:text-text-muted focus:outline-none focus:border-accent"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={!url.trim() || busy}
-          className="px-3 py-1.5 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-        >
-          {busy ? 'Opening…' : 'Open PR'}
-        </button>
-      </form>
-    </div>
+      <button type="submit" disabled={busy || !url.trim()} className={buttonPrimary}>
+        {busy ? 'Opening…' : 'Open'}
+      </button>
+    </form>
   );
 }

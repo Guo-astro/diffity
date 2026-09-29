@@ -10,10 +10,6 @@ import { revertHunk as apiRevertHunk, revertFile as apiRevertFile, openInEditor,
 import { toast } from 'sonner';
 import { isRenderableFile } from '../../lib/file-types';
 import { RichDiffViewer } from './rich-diff-viewer';
-import { FileIcon } from '../icons/file-icon';
-import { CodeIcon } from '../icons/code-icon';
-import { PencilIcon } from '../icons/pencil-icon';
-import { UndoIcon } from '../icons/undo-icon';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { computeGaps, createContextLines, getExpandRange, type ExpandableGap } from '../../lib/context-expansion';
 import { fileContentOptions } from '../../queries/file';
@@ -22,18 +18,18 @@ import type { CommentThread } from '../comments/types';
 import { GENERAL_THREAD_FILE_PATH, DEFAULT_AUTHOR } from '../comments/types';
 import { useLineSelection } from '../../hooks/use-line-selection';
 import { useCopy } from '../../hooks/use-copy';
-import { CopyIcon } from '../icons/copy-icon';
-import { CheckIcon } from '../icons/check-icon';
-import { CommentIcon } from '../icons/comment-icon';
 import { DiffStats } from './diff-stats';
 import { Badge } from '../ui/badge';
 import { IconButton } from '../ui/icon-button';
 import { StatusBadge } from '../ui/status-badge';
+import { PathLabel } from '../ui/path-label';
 import { HunkWithGap } from './hunk-with-gap';
 import { OrphanedThreads } from '../comments/orphaned-threads';
 import { ThreadBadge } from '../ui/thread-badge';
 import { buildExpansionSyntaxMap, renderExpansionRows } from './render-expansion-rows';
 import { ExpandRow } from './expand-row';
+import { CheckIcon, ChevronIcon, CodeIcon, CommentIcon, CopyIcon, EditorIcon, FileIcon, UndoIcon } from '../ui/icon';
+import { useEditorName } from '../../hooks/use-editor-name';
 
 export const LARGE_DIFF_LINE_THRESHOLD = 200;
 
@@ -115,6 +111,7 @@ export function FileBlock(props: FileBlockProps) {
     }
   }, [filePath, onRevert]);
 
+  const editorName = useEditorName();
   const handleOpenInEditor = useCallback(() => {
     const firstLine = file.hunks[0]?.newStart;
     openInEditor(filePath, file.status === 'deleted' ? undefined : firstLine).catch((error) => {
@@ -413,37 +410,37 @@ export function FileBlock(props: FileBlockProps) {
 
   return (
     <div
-      className={`border rounded-lg mx-4 my-3 overflow-clip ${highlighted ? 'animate-flash-highlight-border' : 'border-border'}`}
+      className={`border rounded-lg overflow-clip scroll-mt-4 ${highlighted ? 'animate-flash-highlight-border' : 'border-border'}`}
       id={`file-${encodeURIComponent(filePath)}`}
       onAnimationEnd={onHighlightEnd}
     >
       <div
-        className={`group flex items-center gap-2 px-3 py-1.5 border-border text-xs sticky top-0 z-10 shadow-sticky ${highlighted ? 'animate-flash-highlight' : 'bg-bg-secondary'}`}
+        className={`group flex items-center gap-2 h-9 pl-2 pr-3 text-xs sticky top-0 z-10 ${collapsed ? '' : 'shadow-sticky'} ${highlighted ? 'animate-flash-highlight' : 'bg-bg-secondary'}`}
       >
         <IconButton
-          className="text-[10px] w-4 h-4 shrink-0"
+          className="w-5 h-5 shrink-0"
           onClick={() => onToggleCollapse(filePath)}
           title={collapsed ? 'Expand' : 'Collapse'}
         >
-          {collapsed ? '\u25b6' : '\u25bc'}
+          <ChevronIcon expanded={!collapsed} />
         </IconButton>
         <button
-          className="font-mono text-xs truncate text-left cursor-pointer hover:text-accent transition-colors"
+          className="flex min-w-0 font-mono text-[12.5px] text-left cursor-pointer hover:[&_span]:text-text transition-colors"
           onClick={() => onToggleCollapse(filePath)}
         >
           {showRename ? (
-            <>
+            <span className="truncate">
               <span className="line-through text-text-muted">{file.oldPath}</span>
               <span className="text-text-muted"> → </span>
-              <span>{file.newPath}</span>
-            </>
+              <PathLabel path={file.newPath} nameClassName="font-medium" />
+            </span>
           ) : (
-            filePath
+            <PathLabel path={filePath} nameClassName="font-medium" />
           )}
         </button>
         <button
           onClick={() => copyPath(filePath)}
-          className="shrink-0 text-text-muted hover:text-text transition-colors cursor-pointer"
+          className="shrink-0 text-text-muted hover:text-text transition-colors cursor-pointer opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
           title="Copy file path"
         >
           {pathCopied ? (
@@ -455,20 +452,20 @@ export function FileBlock(props: FileBlockProps) {
         {file.status !== 'modified' && <StatusBadge status={file.status} />}
         {file.isBinary && <Badge className="bg-bg-tertiary text-text-muted">Binary</Badge>}
         <div className="ml-auto flex items-center gap-2.5 shrink-0">
-          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
             {file.status !== 'deleted' && (
               <button
                 onClick={handleOpenInEditor}
-                className="text-text-muted hover:text-text transition-colors cursor-pointer"
-                title="Open in editor"
+                className="w-6 h-6 inline-flex items-center justify-center rounded-md text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
+                title={`Open in ${editorName}`}
               >
-                <PencilIcon className="w-3.5 h-3.5" />
+                <EditorIcon size="sm" />
               </button>
             )}
             {canRevert && (
               <button
                 onClick={() => setConfirmRevertFile(true)}
-                className="text-text-muted hover:text-deleted transition-colors cursor-pointer"
+                className="w-6 h-6 inline-flex items-center justify-center rounded-md text-text-secondary hover:text-deleted hover:bg-hover transition-colors cursor-pointer"
                 title="Revert file"
               >
                 <UndoIcon className="w-3.5 h-3.5" />
@@ -478,7 +475,7 @@ export function FileBlock(props: FileBlockProps) {
           {renderable && (
             <button
               onClick={() => setRichView(!richView)}
-              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors cursor-pointer ${richView ? 'bg-accent/10 text-accent' : 'text-text-muted hover:text-text hover:bg-hover'}`}
+              className={`inline-flex items-center gap-1 h-6 px-2 rounded-md text-xs transition-colors cursor-pointer ${richView ? 'bg-selected text-text' : 'text-text-secondary hover:text-text hover:bg-hover'}`}
               title={richView ? 'Show source diff' : 'Show rich diff'}
             >
               {richView ? <CodeIcon className="w-3 h-3" /> : <FileIcon className="w-3 h-3" />}
@@ -486,8 +483,8 @@ export function FileBlock(props: FileBlockProps) {
             </button>
           )}
           {(fileThreads.length + orphanedThreads.length) > 0 && (
-            <span className="text-[11px] text-text-muted flex items-center gap-1">
-              <CommentIcon className="w-3 h-3" />
+            <span className="text-xs text-text-secondary flex items-center gap-1">
+              <CommentIcon className="w-3.5 h-3.5" />
               {fileThreads.length + orphanedThreads.length}
               {orphanedThreads.length > 0 && (
                 <ThreadBadge variant="outdated" size="sm">
@@ -510,12 +507,12 @@ export function FileBlock(props: FileBlockProps) {
               ))}
             </div>
           </div>
-          <label className="flex items-center gap-1.5 text-[11px] text-text-muted cursor-pointer select-none hover:text-text transition-colors">
+          <label className="flex items-center gap-1.5 h-6 px-1.5 -mr-1.5 rounded-md text-xs text-text-secondary cursor-pointer select-none hover:text-text hover:bg-hover transition-colors">
             <input
               type="checkbox"
               checked={reviewed}
               onChange={() => onReviewedChange(filePath, !reviewed)}
-              className="accent-added cursor-pointer w-3 h-3"
+              className="accent-accent cursor-pointer w-3.5 h-3.5"
             />
             Viewed
           </label>
@@ -537,7 +534,7 @@ export function FileBlock(props: FileBlockProps) {
             <div className="flex items-center justify-center gap-3 py-6 px-4 text-sm text-text-muted">
               <span>Large diff not rendered — {totalLines} lines</span>
               <button
-                className="text-accent hover:underline cursor-pointer font-medium"
+                className="text-text underline decoration-text-muted/50 underline-offset-2 cursor-pointer font-medium"
                 onClick={() => setLargeDiffExpanded(true)}
               >
                 Load diff
@@ -554,15 +551,15 @@ export function FileBlock(props: FileBlockProps) {
             <table className="w-full border-collapse table-fixed">
               {viewMode === 'split' ? (
                 <colgroup>
-                  <col className="w-12.5" />
-                  <col className="w-[calc(50%-50px)]" />
-                  <col className="w-12.5" />
+                  <col className="w-12" />
+                  <col className="w-[calc(50%-48px)]" />
+                  <col className="w-12" />
                   <col />
                 </colgroup>
               ) : (
                 <colgroup>
-                  <col className="w-12.5" />
-                  <col className="w-12.5" />
+                  <col className="w-12" />
+                  <col className="w-12" />
                   <col className="w-5" />
                   <col />
                 </colgroup>

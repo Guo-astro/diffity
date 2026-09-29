@@ -3,9 +3,9 @@ import { GENERAL_THREAD_FILE_PATH, isThreadResolved, DEFAULT_AUTHOR } from './ty
 import type { CommentThread as CommentThreadType } from './types';
 import type { CommentActions } from '../../hooks/use-comment-actions';
 import { CommentForm } from './comment-form';
-import { CommentIcon } from '../icons/comment-icon';
 import { ThreadBadge } from '../ui/thread-badge';
 import { ThreadCard } from './thread-card';
+import { ChevronIcon, CommentIcon } from '../ui/icon';
 
 interface GeneralCommentsProps {
   threads: CommentThreadType[];
@@ -20,13 +20,13 @@ export function GeneralComments(props: GeneralCommentsProps) {
   const [showForm, setShowForm] = useState(false);
 
   return (
-    <div className={`rounded-lg mx-4 mt-4 overflow-hidden ${threads.length > 0 ? 'bg-accent/5' : 'bg-bg-secondary'}`}>
-      <div className="flex items-center gap-2 px-3 py-2 text-sm select-none">
+    <div className="rounded-lg overflow-hidden border border-border bg-bg">
+      <div className="flex items-center gap-1.5 h-9 pl-2 pr-3 text-[13px] bg-bg-secondary select-none">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="text-[10px] w-5 h-5 shrink-0 flex items-center justify-center text-text-muted cursor-pointer"
+          className="w-5 h-5 shrink-0 flex items-center justify-center rounded hover:bg-hover cursor-pointer"
         >
-          {isExpanded ? '\u25bc' : '\u25b6'}
+          <ChevronIcon expanded={isExpanded} />
         </button>
         <button
           onClick={() => setIsExpanded(!isExpanded)}
@@ -35,7 +35,7 @@ export function GeneralComments(props: GeneralCommentsProps) {
           <CommentIcon className="w-3.5 h-3.5 text-text-muted" />
           <span className="text-text-secondary">General comments</span>
           {threads.length > 0 && (
-            <span className="text-xs font-medium bg-accent/15 text-accent px-1.5 py-0.5 rounded-full">{threads.length}</span>
+            <span className="text-[11px] leading-4 font-medium bg-active text-text-secondary px-1.5 rounded-full">{threads.length}</span>
           )}
         </button>
         <div className="flex-1" />
@@ -45,13 +45,13 @@ export function GeneralComments(props: GeneralCommentsProps) {
             setIsExpanded(true);
             setShowForm(true);
           }}
-          className="text-xs text-accent hover:text-accent-hover transition-colors cursor-pointer"
+          className="h-7 px-2.5 -mr-1.5 rounded-md text-[13px] text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
         >
           Add comment
         </button>
       </div>
       {isExpanded && (
-        <div className="bg-bg rounded-md mx-1.5 mb-1.5">
+        <div className="bg-bg border-t border-border">
           {showForm && (
             <div className="p-3">
               <CommentForm

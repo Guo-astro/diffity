@@ -11,16 +11,18 @@ interface ReviewStateValue {
   enabled: boolean;
   sessionId: string | null;
   pendingReview: Review | null;
+  /** A GitHub pull request is checked out: comments can be drafted and posted as one review. */
+  prMode: boolean;
 }
 
-const ReviewStateContext = createContext<ReviewStateValue>({ enabled: false, sessionId: null, pendingReview: null });
+const ReviewStateContext = createContext<ReviewStateValue>({ enabled: false, sessionId: null, pendingReview: null, prMode: false });
 
-export function ReviewStateProvider(props: { sessionId: string | null; children: ReactNode }) {
-  const { sessionId, children } = props;
+export function ReviewStateProvider(props: { sessionId: string | null; prMode?: boolean; children: ReactNode }) {
+  const { sessionId, prMode = false, children } = props;
   const pendingReview = usePendingReview(sessionId);
 
   return (
-    <ReviewStateContext.Provider value={{ enabled: sessionId !== null, sessionId, pendingReview }}>
+    <ReviewStateContext.Provider value={{ enabled: sessionId !== null, sessionId, pendingReview, prMode }}>
       {children}
     </ReviewStateContext.Provider>
   );
@@ -39,10 +41,13 @@ export function usePendingReview(sessionId: string | null): Review | null {
   return query.data ?? null;
 }
 
+/** `none` still answers @claude mentions; `skip` sends nothing (the caller starts its own run). */
+export type ClaudeScope = 'all' | 'mentions' | 'none' | 'skip';
+
 export interface SubmitReviewInput {
   body: string;
   verdict: ReviewVerdict | null;
-  sendToClaude: boolean;
+  claude: ClaudeScope;
   prNumber: number | null;
 }
 
@@ -63,9 +68,12 @@ function successTitle(review: Review, pushed: boolean, claude: boolean): string 
   return count > 0 ? `Published ${count} ${count === 1 ? 'comment' : 'comments'}` : 'Note published';
 }
 
-function triggerClaude(review: Review, sendToClaude: boolean): string | null {
+function triggerClaude(review: Review, scope: ClaudeScope): string | null {
   const context = { repoPath: getRepoPath(), sessionId: review.sessionId };
-  if (sendToClaude || review.bodyMentionsAgent) {
+  if (scope === 'skip') {
+    return null;
+  }
+  if (scope === 'all') {
     enqueueClaude({ kind: 'reviewFeedback', reviewId: review.id }, context);
     return 'Claude is working through it (see the status in the toolbar)';
   }
@@ -102,11 +110,11 @@ export function useReviewActions(sessionId: string | null) {
           });
         }
       }
-      return { review, pushed, sendToClaude: input.sendToClaude };
+      return { review, pushed, claude: input.claude };
     },
     onSuccess: (result) => {
       refresh();
-      const claude = triggerClaude(result.review, result.sendToClaude);
+      const claude = triggerClaude(result.review, result.claude);
       const count = result.review.commentCount;
       const parts = [count > 0 ? `${count} ${count === 1 ? 'comment' : 'comments'}` : null, result.pushed, claude].filter(Boolean);
       toast.success(successTitle(result.review, result.pushed !== null, claude !== null), { description: parts.join(' · ') || undefined });

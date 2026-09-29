@@ -4,13 +4,14 @@ import { HashRouter, Navigate, Route, Routes } from 'react-router';
 import { Toaster } from 'sonner';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { queryClient } from './lib/query-client';
-import { isTauri } from './lib/platform';
+import { isMac, isTauri } from './lib/platform';
+import { invoke } from '@tauri-apps/api/core';
 import { WelcomePage } from './routes/welcome';
 import { RepoLayout } from './routes/repo-layout';
 import { DiffRoute } from './routes/diff';
 import { TreeRoute } from './routes/tree';
 import { OverviewRoute } from './routes/overview';
-import { SettingsDialog } from './components/layout/settings-dialog';
+import { SettingsDialog } from './features/settings/settings-dialog';
 import { ShortcutModal } from './components/layout/shortcut-modal';
 import { TopProgress, hideStaticSplash } from './components/layout/skeleton';
 import { closeShortcuts, openSettings, openShortcuts, useUi } from './lib/ui-store';
@@ -49,6 +50,38 @@ function GlobalShortcutModal() {
   return <ShortcutModal onClose={closeShortcuts} />;
 }
 
+function useWindowChrome() {
+  useEffect(() => {
+    if (!isTauri || !isMac) {
+      return;
+    }
+    const timers: number[] = [];
+    const realign = () => {
+      for (const delay of [0, 150, 500]) {
+        timers.push(window.setTimeout(() => {
+          invoke('realign_window_chrome').catch(() => undefined);
+        }, delay));
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        realign();
+      }
+    };
+    window.addEventListener('focus', realign);
+    window.addEventListener('blur', realign);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', realign);
+      window.removeEventListener('blur', realign);
+      document.removeEventListener('visibilitychange', onVisibility);
+      for (const timer of timers) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, []);
+}
+
 function useExternalLinks() {
   useEffect(() => {
     if (!isTauri) {
@@ -70,6 +103,7 @@ function useExternalLinks() {
 
 export function App() {
   useExternalLinks();
+  useWindowChrome();
   useGlobalShortcuts();
 
   useEffect(() => {
@@ -96,12 +130,22 @@ export function App() {
       <TopProgress />
       <Toaster
         position="bottom-right"
+        offset={{ bottom: 40, right: 16 }}
+        gap={8}
         toastOptions={{
           style: {
-            background: 'var(--color-bg-secondary)',
+            background: 'var(--color-overlay)',
             color: 'var(--color-text)',
-            border: '1px solid var(--color-border)',
+            border: '1px solid var(--color-overlay-border)',
+            borderRadius: '10px',
+            boxShadow: 'none',
             fontSize: '13px',
+            fontFamily: 'var(--font-sans)',
+            padding: '12px 14px',
+          },
+          classNames: {
+            description: '!text-text-secondary !text-xs',
+            actionButton: '!bg-raised !text-text !border !border-control-border hover:!bg-control-hover !h-6 !px-2 !rounded-md !text-xs !font-medium',
           },
         }}
       />

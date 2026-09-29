@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useCurrentViewRef } from '../../hooks/use-current-view';
 import { create } from 'zustand';
@@ -9,17 +9,12 @@ import { threadPath } from '../../lib/thread-location';
 import { groupThreads } from '../../lib/repo-thread-groups';
 import { TREE_REF, type RepoThread } from '../../lib/types';
 import { cn } from '../../lib/cn';
-import { CommentIcon } from '../../components/icons/comment-icon';
-import { SparkleIcon } from '../../components/icons/sparkle-icon';
-import { XIcon } from '../../components/icons/x-icon';
-import { GitCommitIcon } from '../../components/icons/git-commit-icon';
-import { GitCompareIcon } from '../../components/icons/git-compare-icon';
-import { PencilIcon } from '../../components/icons/pencil-icon';
-import { FileIcon } from '../../components/icons/file-icon';
 import { ThreadBadge } from '../../components/ui/thread-badge';
 import { SegmentedToggle } from '../../components/ui/segmented-toggle';
 import { formatRelativeTime } from '../../components/comments/comment-bubble';
 import { GENERAL_THREAD_FILE_PATH } from '../../components/comments/types';
+import { InlineMarkdown } from '../../components/comments/inline-markdown';
+import { ChevronIcon, CommentIcon, FileIcon, GitCommitIcon, GitCompareIcon, PencilIcon, SparkleIcon, XIcon } from '../../components/ui/icon';
 
 type StatusFilter = 'open' | 'resolved' | 'all';
 type AuthorFilter = 'all' | 'agent' | 'user';
@@ -32,6 +27,24 @@ interface PanelFilters {
 const useFilters = create<PanelFilters>(() => ({ status: 'open', author: 'all' }));
 
 const PATH_PREFIX = '__path__:';
+const GROUPS_KEY = 'diffity-comment-groups';
+
+function readGroupState(): Record<string, boolean> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? '{}');
+    return typeof parsed === 'object' && parsed ? (parsed as Record<string, boolean>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeGroupState(state: Record<string, boolean>) {
+  try {
+    localStorage.setItem(GROUPS_KEY, JSON.stringify(state));
+  } catch {
+    return;
+  }
+}
 
 function matchesStatus(thread: RepoThread, status: StatusFilter): boolean {
   if (status === 'all') {
@@ -89,7 +102,7 @@ export function anchorNote(thread: RepoThread): string | null {
 
 function ViewIcon(props: { viewRef: string }) {
   const { viewRef } = props;
-  const className = 'w-3.5 h-3.5 shrink-0 text-text-muted';
+  const className = 'w-3.5 h-3.5 text-text-muted';
 
   if (viewRef === TREE_REF) {
     return <FileIcon className={className} />;
@@ -138,15 +151,15 @@ function ThreadRow(props: ThreadRowProps) {
         }
       }}
       className={cn(
-        'group flex gap-2.5 px-3 py-2 rounded-md transition-colors outline-none focus-visible:ring-1 focus-visible:ring-accent',
-        openable ? 'hover:bg-hover cursor-pointer' : 'opacity-70',
+        'group flex gap-2.5 px-3 py-2.5 rounded-lg bg-bg border border-border transition-colors outline-none focus-visible:border-focus',
+        openable ? 'hover:border-control-border hover:bg-bg-secondary cursor-pointer' : 'opacity-70',
       )}
       title={openable ? 'Open this comment' : undefined}
     >
       <span
         className={cn(
-          'mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-white text-[10px] font-medium',
-          isAgent ? 'bg-accent' : 'bg-text-muted',
+          'mt-0.5 w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[10px] font-semibold',
+          isAgent ? 'bg-claude/12 text-claude' : 'bg-fill text-text-secondary',
         )}
       >
         {isAgent ? <SparkleIcon className="w-3 h-3" /> : thread.authorName.charAt(0).toUpperCase()}
@@ -154,7 +167,7 @@ function ThreadRow(props: ThreadRowProps) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5 min-w-0">
           {line && <span className="font-mono text-[11px] text-text-secondary shrink-0">{line}</span>}
-          <span className="text-[11px] text-text-muted truncate">{thread.authorName}</span>
+          <span className="text-xs text-text-secondary truncate">{thread.authorName}</span>
           {thread.severity && (
             <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-bg-tertiary text-text-secondary shrink-0">
               {severityLabels[thread.severity] ?? thread.severity}
@@ -163,22 +176,22 @@ function ThreadRow(props: ThreadRowProps) {
           {thread.pending && <ThreadBadge variant="pending" />}
           {thread.status !== 'open' && <ThreadBadge variant={thread.status} />}
           {thread.anchor !== 'current' && <ThreadBadge variant="outdated" />}
-          <span className="ml-auto text-[11px] text-text-muted shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
+          <span className="ml-auto text-xs text-text-muted shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
         </div>
-        <p className="text-xs text-text line-clamp-2 mt-0.5 break-words">{thread.excerpt || 'Comment'}</p>
+        <InlineMarkdown text={thread.excerpt || 'Comment'} className="text-[13px] leading-5 text-text line-clamp-2 mt-0.5" />
         {(thread.replyCount > 0 || note) && (
-          <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1 text-[11px] text-text-muted">
+          <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1 text-xs text-text-secondary">
             {thread.replyCount > 0 && (
               <span>{thread.replyCount} repl{thread.replyCount === 1 ? 'y' : 'ies'}</span>
             )}
-            {note && <span className="text-orange-700 dark:text-orange-300">{note}</span>}
+            {note && <span className="text-text-secondary">{note}</span>}
             {thread.movedTo && (
               <button
                 onClick={(event) => {
                   event.stopPropagation();
                   onOpenCommit(thread);
                 }}
-                className="text-accent hover:underline cursor-pointer"
+                className="text-text-secondary underline decoration-text-muted/40 underline-offset-2 hover:text-text cursor-pointer"
                 title={thread.movedTo.subject}
               >
                 View in commit {thread.movedTo.shortSha}
@@ -240,7 +253,7 @@ export function CommentsPanel() {
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="h-full w-[460px] max-w-[92vw] bg-bg border-l border-border shadow-2xl flex flex-col outline-none animate-slide-in-right"
+        className="h-full w-[460px] max-w-[92vw] bg-sidebar border-l border-frame-border flex flex-col outline-none animate-slide-in-right"
       >
         <CommentsPanelBody />
       </div>
@@ -286,6 +299,23 @@ function CommentsPanelBody() {
     navigate(`/r/${encodeURIComponent(repoPath)}/diff?${params.toString()}`);
   };
 
+  const [groupState, setGroupState] = useState(readGroupState);
+  const isGroupOpen = (group: (typeof groups)[number]) => {
+    const stored = groupState[`${repoPath}\n${group.ref}`];
+    if (stored !== undefined) {
+      return stored;
+    }
+    if (group.ref === currentRef) {
+      return true;
+    }
+    return group.files.some((file) => file.threads.some((thread) => thread.status === 'open' && thread.authorType === 'agent'));
+  };
+  const toggleGroup = (group: (typeof groups)[number]) => {
+    const next = { ...groupState, [`${repoPath}\n${group.ref}`]: !isGroupOpen(group) };
+    setGroupState(next);
+    writeGroupState(next);
+  };
+
   const openView = (ref: string) => {
     closeComments();
     navigate(threadPath(repoPath, { ref }));
@@ -293,21 +323,21 @@ function CommentsPanelBody() {
 
   return (
     <>
-      <div className="flex items-center justify-between px-4 pt-3 pb-2" data-tauri-drag-region>
+      <div className="flex items-center justify-between h-12 px-4" data-tauri-drag-region>
         <div className="flex items-center gap-2">
-          <CommentIcon className="w-4 h-4 text-text-muted" />
-          <h2 className="text-sm font-semibold text-text">Comments</h2>
-          <span className="text-xs text-text-muted">in every view of this repository</span>
+          <CommentIcon size="md" className="text-text-secondary" />
+          <h2 className="text-[15px] font-semibold text-text">Comments</h2>
+          <span className="text-xs text-text-secondary">across this repository</span>
         </div>
         <button
           onClick={closeComments}
-          className="p-1 rounded-md text-text-muted hover:text-text hover:bg-hover cursor-pointer"
+          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-text-secondary hover:text-text hover:bg-hover cursor-pointer"
           title="Close (Esc)"
         >
-          <XIcon className="w-4 h-4" />
+          <XIcon size="md" />
         </button>
       </div>
-      <div className="flex items-center gap-2 px-4 pb-3 border-b border-border">
+      <div className="flex items-center gap-2 px-4 pb-3 border-b border-border-muted">
         <SegmentedToggle<StatusFilter>
           value={filters.status}
           onChange={(status) => useFilters.setState({ status })}
@@ -335,39 +365,52 @@ function CommentsPanelBody() {
         {!isLoading && !error && groups.length === 0 && (
           <div className="px-6 py-10 text-center text-xs text-text-muted leading-relaxed">{emptyMessage(filters, threads.length)}</div>
         )}
-        {groups.map((group) => (
-          <section key={group.ref} className="mb-2">
-            <div className="sticky top-0 z-10 flex items-center gap-2 px-4 py-1.5 bg-bg/95 backdrop-blur-sm">
-              <ViewIcon viewRef={group.ref} />
-              <span className="text-xs font-medium text-text truncate" title={group.ref}>{group.label}</span>
-              {group.ref === currentRef && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-accent/15 text-accent shrink-0">This view</span>
-              )}
-              <span className="text-[11px] text-text-muted shrink-0">{group.count}</span>
-              {group.ref !== currentRef && (
+        {groups.map((group) => {
+          const expanded = isGroupOpen(group);
+          return (
+            <section key={group.ref} className="mb-2">
+              <div className="sticky top-0 z-10 flex items-center gap-2 pl-2 pr-4 h-9 bg-sidebar">
                 <button
-                  onClick={() => openView(group.ref)}
-                  className="ml-auto text-[11px] text-accent hover:underline cursor-pointer shrink-0"
+                  onClick={() => toggleGroup(group)}
+                  aria-expanded={expanded}
+                  className="flex items-center gap-2 min-w-0 flex-1 h-7 px-2 rounded-md hover:bg-hover cursor-pointer text-left"
+                  title={expanded ? 'Collapse' : 'Expand'}
                 >
-                  Open view
+                  <ChevronIcon expanded={expanded} />
+                  <ViewIcon viewRef={group.ref} />
+                  <span className="text-xs font-medium text-text truncate" title={group.ref}>{group.label}</span>
+                  {group.ref === currentRef && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-fill text-text-secondary shrink-0">This view</span>
+                  )}
+                  <span className="text-xs text-text-muted shrink-0 tabular-nums">{group.count}</span>
                 </button>
-              )}
-            </div>
-            {group.files.map((file) => (
-              <div key={file.path} className="px-2">
-                <div className="px-2 pt-1.5 pb-0.5 font-mono text-[11px] text-text-secondary truncate" title={file.path}>
-                  {fileLabel(file.path)}
-                </div>
-                {file.threads.map((thread) => (
-                  <ThreadRow key={thread.id} thread={thread} onOpen={openThread} onOpenCommit={openCommit} />
-                ))}
+                {group.ref !== currentRef && (
+                  <button
+                    onClick={() => openView(group.ref)}
+                    className="h-6 px-2 -mr-1 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover cursor-pointer shrink-0"
+                  >
+                    Open view
+                  </button>
+                )}
               </div>
-            ))}
-          </section>
-        ))}
+              {expanded && group.files.map((file) => (
+                <div key={file.path} className="px-3">
+                  <div className="px-1 pt-2 pb-1.5 font-mono text-[11px] text-text-secondary truncate" title={file.path}>
+                    {fileLabel(file.path)}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {file.threads.map((thread) => (
+                      <ThreadRow key={thread.id} thread={thread} onOpen={openThread} onOpenCommit={openCommit} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </section>
+          );
+        })}
       </div>
-      <div className="px-4 py-2 border-t border-border text-[11px] text-text-muted">
-        Press <kbd className="px-1 py-0.5 bg-bg-secondary border border-border rounded font-mono">C</kbd> to toggle this panel
+      <div className="px-4 h-9 flex items-center gap-1 border-t border-border-muted text-xs text-text-muted">
+        Press <kbd className="px-1 py-0.5 bg-raised border border-control-border rounded font-sans text-[11px]">C</kbd> to toggle this panel
       </div>
     </>
   );

@@ -25,15 +25,10 @@ import { SvgPreview } from './svg-preview';
 import { PathComments } from '../comments/path-comments';
 import { CommentToolbarActions } from '../comments/comment-toolbar-actions';
 import { OptionsMenu } from '../layout/options-menu';
-import { TitleBar } from '../layout/title-bar';
-import { PageSwitcher } from '../layout/page-switcher';
-import { GitSyncActions } from '../layout/git-sync-actions';
-import { GitBranchIcon } from '../icons/git-branch-icon';
-import { StaleDiffBanner } from '../layout/stale-diff-banner';
+import { RepoTitle, TitleBar, Workspace } from '../layout/title-bar';
+import { StatusBar } from '../layout/status-bar';
 import { useTreeStaleness } from '../../hooks/use-tree-staleness';
 import { isRenderableFile, isMarkdownFile, isImageFile } from '../../lib/file-types';
-import { CodeIcon } from '../icons/code-icon';
-import { FileIcon } from '../icons/file-icon';
 import { SegmentedToggle } from '../ui/segmented-toggle';
 import { RepoImage } from './repo-image';
 import { openInEditor, errorMessage } from '../../lib/api';
@@ -42,12 +37,11 @@ import { focusThreadElement } from '../../lib/dom-utils';
 import { setFocusThread } from '../../lib/ui-store';
 import { ReviewStateProvider } from '../../features/review/review-state';
 import { ClaudeToolbar } from '../../features/claude/claude-toolbar';
-import { CommentsButton } from '../../features/comments/comments-button';
-import { OtherViewsBanner } from '../../features/comments/other-views-banner';
 import { FinishReview } from '../../features/review/finish-review';
-import { useRepoNav } from '../../hooks/use-repo';
-import { PencilIcon } from '../icons/pencil-icon';
 import { FileBlockSkeleton, hideStaticSplash } from '../layout/skeleton';
+import { CodeIcon, EditorIcon, FileIcon } from '../ui/icon';
+import { useEditorName } from '../../hooks/use-editor-name';
+import { modKey } from '../../lib/platform';
 
 function formatTreeThreadsForCopy(threads: CommentThread[]): string {
   const unresolvedThreads = threads.filter(
@@ -102,7 +96,6 @@ export function TreePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { theme, toggleTheme } = useTheme();
   const queryClient = useQueryClient();
-  const nav = useRepoNav();
   const { isStale, resetStaleness } = useTreeStaleness();
 
   const navPath = searchParams.get('path') || '';
@@ -316,11 +309,25 @@ export function TreePage() {
     return formatTreeThreadsForCopy(threads);
   }, [threads]);
 
+  const editorName = useEditorName();
+
   const handleOpenInEditor = useCallback(() => {
     openInEditor(navPath).catch((error) => {
       toast.error('Could not open the editor', { description: errorMessage(error) });
     });
   }, [navPath]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.key.toLowerCase() !== 'e') {
+        return;
+      }
+      event.preventDefault();
+      handleOpenInEditor();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleOpenInEditor]);
 
   const breadcrumbs = useMemo(() => {
     if (!navPath) {
@@ -383,53 +390,30 @@ export function TreePage() {
 
   return (
     <ReviewStateProvider sessionId={sessionId}>
-    <div className='flex flex-col h-screen bg-bg text-text'>
+    <div className='flex flex-col h-screen bg-frame text-text'>
       <TitleBar>
-        <div className='flex items-center gap-2.5 min-w-0 shrink'>
-          {info?.name && (
-            <button
-              className='font-semibold text-text text-sm truncate hover:text-accent transition-colors cursor-pointer'
-              onClick={nav.toOverview}
-              title='Repository overview'
-            >
-              {info.name}
-            </button>
-          )}
-          {info?.branch && (
-            <span className='inline-flex items-center gap-1 px-1.5 py-0.5 bg-diff-hunk-bg text-diff-hunk-text rounded font-mono text-[11px] shrink-0'>
-              <GitBranchIcon className='w-3 h-3' />
-              {info.branch}
-            </span>
-          )}
-          <PageSwitcher current='tree' />
-          <span className='text-text-muted truncate hidden lg:inline'>
-            All files in the working tree
-          </span>
+        <div data-tauri-drag-region className='flex items-center gap-2.5 min-w-0 shrink'>
+          <RepoTitle name={info?.name} />
         </div>
-        <div className='flex items-center gap-2 ml-auto shrink-0'>
-          <GitSyncActions />
-          <CommentsButton />
+        <div data-tauri-drag-region className='flex-1 min-w-2 self-stretch' />
+        <div className='flex items-center gap-2 shrink-0'>
           <CommentToolbarActions
             threads={threads}
             onScrollToThread={handleScrollToThread}
             onDeleteAllComments={commentActions.deleteAllThreads}
             formatForCopy={formatForCopy}
           />
-          <ClaudeToolbar diffRef={null} sessionId={sessionId} threads={threads} />
-          <FinishReview githubDetails={null} />
+          {threads.length > 0 && (
+            <>
+              <ClaudeToolbar diffRef={null} sessionId={sessionId} threads={threads} />
+              <FinishReview githubDetails={null} threads={threads} />
+            </>
+          )}
           <OptionsMenu theme={theme} onToggleTheme={toggleTheme} />
         </div>
       </TitleBar>
-
-      <OtherViewsBanner sessionId={sessionId} />
-      {isStale && (
-        <StaleDiffBanner
-          onRefresh={handleRefreshTree}
-          message='Files have changed since this tree was loaded'
-        />
-      )}
-
-      <div className='flex flex-1 overflow-hidden'>
+      <Workspace>
+      <div className='flex flex-1 min-h-0 overflow-hidden'>
         <TreeSidebar
           ref={searchInputRef}
           paths={paths}
@@ -439,18 +423,28 @@ export function TreePage() {
           onDirClick={handleDirClick}
         />
 
-        <main ref={mainRef} className='flex-1 overflow-y-auto p-6'>
+        <main ref={mainRef} className='flex-1 min-w-0 overflow-y-auto px-6 pt-4 pb-8'>
           <PathComments
             pathKey={pathKey}
             threads={pathThreads}
             commentActions={commentActions}
             label={navPath ? navPath.split('/').pop()! : (info.name ?? 'root')}
             focusedThreadId={focusedThreadId}
+            actions={info?.editor === 'vscode' && (
+              <button
+                className='w-7 h-7 inline-flex items-center justify-center rounded-md text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer'
+                onClick={handleOpenInEditor}
+                title={`Open in ${editorName} (${modKey}⇧E)`}
+                aria-label={`Open in ${editorName}`}
+              >
+                <EditorIcon size='md' />
+              </button>
+            )}
           >
             <button
               className={
                 breadcrumbs.length > 0
-                  ? 'text-accent hover:underline cursor-pointer'
+                  ? 'text-text-secondary hover:text-text cursor-pointer'
                   : 'text-text font-medium'
               }
               onClick={() => handleDirClick('')}
@@ -464,7 +458,7 @@ export function TreePage() {
                   <span className='text-text font-medium'>{crumb.name}</span>
                 ) : (
                   <button
-                    className='text-accent hover:underline cursor-pointer'
+                    className='text-text-secondary hover:text-text cursor-pointer'
                     onClick={() => handleDirClick(crumb.path)}
                   >
                     {crumb.name}
@@ -473,7 +467,7 @@ export function TreePage() {
               </span>
             ))}
             {isFileMode && fileContent && isRenderableFile(navPath) && (
-              <div className='ml-3 -mr-2'>
+              <div className='ml-3'>
                 <SegmentedToggle
                   options={[
                     {
@@ -492,15 +486,6 @@ export function TreePage() {
                 />
               </div>
             )}
-            {info?.editor === 'vscode' && (
-              <button
-                className='ml-3 shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-bg-tertiary text-xs text-text-secondary hover:bg-hover hover:text-text cursor-pointer transition-colors'
-                onClick={handleOpenInEditor}
-              >
-                <PencilIcon className='w-3 h-3' />
-                Open in Editor
-              </button>
-            )}
           </PathComments>
 
           {isFileMode ? (
@@ -516,6 +501,11 @@ export function TreePage() {
           )}
         </main>
       </div>
+      </Workspace>
+      <StatusBar
+        sessionId={sessionId}
+        stale={isStale ? { onRefresh: handleRefreshTree, message: 'Files changed on disk' } : null}
+      />
     </div>
     </ReviewStateProvider>
   );

@@ -2,12 +2,9 @@ import { useState } from 'react';
 import { useCopy } from '../../hooks/use-copy';
 import { useThreadNavigation } from '../../hooks/use-thread-navigation';
 import type { CommentThread } from './types';
-import { CopyIcon } from '../icons/copy-icon';
-import { CheckIcon } from '../icons/check-icon';
-import { ChevronUpIcon } from '../icons/chevron-up-icon';
-import { ChevronDownIcon } from '../icons/chevron-down-icon';
-import { TrashIcon } from '../icons/trash-icon';
 import { ConfirmDialog } from '../ui/confirm-dialog';
+import { buttonGroup } from '../ui/button-styles';
+import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, TrashIcon } from '../ui/icon';
 
 interface CommentToolbarActionsProps {
   threads: CommentThread[];
@@ -34,39 +31,39 @@ export function CommentToolbarActions(props: CommentToolbarActionsProps) {
 
   return (
     <>
-      <div className="flex items-stretch bg-bg-tertiary rounded-md overflow-hidden">
-        <span className="flex items-center text-xs text-text-muted px-2 py-1 whitespace-nowrap tabular-nums">
+      <div className={buttonGroup}>
+        <span className="flex items-center text-[13px] text-text-secondary px-2.5 whitespace-nowrap tabular-nums">
           {currentIndex >= 0
             ? `${currentIndex + 1}/${unresolvedCount} open`
             : `${unresolvedCount} open`}
         </span>
         <button
           onClick={goToPrevious}
-          className="flex items-center px-1.5 text-text-muted hover:bg-hover hover:text-text transition-colors cursor-pointer"
+          className="flex items-center px-1.5 text-text-secondary hover:bg-control-hover hover:text-text transition-colors cursor-pointer"
           title="Previous open comment"
         >
-          <ChevronUpIcon className="w-3.5 h-3.5" />
+          <ChevronUpIcon size="sm" />
         </button>
         <button
           onClick={goToNext}
-          className="flex items-center px-1.5 text-text-muted hover:bg-hover hover:text-text transition-colors cursor-pointer"
+          className="flex items-center px-1.5 text-text-secondary hover:bg-control-hover hover:text-text transition-colors cursor-pointer"
           title="Next open comment"
         >
-          <ChevronDownIcon className="w-3.5 h-3.5" />
+          <ChevronDownIcon size="sm" />
         </button>
         <button
           onClick={() => copy(formatForCopy())}
-          className="flex items-center px-1.5 border-l border-bg text-text-muted hover:bg-hover hover:text-text transition-colors cursor-pointer"
+          className="flex items-center px-1.5 border-l border-control-border text-text-secondary hover:bg-control-hover hover:text-text transition-colors cursor-pointer"
           title="Copy open comments as Markdown (paste into any AI chat)"
         >
-          {copied ? <CheckIcon className="w-3.5 h-3.5 text-added" /> : <CopyIcon className="w-3.5 h-3.5" />}
+          {copied ? <CheckIcon className="w-3.5 h-3.5 text-added" /> : <CopyIcon size="sm" />}
         </button>
         <button
           onClick={() => setShowDeleteConfirm(true)}
-          className="flex items-center px-1.5 text-text-muted hover:bg-hover hover:text-deleted transition-colors cursor-pointer"
+          className="flex items-center px-1.5 text-text-secondary hover:bg-control-hover hover:text-deleted transition-colors cursor-pointer"
           title="Delete all comments"
         >
-          <TrashIcon className="w-3.5 h-3.5" />
+          <TrashIcon size="sm" />
         </button>
       </div>
       {showDeleteConfirm && (

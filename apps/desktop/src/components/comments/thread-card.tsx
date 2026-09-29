@@ -3,12 +3,11 @@ import type { CommentThread as CommentThreadType, SubmitOptions } from './types'
 import { isThreadResolved } from './types';
 import { CommentBubble } from './comment-bubble';
 import { CommentForm } from './comment-form';
-import { TrashIcon } from '../icons/trash-icon';
-import { SparkleIcon } from '../icons/sparkle-icon';
 import { cn } from '../../lib/cn';
 import { getRepoPath } from '../../lib/api';
 import { enqueueClaude, useThreadActivity } from '../../features/claude/claude-runner';
 import { useReviewState } from '../../features/review/review-state';
+import { SparkleIcon, TrashIcon } from '../ui/icon';
 
 interface ThreadCardProps {
   thread: CommentThreadType;
@@ -49,8 +48,8 @@ export function ThreadCard(props: ThreadCardProps) {
   };
 
   return (
-    <div className={cn('rounded-lg overflow-hidden', className)} data-thread-id={thread.id}>
-      <div className="flex items-center justify-between px-3 pt-2.5 pb-1.5">
+    <div className={cn('rounded-lg overflow-hidden border border-border', className)} data-thread-id={thread.id}>
+      <div className="flex items-center justify-between h-9 px-3 bg-bg-secondary border-b border-border-muted">
         <div className="flex items-center gap-2">
           {headerLeft}
         </div>
@@ -58,7 +57,7 @@ export function ThreadCard(props: ThreadCardProps) {
           {canAskClaude && (
             <button
               onClick={resolveWithClaude}
-              className="inline-flex items-center gap-1 text-[11px] text-text-muted hover:text-accent transition-colors cursor-pointer mr-2"
+              className="inline-flex items-center gap-1 text-xs text-text-secondary hover:text-text transition-colors cursor-pointer mr-2"
               title="Ask Claude Code to address this thread"
             >
               <SparkleIcon className="w-3 h-3" />
@@ -69,14 +68,14 @@ export function ThreadCard(props: ThreadCardProps) {
             resolved ? (
               <button
                 onClick={onUnresolve}
-                className="text-[11px] text-text-muted hover:text-text-secondary transition-colors cursor-pointer"
+                className="h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
               >
                 Reopen
               </button>
             ) : (
               <button
                 onClick={onResolve}
-                className="text-[11px] text-text-muted hover:text-text-secondary transition-colors cursor-pointer"
+                className="h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
               >
                 Resolve
               </button>
@@ -85,7 +84,7 @@ export function ThreadCard(props: ThreadCardProps) {
           {headerRight}
           <button
             onClick={onDeleteThread}
-            className="text-text-muted hover:text-deleted transition-colors cursor-pointer ml-1"
+            className="w-6 h-6 inline-flex items-center justify-center rounded-md text-text-muted hover:text-deleted hover:bg-hover transition-colors cursor-pointer"
             title="Delete thread"
           >
             <TrashIcon className="w-3.5 h-3.5" />
@@ -93,7 +92,7 @@ export function ThreadCard(props: ThreadCardProps) {
         </div>
       </div>
       {children}
-      <div className="px-1.5">
+      <div>
         {thread.comments.map((comment) => (
           <CommentBubble
             key={comment.id}
@@ -115,7 +114,7 @@ export function ThreadCard(props: ThreadCardProps) {
       )}
       {onReply && (
         showReply ? (
-          <div className="px-3 pb-2">
+          <div className="px-3 pb-3">
             <CommentForm
               onSubmit={(body, options) => {
                 onReply(body, options);
@@ -129,10 +128,10 @@ export function ThreadCard(props: ThreadCardProps) {
             />
           </div>
         ) : (
-          <div className="px-4 pb-2">
+          <div className="px-3 pb-3">
             <button
               onClick={() => setShowReply(true)}
-              className="text-xs text-accent hover:text-accent-hover transition-colors cursor-pointer"
+              className="h-7 px-2.5 -ml-2.5 rounded-md text-[13px] text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
             >
               Reply
             </button>

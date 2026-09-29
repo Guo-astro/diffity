@@ -1,9 +1,9 @@
+import { buttonGhost, buttonPrimary } from '../ui/button-styles';
 import { useState, useRef, useEffect } from 'react';
 import type { Comment } from './types';
-import { PencilIcon } from '../icons/pencil-icon';
-import { TrashIcon } from '../icons/trash-icon';
 import { MarkdownContent } from '../layout/markdown-content';
 import { ThreadBadge } from '../ui/thread-badge';
+import { PencilIcon, TrashIcon } from '../ui/icon';
 
 interface CommentBubbleProps {
   comment: Comment;
@@ -44,11 +44,11 @@ function AuthorAvatar(props: { name: string; avatarUrl?: string; type: 'user' | 
     );
   }
 
-  const bgColor = type === 'agent' ? 'bg-accent' : 'bg-text-muted';
+  const tone = type === 'agent' ? 'bg-claude/12 text-claude' : 'bg-fill text-text-secondary';
   const initial = name.charAt(0).toUpperCase();
 
   return (
-    <div className={`w-5 h-5 rounded-full ${bgColor} flex items-center justify-center text-white text-[10px] font-medium`}>
+    <div className={`w-5 h-5 rounded-full ${tone} flex items-center justify-center text-[10px] font-semibold`}>
       {initial}
     </div>
   );
@@ -96,28 +96,28 @@ export function CommentBubble(props: CommentBubbleProps) {
   };
 
   return (
-    <div className="px-1.5 py-1 first:pt-1.5 last:pb-1.5 group">
-      <div className="bg-bg rounded-lg px-3 py-2.5">
-        <div className="flex items-center gap-2 mb-1.5">
+    <div className="group border-t border-border-muted first:border-t-0">
+      <div className="px-3 py-2.5">
+        <div className="flex items-center gap-2 mb-1">
           <AuthorAvatar name={comment.author.name} avatarUrl={comment.author.avatarUrl} type={comment.author.type} />
-          <span className="text-xs font-semibold text-text">{comment.author.name}</span>
+          <span className="text-[13px] font-semibold text-text">{comment.author.name}</span>
           {comment.author.type === 'agent' && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-accent/15 text-accent font-medium">bot</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-fill text-text-secondary font-medium">bot</span>
           )}
-          <span className="text-[11px] text-text-muted">{formatRelativeTime(comment.createdAt)}</span>
+          <span className="text-xs text-text-muted">{formatRelativeTime(comment.createdAt)}</span>
           {comment.pending && <ThreadBadge variant="pending" />}
           {!isEditing && (
             <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 onClick={() => setIsEditing(true)}
-                className="text-text-muted hover:text-text cursor-pointer"
+                className="w-6 h-6 inline-flex items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-hover cursor-pointer"
                 title="Edit comment"
               >
                 <PencilIcon className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={onDelete}
-                className="text-text-muted hover:text-deleted cursor-pointer"
+                className="w-6 h-6 inline-flex items-center justify-center rounded-md text-text-muted hover:text-deleted hover:bg-hover cursor-pointer"
                 title="Delete comment"
               >
                 <TrashIcon className="w-3.5 h-3.5" />
@@ -125,7 +125,7 @@ export function CommentBubble(props: CommentBubbleProps) {
             </div>
           )}
         </div>
-        <div className="text-sm text-text pl-7">
+        <div className="text-[13px] leading-5 text-text pl-7">
         {isEditing ? (
           <div>
             <textarea
@@ -134,20 +134,20 @@ export function CommentBubble(props: CommentBubbleProps) {
               onChange={(e) => setEditBody(e.target.value)}
               onKeyDown={handleKeyDown}
               rows={3}
-              className="w-full px-3 py-2 text-sm bg-bg-tertiary text-text resize-y outline-none rounded-md min-h-[60px]"
+              className="w-full px-3 py-2 text-[13px] bg-bg text-text resize-y outline-none rounded-md border border-border focus:border-focus min-h-[60px]"
             />
             <div className="flex items-center gap-2 mt-1.5">
               <div className="flex-1" />
               <button
                 onClick={handleCancel}
-                className="px-3 py-1 text-xs font-medium rounded-md text-text-secondary hover:bg-hover transition-colors cursor-pointer"
+                className={buttonGhost}
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={!editBody.trim()}
-                className="px-3 py-1 text-xs font-medium rounded-md bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className={buttonPrimary}
               >
                 Save
               </button>

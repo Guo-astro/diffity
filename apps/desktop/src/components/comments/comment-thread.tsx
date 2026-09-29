@@ -2,9 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import type { CommentThread as CommentThreadType } from './types';
 import type { CommentAuthor, CommentSide, SubmitOptions } from './types';
 import { isThreadResolved } from './types';
-import { CommentIcon } from '../icons/comment-icon';
 import { ThreadBadge } from '../ui/thread-badge';
 import { ThreadCard } from './thread-card';
+import { CommentIcon } from '../ui/icon';
 
 interface CommentThreadProps {
   thread: CommentThreadType;
@@ -51,6 +51,16 @@ export function CommentThread(props: CommentThreadProps) {
   } = props;
   const [isCollapsed, setIsCollapsed] = useState(isThreadResolved(thread));
   const rowRef = useRef<HTMLTableRowElement>(null);
+  const resolved = isThreadResolved(thread);
+  const wasResolved = useRef(resolved);
+
+  useEffect(() => {
+    if (wasResolved.current === resolved) {
+      return;
+    }
+    wasResolved.current = resolved;
+    setIsCollapsed(resolved);
+  }, [resolved]);
 
   useEffect(() => {
     const el = rowRef.current;
@@ -67,10 +77,10 @@ export function CommentThread(props: CommentThreadProps) {
 
   if (isCollapsed) {
     const collapsedContent = (
-      <td colSpan={colSpan} className="px-4 py-1.5">
+      <td colSpan={colSpan} className="px-3 py-1 font-sans">
         <button
           onClick={() => setIsCollapsed(false)}
-          className='thread-card inline-flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted hover:text-text-secondary hover:bg-hover rounded-md transition-colors cursor-pointer'
+          className='thread-card animate-fade-in inline-flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted hover:text-text-secondary hover:bg-hover rounded-md transition-colors cursor-pointer'
         >
           <CommentIcon className='w-3.5 h-3.5' />
           <span>
@@ -110,7 +120,7 @@ export function CommentThread(props: CommentThreadProps) {
       : `Lines ${thread.startLine}–${thread.endLine}`;
 
   const threadContent = (
-    <td colSpan={colSpan} className="px-4 py-3">
+    <td colSpan={colSpan} className="px-4 py-3 font-sans">
       <ThreadCard
         thread={thread}
         onReply={(body, options) => onReply(thread.id, body, currentAuthor, options)}
@@ -122,7 +132,7 @@ export function CommentThread(props: CommentThreadProps) {
         onEditComment={(commentId, body) => onEditComment(commentId, body)}
         onDeleteComment={(commentId) => onDeleteComment(thread.id, commentId)}
         onDeleteThread={() => onDeleteThread(thread.id)}
-        className="thread-card max-w-[700px] bg-bg-secondary"
+        className="thread-card max-w-[720px] bg-bg"
         headerLeft={
           <>
             <span className='text-[11px] text-text-muted font-mono'>

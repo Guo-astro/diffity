@@ -1,12 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { CommentThread as CommentThreadType, SubmitOptions } from './types';
 import { GENERAL_THREAD_FILE_PATH, isThreadResolved } from './types';
-import { CommentIcon } from '../icons/comment-icon';
-import { ChevronIcon } from '../icons/chevron-icon';
 import { ThreadBadge } from '../ui/thread-badge';
 import { ThreadCard } from './thread-card';
 import { useUi } from '../../lib/ui-store';
 import { cn } from '../../lib/cn';
+import { ChevronIcon, CommentIcon } from '../ui/icon';
 
 interface OrphanedThreadsProps {
   threads: CommentThreadType[];
@@ -72,7 +71,7 @@ export function OrphanedThreads(props: OrphanedThreadsProps) {
     <div className={cn('border-b border-border bg-bg-secondary/50', className)}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex items-center gap-2 w-full px-4 py-2 text-xs text-text-muted hover:text-text-secondary transition-colors cursor-pointer"
+        className="flex items-center gap-2 w-full h-8 px-3 text-xs text-text-muted hover:text-text-secondary transition-colors cursor-pointer"
       >
         <ChevronIcon expanded={isExpanded} />
         <CommentIcon className="w-3.5 h-3.5" />
@@ -82,7 +81,7 @@ export function OrphanedThreads(props: OrphanedThreadsProps) {
         <ThreadBadge variant="outdated" />
       </button>
       {isExpanded && (
-        <div className="px-4 pb-3 space-y-2">
+        <div className="px-3 pb-2 space-y-2">
           {threads.map((thread) => (
             <ThreadCard
               key={thread.id}

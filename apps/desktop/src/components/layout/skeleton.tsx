@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useIsFetching, useIsMutating } from '@tanstack/react-query';
 import { BrandLogo } from '../icons/brand-logo';
 import { cn } from '../../lib/cn';
-import { TitleBar } from './title-bar';
+import { TitleBar, Workspace } from './title-bar';
 
 /** Removes the static splash from index.html once React has painted something equivalent. */
 export function hideStaticSplash() {
@@ -42,39 +42,41 @@ function Bar(props: { className?: string }) {
   return <div className={cn('rounded bg-bg-tertiary animate-pulse', className)} />;
 }
 
-/** Placeholder for the diff page while the diff and its comments load. */
+function storedSidebarWidth() {
+  try {
+    const stored = Number(localStorage.getItem('diffity-sidebar-width'));
+    return stored > 0 ? stored : 300;
+  } catch {
+    return 300;
+  }
+}
+
 export function DiffSkeleton() {
   return (
-    <div className="flex flex-col h-screen bg-bg font-sans">
+    <div className="flex flex-col h-screen bg-frame font-sans">
       <TitleBar>
-        <Bar className="w-20 h-4" />
-        <Bar className="w-28 h-5" />
-        <Bar className="w-32 h-6" />
-        <div className="ml-auto flex items-center gap-2">
-          <Bar className="w-24 h-6" />
-          <Bar className="w-36 h-6" />
-          <Bar className="w-20 h-6" />
-        </div>
+        <Bar className="w-16 h-4" />
+        <Bar className="w-48 h-7" />
       </TitleBar>
-      <div className="flex items-center gap-3 h-9 shrink-0 px-4 border-b border-border">
-        <Bar className="w-48 h-3" />
-        <Bar className="ml-auto w-28 h-3" />
-      </div>
-      <div className="flex flex-1 overflow-hidden">
-        <div className="w-72 min-w-72 border-r border-border bg-bg-secondary p-3 space-y-3">
-          <Bar className="h-7 w-full" />
-          {[70, 55, 80, 45, 62].map((width) => (
-            <div key={width} style={{ width: `${width}%` }}>
-              <Bar className="h-3.5" />
-            </div>
-          ))}
+      <Workspace>
+        <div className="flex flex-1 overflow-hidden">
+          <div className="shrink-0 border-r border-border bg-sidebar p-3 space-y-3" style={{ width: storedSidebarWidth() }}>
+            <Bar className="h-8 w-full" />
+            <Bar className="h-7 w-full" />
+            {[70, 55, 80, 45, 62].map((width) => (
+              <div key={width} style={{ width: `${width}%` }}>
+                <Bar className="h-3.5" />
+              </div>
+            ))}
+          </div>
+          <div className="flex-1 px-5 py-4 space-y-4 overflow-hidden">
+            {[0, 1, 2].map((i) => (
+              <FileBlockSkeleton key={i} lines={i === 0 ? 8 : 5} />
+            ))}
+          </div>
         </div>
-        <div className="flex-1 p-5 space-y-4 overflow-hidden">
-          {[0, 1, 2].map((i) => (
-            <FileBlockSkeleton key={i} lines={i === 0 ? 8 : 5} />
-          ))}
-        </div>
-      </div>
+      </Workspace>
+      <div className="h-8 shrink-0" />
     </div>
   );
 }
@@ -83,12 +85,12 @@ export function FileBlockSkeleton(props: { lines?: number }) {
   const { lines = 6 } = props;
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-bg-secondary border-b border-border">
+    <div className="border border-border rounded-md overflow-hidden">
+      <div className="flex items-center gap-3 h-8 px-3 bg-bg-secondary border-b border-border">
         <Bar className="w-40 h-3.5" />
         <Bar className="ml-auto w-16 h-3" />
       </div>
-      <div className="p-4 space-y-2">
+      <div className="px-3 py-2 space-y-2">
         {Array.from({ length: lines }, (_, i) => (
           <div key={i} className="flex items-center gap-4">
             <Bar className="w-6 h-3" />

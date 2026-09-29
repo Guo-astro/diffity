@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useCallback, useImperativeHandle, useEffect 
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ParsedDiff } from '@diffity/parser';
 import { FileBlock, LARGE_DIFF_LINE_THRESHOLD } from './file-block';
+import { DiffContextHeader } from '../layout/diff-context-bar';
 import { GeneralComments } from '../comments/general-comments';
 import { OutsideThreads } from '../comments/outside-threads';
 import { GENERAL_THREAD_FILE_PATH } from '../comments/types';
@@ -25,7 +26,7 @@ export interface DiffViewHandle {
 const VIRTUALIZER_OVERSCAN = 3;
 const FILE_HEADER_HEIGHT = 56;
 const EMPTY_CONTENT_HEIGHT = 100;
-const LINE_HEIGHT = 24;
+const LINE_HEIGHT = 22;
 const HUNK_HEADER_HEIGHT = 32;
 const FILE_BLOCK_PADDING = 16;
 
@@ -267,20 +268,24 @@ export function DiffView(props: DiffViewProps) {
       onScroll={handleScroll}
       className="flex-1 overflow-y-auto pb-12"
     >
+      <div className="flex flex-col gap-4 px-5 pt-4 empty:hidden">
+        {baseRef && <DiffContextHeader diffRef={baseRef} />}
       {commentsEnabled && (
-        <GeneralComments
-          threads={threads}
-          commentActions={commentActions}
-        />
+        <>
+          <GeneralComments
+            threads={threads}
+            commentActions={commentActions}
+          />
+          <OutsideThreads
+            threads={outsideThreads}
+            commentActions={commentActions}
+            className="rounded-lg border border-border"
+          />
+        </>
       )}
-      {commentsEnabled && (
-        <OutsideThreads
-          threads={outsideThreads}
-          commentActions={commentActions}
-          className="mx-4 mt-3 rounded-lg border border-border"
-        />
-      )}
-      <div className="py-2" style={{ paddingTop, paddingBottom }}>
+      </div>
+      <div className="pt-4">
+      <div style={{ paddingTop, paddingBottom }}>
         {items.map((virtualItem) => {
           const file = diff.files[virtualItem.index];
           const filePath = getFilePath(file);
@@ -289,6 +294,7 @@ export function DiffView(props: DiffViewProps) {
               key={filePath + '-' + virtualItem.index}
               data-index={virtualItem.index}
               ref={virtualizer.measureElement}
+              className="px-5 pb-4"
             >
               <FileBlock
                 highlighted={highlightedFile === filePath}
@@ -317,6 +323,7 @@ export function DiffView(props: DiffViewProps) {
             </div>
           );
         })}
+      </div>
       </div>
     </main>
   );

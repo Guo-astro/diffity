@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SparkleIcon } from '../../components/icons/sparkle-icon';
-import { StopIcon } from '../../components/icons/stop-icon';
-import { ChevronDownIcon } from '../../components/icons/chevron-down-icon';
-import { CommentIcon } from '../../components/icons/comment-icon';
 import { menuItemClass } from '../../components/layout/options-menu';
-import { useDismiss } from '../../hooks/use-dismiss';
 import { getRepoPath } from '../../lib/api';
 import { TREE_REF } from '../../lib/types';
 import type { CommentThread } from '../../components/comments/types';
 import { enqueueClaude, openRunResult, runLabel, runViewLabel, stopClaude, useActiveRun, useQueuedCount } from './claude-runner';
 import { useCurrentViewRef } from '../../hooks/use-current-view';
+import { buttonGroupClaude, buttonGroupClaudeDivider, buttonGroupClaudeItem, sectionLabel } from '../../components/ui/button-styles';
+import { cn } from '../../lib/cn';
+import { useReviewState } from '../review/review-state';
+import { ChevronDownIcon, CommentIcon, SparkleIcon, StopIcon } from '../../components/ui/icon';
+import { Popover } from '../../components/ui/popover';
 
 export const REVIEW_FOCUSES = [
   { value: 'security', label: 'Security' },
@@ -58,43 +58,43 @@ export function ClaudeStatus() {
 
   const elsewhere = !!run.ref && run.ref !== currentRef;
   const where = run.ref ? runViewLabel(run.context.repoPath, run.ref) : null;
-  const showCount = run.action.kind === 'review' || run.commentsAdded > 0;
+  const showCount = run.commentsAdded > 0;
   const countLabel = `${run.commentsAdded} comment${run.commentsAdded === 1 ? '' : 's'}`;
   const canOpen = !!run.ref && (run.commentsAdded > 0 || elsewhere);
 
   return (
-    <div className="flex items-stretch bg-accent/10 rounded-md overflow-hidden text-xs min-w-0">
+    <div className="flex items-stretch h-7 rounded-md border border-control-border bg-raised overflow-hidden text-xs min-w-0">
       <span
-        className="flex items-center gap-1.5 px-2 py-1 text-accent font-medium whitespace-nowrap min-w-0"
+        className="flex items-center gap-2 pl-2.5 pr-2 text-text whitespace-nowrap min-w-0"
         title={where ? `Working on ${where}` : undefined}
       >
-        <span className="inline-block w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin shrink-0" />
-        {runLabel(run.action)}
+        <span className="inline-block w-3 h-3 border-[1.5px] border-claude/25 border-t-claude rounded-full animate-spin shrink-0" />
+        <span className="font-medium">{runLabel(run.action)}</span>
         {elsewhere && where && (
-          <span className="font-normal truncate max-w-[180px]">on {where}</span>
+          <span className="text-text-secondary truncate max-w-[180px]">on {where}</span>
         )}
         {showCount && (
           canOpen ? (
             <button
               onClick={() => openRunResult(run)}
-              className="font-medium underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer"
+              className="text-text-secondary underline decoration-text-muted/50 underline-offset-2 hover:text-text cursor-pointer"
               title={where ? `Show Claude's comments on ${where}` : "Show Claude's comments"}
             >
-              · {countLabel}
+              {countLabel}
             </button>
           ) : (
-            <span>· {countLabel}</span>
+            <span className="text-text-secondary">{countLabel}</span>
           )
         )}
-        {run.startedAt && <span>· {formatElapsed(now - run.startedAt)}</span>}
-        {queued > 0 && <span className="text-text-muted font-normal">+{queued} queued</span>}
+        {run.startedAt && <span className="text-text-muted tabular-nums">{formatElapsed(now - run.startedAt)}</span>}
+        {queued > 0 && <span className="text-text-muted">+{queued} queued</span>}
       </span>
       <button
         onClick={() => void stopClaude()}
-        className="flex items-center gap-1 px-2 text-accent hover:bg-accent/15 transition-colors cursor-pointer"
+        className="flex items-center gap-1 px-2 border-l border-control-border text-text-secondary hover:text-text hover:bg-control-hover transition-colors cursor-pointer"
         title="Stop Claude"
       >
-        <StopIcon className="w-3 h-3" />
+        <StopIcon size="xs" />
         Stop
       </button>
     </div>
@@ -106,8 +106,8 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  useDismiss(menuRef, open, close);
   const run = useActiveRun();
+  const { prMode } = useReviewState();
 
   const openThreads = threads.filter((thread) => thread.status === 'open' && !thread.pending);
   const reviewRef = diffRef && diffRef !== TREE_REF && hasChanges ? diffRef : null;
@@ -128,62 +128,68 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
   if (run) {
     return <ClaudeStatus />;
   }
+  if (!reviewRef && !prMode) {
+    return null;
+  }
 
   return (
     <div className="relative" ref={menuRef}>
-      <div className="flex items-stretch bg-bg-tertiary rounded-md overflow-hidden">
+      <div className={buttonGroupClaude}>
         {reviewRef ? (
           <button
             onClick={() => review()}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-text-secondary hover:bg-hover hover:text-text transition-colors cursor-pointer"
-            title="Ask Claude Code to review these changes"
+            className={buttonGroupClaudeItem}
+            title="Claude reviews these changes and leaves comments on the diff"
           >
-            <SparkleIcon className="w-3.5 h-3.5 text-accent" />
-            Review with Claude
+            <SparkleIcon size="md" />
+            Ask Claude<span className="hidden min-[1360px]:inline -ml-[3px]">to review</span>
           </button>
         ) : (
           <button
             onClick={resolveAll}
             disabled={openThreads.length === 0}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-text-secondary hover:bg-hover hover:text-text transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-default"
+            className={buttonGroupClaudeItem}
+            title={openThreads.length === 0 ? 'No open comments to resolve' : 'Claude works through the open comments and asks before each edit'}
           >
-            <SparkleIcon className="w-3.5 h-3.5 text-accent" />
+            <SparkleIcon size="md" />
             Resolve with Claude
           </button>
         )}
         <button
           onClick={() => setOpen(!open)}
-          className="flex items-center px-1.5 border-l border-bg text-text-muted hover:bg-hover hover:text-text transition-colors cursor-pointer"
+          className={cn('flex items-center px-1.5 text-claude hover:bg-claude/15 transition-colors cursor-pointer', buttonGroupClaudeDivider)}
           title="More Claude actions"
         >
-          <ChevronDownIcon className="w-3.5 h-3.5" />
+          <ChevronDownIcon size="xs" />
         </button>
       </div>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 w-60 py-1 bg-bg-secondary rounded-md shadow-lg ring-1 ring-border z-50">
+      <Popover open={open} onClose={close} anchorRef={menuRef} align="end" width={240}>
+        <>
           {reviewRef && (
             <>
-              <div className="px-3 pt-1 pb-1.5 text-[10px] font-semibold text-text-muted uppercase tracking-widest">Review with a focus</div>
+              <div className={sectionLabel}>Ask Claude to review with a focus</div>
               {REVIEW_FOCUSES.map((focus) => (
                 <button key={focus.value} className={menuItemClass} onClick={() => review(focus.value)}>
-                  <SparkleIcon className="w-3.5 h-3.5" />
+                  <SparkleIcon size="md" />
                   {focus.label}
                 </button>
               ))}
-              <div className="border-t border-border my-1" />
+              {prMode && <div className="border-t border-overlay-border my-1 -mx-1" />}
             </>
           )}
-          <button
-            className={`${menuItemClass} disabled:opacity-50 disabled:cursor-default`}
-            disabled={openThreads.length === 0}
-            onClick={resolveAll}
-          >
-            <CommentIcon className="w-3.5 h-3.5" />
-            Resolve open comments
-            <span className="ml-auto text-text-muted">{openThreads.length}</span>
-          </button>
-        </div>
-      )}
+          {prMode && (
+            <button
+              className={`${menuItemClass} disabled:opacity-50 disabled:cursor-default`}
+              disabled={openThreads.length === 0}
+              onClick={resolveAll}
+            >
+              <CommentIcon className="w-3.5 h-3.5" />
+              Resolve open comments
+              <span className="ml-auto text-text-muted">{openThreads.length}</span>
+            </button>
+          )}
+        </>
+      </Popover>
     </div>
   );
 }
