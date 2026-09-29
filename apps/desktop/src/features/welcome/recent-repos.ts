@@ -2,7 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { NavigateFunction } from 'react-router';
 import { toast } from 'sonner';
 import * as tauri from '../../lib/tauri';
+import { queryClient } from '../../lib/query-client';
 import { openRepoInNewWindow, repoRoute } from '../../lib/window';
+import { beginOpening, endOpening, setOpeningStep } from '../../lib/opening';
 
 const HIDDEN_KEY = 'welcome.hiddenRepos';
 
@@ -38,7 +40,15 @@ export function useRecentRepos() {
     }
   };
 
-  return { repos, all: recent.data ?? [], loading: recent.isLoading, remove };
+  const restore = async (path: string) => {
+    const next = { ...hidden };
+    delete next[path];
+    const value = JSON.stringify(next);
+    queryClient.setQueryData(['setting', HIDDEN_KEY], value);
+    await tauri.setSetting(HIDDEN_KEY, value).catch(() => undefined);
+  };
+
+  return { repos, all: recent.data ?? [], loading: recent.isLoading, remove, restore };
 }
 
 
@@ -55,10 +65,26 @@ export function parentPath(path: string): string {
   return shortPath(path).replace(/\/[^/]+\/?$/, '') || '/';
 }
 
+/** Opening a project again brings it back to the rail and the recent list if it had been removed. */
+async function unhideRepo(path: string) {
+  const current = parseHidden(queryClient.getQueryData<string | null>(['setting', HIDDEN_KEY]) ?? (await tauri.getSetting(HIDDEN_KEY).catch(() => null)));
+  if (current[path]) {
+    delete current[path];
+    const value = JSON.stringify(current);
+    queryClient.setQueryData(['setting', HIDDEN_KEY], value);
+    await tauri.setSetting(HIDDEN_KEY, value).catch(() => undefined);
+  }
+  void queryClient.invalidateQueries({ queryKey: ['recent-repos'] });
+}
+
 export async function openRepoAt(path: string, navigate: NavigateFunction, options?: { newWindow?: boolean; extra?: Record<string, string> }) {
+  if (!options?.newWindow) {
+    beginOpening(path);
+  }
   try {
     const info = await tauri.openRepo(path);
     if (!info.isGit) {
+      endOpening();
       toast.error(`${info.name} is not a Git repository`, {
         description: 'Diffity reviews changes tracked by Git. Run `git init` in that folder, or pick the repository root.',
       });
@@ -68,8 +94,11 @@ export async function openRepoAt(path: string, navigate: NavigateFunction, optio
       await openRepoInNewWindow(info.path, options.extra);
       return;
     }
-    navigate(repoRoute(info.path, options?.extra));
+    setOpeningStep('Reading changes');
+    void unhideRepo(info.path);
+    navigate(repoRoute(info.path, options?.extra), { state: { fresh: true } });
   } catch (error) {
+    endOpening();
     toast.error('Could not open the folder', { description: `${tauri.errorMessage(error)}. It may have been moved or deleted.` });
   }
 }

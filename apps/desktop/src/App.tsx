@@ -12,6 +12,7 @@ import { DiffRoute } from './routes/diff';
 import { TreeRoute } from './routes/tree';
 import { OverviewRoute } from './routes/overview';
 import { SettingsDialog } from './features/settings/settings-dialog';
+import { QuickOpen, useQuickOpenShortcut } from './features/palette/quick-open';
 import { ShortcutModal } from './components/layout/shortcut-modal';
 import { TopProgress, hideStaticSplash } from './components/layout/skeleton';
 import { closeShortcuts, openSettings, openShortcuts, useUi } from './lib/ui-store';
@@ -68,6 +69,11 @@ function useWindowChrome() {
         realign();
       }
     };
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        invoke('realign_window_chrome').catch(() => undefined);
+      }
+    }, 1000);
     window.addEventListener('focus', realign);
     window.addEventListener('blur', realign);
     document.addEventListener('visibilitychange', onVisibility);
@@ -75,6 +81,7 @@ function useWindowChrome() {
       window.removeEventListener('focus', realign);
       window.removeEventListener('blur', realign);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(interval);
       for (const timer of timers) {
         window.clearTimeout(timer);
       }
@@ -99,6 +106,12 @@ function useExternalLinks() {
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
   }, []);
+}
+
+function QuickOpenHost() {
+  useQuickOpenShortcut();
+
+  return <QuickOpen />;
 }
 
 export function App() {
@@ -126,6 +139,7 @@ export function App() {
         </Routes>
         <SettingsDialog />
         <GlobalShortcutModal />
+        <QuickOpenHost />
       </HashRouter>
       <TopProgress />
       <Toaster

@@ -158,6 +158,8 @@ export const githubLogout = () => invoke<void>('github_logout');
 export const gitFetch = (repoPath: string) => invoke<GitOpResult>('git_fetch', { repoPath });
 export const gitPull = (repoPath: string) => invoke<GitOpResult>('git_pull', { repoPath });
 export const gitPush = (repoPath: string) => invoke<GitOpResult>('git_push', { repoPath });
+export const gitCommitAll = (repoPath: string, message: string) => invoke<GitOpResult>('git_commit_all', { repoPath, message });
+export const githubPostComment = (commentId: string) => invoke<Thread>('github_post_comment', { commentId });
 export const findPr = (repoPath: string) => invoke<PullRequest | null>('find_pr', { repoPath });
 export const listPrs = (repoPath: string) => invoke<PullRequest[]>('list_prs', { repoPath });
 export const checkoutPr = (repoPath: string, urlOrNumber: string) =>
@@ -202,3 +204,21 @@ export const onRepoChanged = (handler: (payload: RepoChangedPayload) => void): P
 export const onThreadsChanged = (handler: (payload: ThreadsChangedPayload) => void): Promise<UnlistenFn> =>
   listen<ThreadsChangedPayload>('threads-changed', (event) => handler(event.payload));
 export const gitClone = (parent: string, url: string) => invoke<string>('git_clone', { parent, url });
+
+export interface DirSuggestion {
+  path: string;
+  name: string;
+  isGit: boolean;
+  branch: string | null;
+}
+
+export interface DirSuggestions {
+  dir: string;
+  segment: string;
+  entries: DirSuggestion[];
+}
+
+export const quickOpenRoots = () => invoke<{ home: string; roots: string[] }>('quick_open_roots');
+export const listDirSuggestions = (pathPrefix: string) => invoke<DirSuggestions>('list_dir_suggestions', { pathPrefix });
+export const resolveRepoRoot = (path: string) => invoke<{ path: string; exists: boolean; repoRoot: string | null }>('resolve_repo_root', { path });
+export const cloneRepo = (url: string, parent: string) => invoke<string>('clone_repo', { url, parent });

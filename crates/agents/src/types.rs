@@ -48,10 +48,22 @@ pub enum AgentAction {
         r#ref: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         focus: Option<String>,
+        /// Free-form guidance from the user, prioritised over the generic checklist.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        instructions: Option<String>,
+        /// Limit the review (and `get_diff`) to these files. Empty or absent means the whole diff.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        paths: Vec<String>,
     },
     Resolve {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thread_id: Option<String>,
+        /// A chosen batch of threads; empty means `thread_id` alone, or every open thread.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        thread_ids: Vec<String>,
+        /// An overall note from the user sent with the batch.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        note: Option<String>,
     },
     Explain {
         path: String,
@@ -219,7 +231,7 @@ mod tests {
             r#"{"type":"permissionRequest","requestId":"r","title":"t","options":[]}"#
         );
         let a: AgentAction = serde_json::from_str(r#"{"kind":"resolve","threadId":"x"}"#).unwrap();
-        assert!(matches!(a, AgentAction::Resolve { thread_id: Some(_) }));
+        assert!(matches!(a, AgentAction::Resolve { thread_id: Some(_), .. }));
         let a: AgentAction = serde_json::from_str(r#"{"kind":"review","ref":"work"}"#).unwrap();
         assert!(matches!(a, AgentAction::Review { .. }));
         let a: AgentAction = serde_json::from_str(r#"{"kind":"chat"}"#).unwrap();

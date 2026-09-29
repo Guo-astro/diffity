@@ -4,10 +4,16 @@ import { isThreadResolved } from './types';
 import { CommentBubble } from './comment-bubble';
 import { CommentForm } from './comment-form';
 import { cn } from '../../lib/cn';
-import { getRepoPath } from '../../lib/api';
 import { enqueueClaude, useThreadActivity } from '../../features/claude/claude-runner';
 import { useReviewState } from '../../features/review/review-state';
-import { SparkleIcon, TrashIcon } from '../ui/icon';
+import { EllipsisIcon, GitHubIcon, GitPullRequestIcon, SparkleIcon } from '../ui/icon';
+import { Popover, useMenu } from '../ui/popover';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import * as api from '../../lib/api';
+import { useGitHubPr } from '../../hooks/use-repo-state';
+import { DEFAULT_AUTHOR } from './types';
+import { hasDraft } from './comment-form';
 
 interface ThreadCardProps {
   thread: CommentThreadType;
@@ -21,6 +27,72 @@ interface ThreadCardProps {
   headerRight?: React.ReactNode;
   className?: string;
   children?: React.ReactNode;
+  /** Narrow cards: secondary actions move into the ⋯ menu. */
+  compact?: boolean;
+}
+
+function ThreadMenu(props: { items: { label: string; onSelect: () => void; danger?: boolean }[] }) {
+  const { items } = props;
+  const menu = useMenu();
+
+  return (
+    <>
+      <button
+        ref={menu.anchorRef}
+        onClick={menu.toggle}
+        className="w-6 h-6 inline-flex items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+        title="More"
+        aria-label="More thread actions"
+      >
+        <EllipsisIcon size="sm" />
+      </button>
+      <Popover open={menu.open} onClose={menu.close} anchorRef={menu.anchorRef} align="end" width={200}>
+        {items.map((item) => (
+          <button
+            key={item.label}
+            onClick={() => {
+              menu.close();
+              item.onSelect();
+            }}
+            className={cn('flex items-center w-full h-8 px-2.5 rounded-md text-left text-[13px] hover:bg-hover cursor-pointer', item.danger ? 'text-deleted' : 'text-text')}
+          >
+            {item.label}
+          </button>
+        ))}
+      </Popover>
+    </>
+  );
+}
+
+function OriginBadge(props: { thread: CommentThreadType; prMode: boolean; prUrl: string | null }) {
+  const { thread, prMode, prUrl } = props;
+  const base = 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium';
+
+  if (thread.comments[0]?.author.type === 'agent') {
+    return <span className={cn(base, 'bg-claude/12 text-claude')} title="Written by Claude, kept in Diffity">Claude</span>;
+  }
+  if (thread.pending) {
+    return (
+      <span className={cn(base, 'bg-fill text-text-secondary')} title={prMode ? 'Draft in your GitHub review; posted when you submit' : 'Draft; saved when you submit'}>
+        {prMode ? 'Draft · GitHub' : 'Draft'}
+      </span>
+    );
+  }
+  if (thread.githubThreadId) {
+    if (prUrl) {
+      return (
+        <a href={prUrl} className={cn(base, 'bg-added/12 text-added hover:underline')} title="Posted on GitHub — open the pull request">
+          <GitHubIcon size={10} />
+          Posted
+        </a>
+      );
+    }
+    return <span className={cn(base, 'bg-added/12 text-added')}><GitHubIcon size={10} />On GitHub</span>;
+  }
+  if (!prMode) {
+    return null;
+  }
+  return <span className={cn(base, 'bg-fill text-text-secondary')} title="Only in Diffity; not part of your GitHub review">Local</span>;
 }
 
 export function ThreadCard(props: ThreadCardProps) {
@@ -36,59 +108,96 @@ export function ThreadCard(props: ThreadCardProps) {
     headerRight,
     className,
     children,
+    compact = false,
   } = props;
-  const [showReply, setShowReply] = useState(false);
+  const review = useReviewState();
+  const replyKey = `reply:${thread.id}`;
+  const [showReply, setShowReply] = useState(() => hasDraft(review.sessionId, replyKey));
+  const claudeThread = thread.comments[0]?.author.type === 'agent';
   const resolved = isThreadResolved(thread);
   const activity = useThreadActivity(thread.id);
-  const review = useReviewState();
   const canAskClaude = review.enabled && !resolved && !thread.pending && activity === 'idle' && !!onReply;
 
+  const { details } = useGitHubPr();
+  const queryClient = useQueryClient();
+  const canPromote = review.prMode && claudeThread && !resolved && !!details && !!review.sessionId;
+
+  const promote = async () => {
+    const first = thread.comments[0];
+    if (!first || !review.sessionId || !details) {
+      return;
+    }
+    try {
+      await api.createThread({
+        sessionId: review.sessionId,
+        filePath: thread.filePath,
+        side: thread.side,
+        startLine: thread.startLine,
+        endLine: thread.endLine,
+        body: first.body,
+        author: DEFAULT_AUTHOR,
+        anchorContent: thread.anchorContent ?? undefined,
+        options: { pending: true },
+      });
+      await api.updateThreadStatus(thread.id, 'resolved', 'Added to the GitHub review as a draft');
+      queryClient.invalidateQueries({ queryKey: ['threads', review.sessionId] });
+      queryClient.invalidateQueries({ queryKey: ['reviews', review.sessionId] });
+      toast.success(`Added to your review on PR #${details.prNumber}`, { description: 'It is a draft until you submit the review. Edit it first if you like.' });
+    } catch (error) {
+      toast.error('Could not add it to your review', { description: api.errorMessage(error) });
+    }
+  };
+
   const resolveWithClaude = () => {
-    enqueueClaude({ kind: 'resolve', threadId: thread.id }, { repoPath: getRepoPath(), sessionId: thread.sessionId ?? null });
+    enqueueClaude({ kind: 'resolve', threadId: thread.id }, { repoPath: api.getRepoPath(), sessionId: thread.sessionId ?? null });
   };
 
   return (
     <div className={cn('rounded-lg overflow-hidden border border-border', className)} data-thread-id={thread.id}>
-      <div className="flex items-center justify-between h-9 px-3 bg-bg-secondary border-b border-border-muted">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 h-9 px-3 bg-bg-secondary border-b border-border-muted whitespace-nowrap">
+        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
           {headerLeft}
+          <OriginBadge thread={thread} prMode={review.prMode} prUrl={details?.pr?.url ?? null} />
         </div>
-        <div className="flex items-center gap-1">
-          {canAskClaude && (
+        <div className="flex items-center gap-1 shrink-0">
+          {headerRight}
+          {!compact && canPromote && (
             <button
-              onClick={resolveWithClaude}
-              className="inline-flex items-center gap-1 text-xs text-text-secondary hover:text-text transition-colors cursor-pointer mr-2"
-              title="Ask Claude Code to address this thread"
+              onClick={() => void promote()}
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
+              title="Copy Claude's comment into your GitHub review as a draft you can edit"
             >
-              <SparkleIcon className="w-3 h-3" />
-              Resolve with Claude
+              <GitPullRequestIcon size="xs" className="text-added" />
+              Add to my review
             </button>
           )}
-          {onResolve && onUnresolve && (
-            resolved ? (
-              <button
-                onClick={onUnresolve}
-                className="h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
-              >
-                Reopen
-              </button>
-            ) : (
-              <button
-                onClick={onResolve}
-                className="h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
-              >
-                Resolve
-              </button>
-            )
+          {!compact && canAskClaude && !canPromote && (
+            <button
+              onClick={resolveWithClaude}
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
+              title="Ask Claude Code to address this thread"
+            >
+              <SparkleIcon className="w-3 h-3 text-claude" />
+              Ask Claude
+            </button>
           )}
-          {headerRight}
-          <button
-            onClick={onDeleteThread}
-            className="w-6 h-6 inline-flex items-center justify-center rounded-md text-text-muted hover:text-deleted hover:bg-hover transition-colors cursor-pointer"
-            title="Delete thread"
-          >
-            <TrashIcon className="w-3.5 h-3.5" />
-          </button>
+          {!compact && onResolve && onUnresolve && (
+            <button
+              onClick={resolved ? onUnresolve : onResolve}
+              className="h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
+            >
+              {resolved ? 'Reopen' : 'Resolve'}
+            </button>
+          )}
+          <ThreadMenu
+            items={[
+              ...(compact && onResolve && onUnresolve && !resolved ? [{ label: 'Mark as addressed', onSelect: onResolve }] : []),
+              ...(compact && onUnresolve && resolved ? [{ label: 'Reopen', onSelect: onUnresolve }] : []),
+              ...(compact && canAskClaude ? [{ label: 'Ask Claude about it', onSelect: resolveWithClaude }] : []),
+              ...(compact && canPromote ? [{ label: 'Add to my review', onSelect: () => void promote() }] : []),
+              { label: 'Delete thread', onSelect: onDeleteThread, danger: true },
+            ]}
+          />
         </div>
       </div>
       {children}
@@ -105,7 +214,7 @@ export function ThreadCard(props: ThreadCardProps) {
       {activity !== 'idle' && (
         <div className="flex items-center gap-2 px-4 pb-2 text-xs text-text-muted">
           {activity === 'working' ? (
-            <span className="inline-block w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+            <span className="inline-block w-3 h-3 border-2 border-claude/25 border-t-claude rounded-full animate-spin" />
           ) : (
             <SparkleIcon className="w-3 h-3" />
           )}
@@ -123,17 +232,19 @@ export function ThreadCard(props: ThreadCardProps) {
               onCancel={() => setShowReply(false)}
               placeholder="Reply..."
               submitLabel="Reply"
-              reviewable
+              reviewable={!claudeThread}
+              isReply
+              draftKey={replyKey}
               threadPending={!!thread.pending}
             />
           </div>
         ) : (
-          <div className="px-3 pb-3">
+          <div className="pl-10 pr-3 pb-3">
             <button
               onClick={() => setShowReply(true)}
-              className="h-7 px-2.5 -ml-2.5 rounded-md text-[13px] text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
+              className="flex items-center w-full h-8 px-2.5 rounded-md border border-control-border bg-raised text-left text-[13px] text-text-muted hover:border-focus hover:text-text-secondary transition-colors cursor-text"
             >
-              Reply
+              Reply…
             </button>
           </div>
         )

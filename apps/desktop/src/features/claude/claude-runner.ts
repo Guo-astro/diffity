@@ -17,6 +17,8 @@ export interface ClaudeRunContext {
   repoPath: string;
   sessionId: string | null;
   ref?: string | null;
+  /** GitHub threads whose new Claude reply should be posted back to GitHub when the run ends. */
+  postRepliesToGitHub?: string[];
 }
 
 export interface ClaudeRun {
@@ -66,6 +68,9 @@ export function runLabel(action: ClaudeAction): string {
     case 'review':
       return 'Claude is reviewing';
     case 'resolve':
+      if (action.threadIds && action.threadIds.length > 0) {
+        return `Claude is working on ${action.threadIds.length} comment${action.threadIds.length === 1 ? '' : 's'}`;
+      }
       return action.threadId ? 'Claude is on a thread' : 'Claude is resolving';
     case 'thread':
       return 'Claude is replying';
@@ -115,6 +120,9 @@ function initialThreadIds(action: ClaudeAction, sessionId: string | null): strin
     return [action.threadId];
   }
   if (action.kind === 'resolve') {
+    if (action.threadIds && action.threadIds.length > 0) {
+      return action.threadIds;
+    }
     if (action.threadId) {
       return [action.threadId];
     }
@@ -253,6 +261,47 @@ function finishedMessage(run: ClaudeRun, added: number): string {
   return `Claude finished${where}`;
 }
 
+async function postRepliesToGitHub(sessionId: string, threadIds: string[]): Promise<number> {
+  if (threadIds.length === 0) {
+    return 0;
+  }
+  const threads = await tauri.listThreads(sessionId).catch(() => []);
+  let posted = 0;
+  for (const thread of threads.filter((item) => threadIds.includes(item.id))) {
+    const last = thread.comments[thread.comments.length - 1];
+    if (!last || last.authorType !== 'agent' || last.githubCommentId) {
+      continue;
+    }
+    try {
+      await tauri.githubPostComment(last.id);
+      posted += 1;
+    } catch (error) {
+      toast.error('Could not post Claude’s reply to GitHub', { description: tauri.errorMessage(error) });
+    }
+  }
+  if (posted > 0) {
+    queryClient.invalidateQueries({ queryKey: ['threads', sessionId] });
+  }
+  return posted;
+}
+
+async function batchOutcome(sessionId: string, threadIds: string[]): Promise<string | null> {
+  if (threadIds.length === 0) {
+    return null;
+  }
+  const threads = await tauri.listThreads(sessionId).catch(() => []);
+  const worked = threads.filter((thread) => threadIds.includes(thread.id));
+  const resolved = worked.filter((thread) => thread.status !== 'open').length;
+  const replied = worked.filter((thread) => thread.status === 'open' && thread.comments[thread.comments.length - 1]?.authorType === 'agent').length;
+  const untouched = worked.length - resolved - replied;
+  const parts = [
+    resolved > 0 ? `resolved ${resolved}` : null,
+    replied > 0 ? `replied to ${replied}` : null,
+    untouched > 0 ? `${untouched} untouched` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? `Claude ${parts.join(', ')} of ${worked.length} comment${worked.length === 1 ? '' : 's'}` : null;
+}
+
 async function execute(run: ClaudeRun) {
   const agents = await tauri.listAgents();
   const agent = agents.find((item) => item.id === AGENT_ID) ?? agents[0];
@@ -260,7 +309,7 @@ async function execute(run: ClaudeRun) {
   if (problem || !agent) {
     toast.error('Could not start Claude', {
       description: problem ?? undefined,
-      action: { label: 'Settings', onClick: () => openSettingsAt('claude') },
+      action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') },
     });
     return;
   }
@@ -339,9 +388,12 @@ async function execute(run: ClaudeRun) {
   const latest = useClaude.getState().runs.find((item) => item.id === run.id) ?? run;
   const finished = { ...latest, ref, newThreadIds };
   const hasTarget = !!ref && (added > 0 || finished.threadIds.length > 0);
-  toast.success(finishedMessage(finished, added), {
-    duration: hasTarget ? 10_000 : undefined,
-    action: hasTarget ? { label: 'View', onClick: () => openRunResult(finished) } : undefined,
+  const batch = run.action.kind === 'resolve' ? await batchOutcome(sessionId, finished.threadIds) : null;
+  const posted = await postRepliesToGitHub(sessionId, run.context.postRepliesToGitHub ?? []);
+  toast.success(batch ?? finishedMessage(finished, added), {
+    description: batch ? `Edits are in your working tree; each thread has Claude’s reply.${posted > 0 ? ` Posted ${posted} repl${posted === 1 ? 'y' : 'ies'} to GitHub.` : ''}` : undefined,
+    duration: hasTarget ? 12_000 : undefined,
+    action: hasTarget ? { label: batch ? 'View Claude’s changes' : added > 0 ? 'Show comments' : 'Show thread', onClick: () => openRunResult(finished) } : undefined,
   });
 }
 
@@ -370,7 +422,7 @@ async function pump() {
       } catch (error) {
         toast.error('Could not start Claude', {
           description: friendlyError(tauri.errorMessage(error)),
-          action: { label: 'Settings', onClick: () => openSettingsAt('claude') },
+          action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') },
         });
       } finally {
         removeRun(next.id);
@@ -395,6 +447,12 @@ export function useThreadActivity(threadId: string): ThreadActivity {
     }
     return activity;
   });
+}
+
+/** Threads that are queued or being worked on by any Claude run. */
+export function useBusyThreadIds(): Set<string> {
+  const runs = useClaude((state) => state.runs);
+  return new Set(runs.flatMap((run) => run.threadIds));
 }
 
 export function useActiveRun(): ClaudeRun | null {

@@ -247,7 +247,198 @@ that fell out: **controls live next to what they change, and every region has on
   synced) and Actions (Open on GitHub, Back to branch, Ask Claude to review). Esc or a click on the dimmed backdrop
   closes it.
 
+## Round 7
+
+- **Ask Claude to review asks first.** The button (diff toolbar, Home's Up next, row ⋯ menus and the PR dialog all
+  route to it) opens a popover: "What should Claude focus on?" (multi-line), focus chips (Security, Performance,
+  Correctness, Naming, Tests, Types — remembered per repo), and scope (all changes / only the focused file / only
+  files matching a glob with a live match count). ⌘↵ or "Start review" starts; the split-button focus menu is gone.
+  Backend: the `review` action takes `instructions` and `paths`; the prompt gets a "The user's instructions" section
+  (takes priority over the generic passes) and a "Scope" section; paths are validated against the diff, `get_diff`
+  returns only those files and `add_comment` rejects others. Verified with a real run on a scratch repo
+  (instructions + `src/lib/*.ts`): one comment, only in `src/lib/math.ts`.
+- ⋯ buttons in the sidebar filter row and the diff bar have the same outlined chrome and height as their neighbours.
+- Dialog backdrop is darker (black/45).
+- Rail: the active project is an ink tile (dark in light mode, light in dark mode) with no side indicator; inactive
+  tiles stay soft grey; hover adds a ring.
+- Status-bar repo path: click reveals the folder in Finder; right-click offers Reveal in Finder, Open in Terminal,
+  Open in <editor>, Copy path.
+
+## Round 8 (refresh, two personas, contextual actions)
+
+### Refresh
+Paths audited: the "Files changed on disk · Refresh" pill, repo-changed events, Fetch, project switching, ⌘R and a
+full webview reload.
+- **Found:** the Changes view showed Home whenever the uncommitted diff became empty, so refreshing after a commit
+  (or any refresh of a clean tree) swapped the page for Home. ⌘R did nothing in the app window. Unsent comment text,
+  the open composer, scroll position and manually collapsed files were lost on reload.
+- **Now:** data refreshes never navigate. Home is shown only when a project is opened fresh (`openRepoAt` passes a
+  one-shot `fresh` flag; clean tree → Home, otherwise the flag is cleared); an empty Changes view after a refresh
+  shows a compact "No uncommitted changes" state with Go to Home / Review last commit / Browse files.
+  - ⌘R refreshes all data in place ("Refreshed" toast); the route, scroll and composers stay.
+  - The disk-change pill auto-refreshes when no composer is open; with one open it waits for you.
+  - Composer text is saved per repo + review session + anchor (line, reply, general, path) until sent or cancelled;
+    the open line composer, scroll anchor (top file) and manually toggled files are remembered per repo + view, so a
+    full reload restores them (verified with a real reload).
+  - If the lines under an open composer change, the composer moves to the top of the diff with "Your unsent comment
+    on src/app.ts line 6. The code there changed, so it is kept here." (verified by editing the file mid-comment).
+
+### Persona 1: reviewing AI-written work locally
+- Comments save immediately; "Send N to Claude" (solid terracotta) counts your open comments Claude has not answered
+  and that are not already queued (so an @claude thread in flight is never sent twice).
+- Clicking it opens a popover: the comments grouped by file with checkboxes (all selected), an optional note for the
+  whole batch, ⌘↵ to send. Backend: `resolve` takes `threadIds` + `note` (prompt lists only those threads and adds
+  the note; Rust tests added).
+- While running: "Claude is working on 2 comments · 0:04 · Stop" and "Claude Code is working…" on each thread. When
+  done: "Claude resolved 2 of 2 comments" with "Review changes". Verified on the scratch repo: one edit applied
+  (after approval), one answered without a change, both resolved with replies.
+
+### Persona 2: reviewing someone else's PR
+- Composer on a checked-out PR: primary "Start a review" / "Add to review" (draft), secondary "Post to GitHub now"
+  (creates the comment and pushes that one thread immediately). Replies on PR threads are drafts that go with the
+  review. Replies on Claude's local threads stay local and immediate.
+- A hint line under every composer says where it goes: "Goes into your review on PR #430, posted when you submit",
+  "Saved in Diffity only · @claude asks Claude", "… · Claude will reply".
+- Thread badges: Claude (terracotta), Draft · GitHub, Posted (GitHub, links to the PR), Local (PR view only).
+- "Ask Claude to review" on a PR leaves Claude-marked local comments; each has "Add to my review", which copies it
+  into your GitHub review as an editable draft and resolves Claude's thread.
+- Submit review #N is the primary (solid, count badge) when drafts exist; its popover has summary, verdict and the
+  optional Claude section. Tested read-only: drafts were created locally and removed again; nothing was posted.
+
+### Contextual title-bar actions
+| Context | Primary | Secondary |
+| --- | --- | --- |
+| Uncommitted / staged / branch vs base | Send N to Claude (only with unanswered comments) | Ask Claude to review |
+| Checked-out PR | Submit review #N (solid when drafts exist) | Ask Claude to review; Send N to Claude only for your local comments |
+| Past commit or a range not ending at HEAD | — | Ask Claude to review (no Send to Claude: Claude edits the working tree) |
+| Files | — | Send N to Claude for file comments |
+
+## Round 9 (your own PR, thread cards, committed comments, traffic lights)
+
+- **Your PR vs someone else's.** A checked-out PR whose author is the signed-in GitHub user is "Your PR" (terracotta
+  chip in the PR bar); otherwise "Reviewing @author's PR".
+  - Your PR: comments are local notes for Claude (primary "Comment", secondary "Comment & post to GitHub"; hint "A note
+    for Claude on your PR #N, kept in Diffity"); the title bar shows "Send N to Claude", no Submit review.
+  - Reviewers' open GitHub threads are listed in the Send popover under "Reviewer comments from GitHub", and the PR bar
+    offers "Address N reviewer comments" (opens that popover). Opt-in "Post Claude's replies to these GitHub threads"
+    posts each new Claude reply as a GitHub reply when the run ends (new `github_post_comment` command; replies end
+    with a small "Reply drafted by Claude Code in Diffity" line).
+  - After Claude edits files: "Commit & push" in the PR bar and a banner on Uncommitted ("These changes are on the
+    branch of your PR #N · Commit & push"); "Push N commits" when commits are waiting. The commit dialog stages all
+    files, commits with a message prefilled from Claude's resolve summaries, then pushes (`git_commit_all` + push; no
+    amend or rebase).
+  - Someone else's PR keeps the draft-review flow from round 8.
+  - Verified with a mocked login on the scratch PR clone and a seeded reviewer thread; nothing was committed or pushed.
+- **Thread cards.** Headers never wrap: the left side truncates, actions are no-wrap ("Ask Claude", "Resolve") and
+  Delete moved into a ⋯ menu. Reply is a full-width "Reply…" field aligned with the comment text (40px inset).
+- **Empty view with comments on committed code.** The Uncommitted view now shows a compact "No uncommitted changes"
+  line with Home / Last commit / Browse files buttons, then "Comments on code that's since been committed (N)" with
+  compact cards: middle-truncated path + line range, "View in commit abc1234" as the one visible action, everything
+  else (Mark as addressed, Ask Claude about it, Delete) in ⋯.
+- **Ref picker.** The clear × sits inside the chip after the chevron as a small round ghost button.
+- **Traffic lights.** The positioning is now idempotent: every pass puts all three buttons in one container and lays
+  them out from scratch (fixed 20px stride), repairing whatever AppKit did (reclaimed buttons, reset frames, hidden
+  buttons, stacked at x = 0). It runs on window events, focus/blur/visibility and once a second while visible (a
+  cheap frame compare). Repairs are logged (`traffic_lights: repaired …`). Stress-tested: project switching, ⌘\,
+  Settings, ⌘R, theme switch, focus loss; no repair was needed after the first layout.
+
+## Round 10 (switching jump, palette, file order)
+
+- **Project-switch jump**, measured with 30 fps screen recordings and frame diffs. Found and fixed:
+  1. The diff scrolled to the remembered file one frame after painting at the top → the scroll offset is stored per
+     repo + view and applied before the first paint (virtualizer `initialOffset` + layout effect).
+  2. Code painted uncoloured, then coloured (the highlighter and every file's token map were rebuilt on mount) →
+     the loaded highlighter is shared synchronously and token maps are cached per file content.
+  3. Resolved threads faded in on every mount → the fade only plays when a thread was just resolved.
+  4. "Last commit" button popped in → a same-size placeholder while it loads.
+  5. The status-bar path appeared after the repo metadata loaded → falls back to the repo path immediately.
+  6. Rail tiles animated their colour change → no transition.
+  7. Pages are keyed by repository so no state leaks between projects.
+  After: each switch is one frame change (old view → new view), nothing moves afterwards.
+- **⌘K command palette** (`features/palette`): fuzzy search over actions (Ask Claude to review…, Send comments to
+  Claude…, unified/split, whitespace, collapse/expand, next/previous file, fetch/pull/push, open in editor, reveal in
+  Finder, theme, sidebar, settings, shortcuts), projects, the PR and open PRs (check out), recent commits and open
+  comments (jump to thread). Grouped when empty with recently used first; shortcut hints on the right; ↑↓/⌃N⌃P, ↵.
+  Pages register their own actions (`usePageActions`).
+- **⌘P go to file**: the view's changed files first (status letter, +/−, comment count, viewed), then all repository
+  files (open in Files); recently opened files first (per repo, remembered); ↵ scrolls to it, ⌘↵ opens it in the
+  editor. **⌘⇧P** lists actions only. All three are in the Shortcuts modal and Settings → Keyboard shortcuts.
+- **Diff order = sidebar order.** File cards follow the sidebar: depth-first tree order (folders first, sorted the
+  same way) in tree mode, list order in list mode; switching modes reorders the diff, and j/k follow it.
+
+## Round 11 (quick open)
+
+- ⌘O (also the rail "+" tile and the start screen's Open) opens a quick-open palette in the ⌘K style instead of the
+  system dialog:
+  - Empty: recent projects, then starting folders (`~/` plus `~/lab`, `~/Code`, `~/Projects`, `~/Developer`, …
+    whichever exist).
+  - Typing a path (`~/…`, `/…`, or relative to home) lists child folders live: Git repositories first with a branch
+    icon and their current branch (read from `.git/HEAD`, no git process), plain folders after; hidden folders only
+    when the segment starts with `.`. Tab completes, → enters a folder, ⌫ at a `/` goes up, ↵ opens. A folder inside a
+    repository opens the repository root (with a toast saying so); a non-git folder explains why it can't open.
+  - A GitHub repo URL offers "Clone owner/repo…", then the same path input picks the parent folder (default: last
+    used, else ~/Code or ~/lab); progress lines stream from `git clone --progress`; the clone opens on Home.
+  - A PR URL opens the matching local clone and checks the PR out, or offers to clone first.
+  - "Browse…" (⌘⇧O) opens the system dialog; drag-and-drop on the start screen still works.
+- Backend (`diffity_core::quick_open` + commands `quick_open_roots`, `list_dir_suggestions`, `resolve_repo_root`,
+  `clone_repo` with `clone-progress` events, `GIT_TERMINAL_PROMPT=0`), with tests for expansion, splitting,
+  suggestions/repo marking and root resolution. Verified by cloning octocat/Hello-World into the scratchpad.
+
+## Round 12 (feedback while opening a project)
+
+- **The moment a project is picked** (⌘O palette, rail tile, recent list, "+", after a clone, PR URL) a shared
+  "opening" state starts (`lib/opening.ts`): the palette closes at once, the rail shows the project's tile as
+  current with a spinner (after 150ms, so cached switches never flash), the start screen's recent row shows
+  "Opening…", and the title bar shows the repo name straight away.
+- **First open without cache** renders `OpeningSkeleton`: the real layout (title bar with the name, sidebar rows,
+  file-card outlines) with bars after 150ms, a status pill after 400ms ("Opening express · Reading git status…",
+  steps from the queries in flight: repository, git status, changes, comments, files, history) and Cancel after 4s
+  (back to where you were). The same skeleton replaces the old splash while comments load.
+- **Progress bar** no longer runs while only GitHub enrichment loads (PR details, PR list, auth, agents): opening
+  express showed the bar looping for ~4s after the view was ready because `github-details` was still fetching.
+- **Switching kept the rail empty for a frame**: the per-repo cache swap cleared everything, including the recent
+  projects the rail reads. Global queries (recent repos, settings, GitHub auth, agents, quick-open data) now survive
+  the swap.
+- **Errors** render inside the workspace (rail stays) with Retry, Uncommitted changes, Browse files and Open another
+  repository.
+- **Found on the way:** switching theme reused light syntax colours in dark mode (the token cache key ignored the
+  highlighter) → fixed.
+- **Measured:** git status/diff take 10–30ms on this repo (300 files), express (214 files, 6.1k commits) and
+  Hello-World, and the view paints ~250ms after Enter, so the skeleton normally never shows; it was checked by
+  rendering it forced. Clone progress streams in the palette; PR checkout keeps its step toasts. Cloning has no
+  cancel yet.
+
+## Round 13 (project tile menu)
+
+- Right-clicking a project tile removed it instantly. It now opens a context menu (same style as other menus; also
+  Shift+F10 or the menu key on a focused tile): Open, Open in new window, Reveal in Finder, Open in <editor>, Open in
+  Terminal, Copy path · Move up / Move down (keyboard alternative to dragging) · "Remove from sidebar" in red with
+  "Keeps the folder and its comments".
+- Removing shows "Removed <repo> from the sidebar · The folder was not touched" with Undo (8s), which puts the tile
+  back in the same position (and reopens it if it was current). Removing the current project switches to the next
+  tile (or the start screen when none are left).
+- Opening a removed project again (⌘O, recent list, clone) brings it back; before, it stayed hidden from the rail
+  whenever it was not the current project.
+- The tile tooltip no longer covers the menu, and the menu is anchored to the tile's right edge.
+
+## Round 14 (say what the button does)
+
+- Home only shows "Up next" when there is real pending work: uncommitted changes, the checked-out PR, a branch ahead
+  of its base, or open comments. A clean repo gets one calm line, "You're all caught up · nothing to review", with
+  quiet links (Latest commit abc1234 · Compare branches, which opens the Compare popover · Browse files) and History
+  becomes the main content. The latest commit is no longer presented as something to review.
+- Primary labels say what happens: "View changes" (uncommitted), "View PR diff", "Compare with main" (branch vs
+  base), "Go to comments" (open comments); the To review rows carry the same label as their first menu item and as
+  their tooltip. "Ask Claude to review" is unchanged.
+- Other vague labels: "Review this commit" → "View commit", "Changes since this commit" → "View changes since this
+  commit", PR dialog "Review changes" → "View PR diff", Claude toast "Review changes"/"View" → "View Claude's
+  changes"/"Show comments"/"Show thread", Comments drawer "Open view" → "Open diff"/"Open in Files", toast actions
+  "Settings" → "Claude settings", "Sign in" → "Sign in to GitHub", empty-state "Review uncommitted changes" → "View
+  uncommitted changes".
+
 ## Remaining
+
+- "Post to GitHub now" pushes only new threads; replies to existing GitHub threads still go out with the review.
 
 - Very large diffs (thousands of files) are still rendered eagerly apart from auto-collapsed files; no virtualisation.
 - The window title is only the repo name (no ref).

@@ -93,6 +93,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::repo::open_repo,
+            commands::repo::quick_open_roots,
+            commands::repo::list_dir_suggestions,
+            commands::repo::resolve_repo_root,
+            commands::repo::clone_repo,
             commands::repo::recent_repos,
             commands::repo::watch_repo,
             commands::repo::unwatch_repo,
@@ -150,6 +154,8 @@ pub fn run() {
             commands::github::git_fetch,
             commands::github::git_pull,
             commands::github::git_push,
+            commands::github::git_commit_all,
+            commands::github::github_post_comment,
             commands::github::find_pr,
             commands::github::list_prs,
             commands::github::checkout_pr,

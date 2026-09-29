@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useDiff } from '../../hooks/use-diff';
 import { useInfo } from '../../hooks/use-info';
@@ -21,16 +21,28 @@ import { useDiffStaleness } from '../../hooks/use-diff-staleness';
 import { type ViewMode, getFilePath, getAutoCollapsedPaths } from '../../lib/diff-utils';
 import { buildFirstOpenThreadByFile, buildThreadCountsByFile } from '../../lib/comment-navigation';
 import { focusThreadElement, getHunkHeaders, scrollToElement } from '../../lib/dom-utils';
-import { setFocusThread } from '../../lib/ui-store';
+import { setFocusThread, useUi } from '../../lib/ui-store';
+import { orderLikeSidebar } from '../../lib/file-tree';
+import { usePageActions, useViewFiles, type PaletteAction } from '../../features/palette/palette-store';
+import { statusLetter } from '../tree/file-tree-item';
+import { requestAskClaude } from '../../features/claude/ask-claude-review';
+import { requestSendToClaude } from '../../features/review/finish-review';
 import { OutsideThreads } from '../comments/outside-threads';
 import type { LineSelection } from '../comments/types';
 import { DiffBar } from './view-options';
-import { Dashboard } from '../layout/dashboard';
-import { useRepoNav } from '../../hooks/use-repo';
+import { repoBase } from '../../hooks/use-repo';
+import { getRepoPath } from '../../lib/api';
+import { readViewMemory, writeViewMemory } from '../../lib/view-memory';
+import { MovedComposer, selectionInDiff } from '../comments/moved-composer';
 import { Workspace } from '../layout/title-bar';
 import { ReviewStateProvider } from '../../features/review/review-state';
 import { useViewedFiles } from '../../hooks/use-viewed-files';
-import { useGitHubPr } from '../../hooks/use-repo-state';
+import { useGitHubPr, useOwnPr } from '../../hooks/use-repo-state';
+import { prDiffRef } from '../layout/ref-menu';
+import { openCommitDialog } from '../../features/pr/commit-dialog';
+import { ChevronDownIcon, ChevronUpIcon, CollapseAllIcon, ExpandAllIcon, EyeOffIcon, GitPullRequestIcon, PushIcon, SendIcon, SparkleIcon, SplitViewIcon, UnifiedViewIcon } from '../ui/icon';
+import { buttonPrimary } from '../ui/button-styles';
+import { cn } from '../../lib/cn';
 
 interface DiffPageProps {
   diffRef: string;
@@ -42,12 +54,16 @@ export function DiffPage(props: DiffPageProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('diffity-view-mode') as ViewMode | null) ?? 'split');
   const [hideWhitespace, setHideWhitespace] = useState(false);
   const { theme, toggleTheme } = useTheme();
-  const { data: diff, error } = useDiff(hideWhitespace, refParam);
+  const { data: rawDiff, error } = useDiff(hideWhitespace, refParam);
+  const flat = useUi((state) => state.sidebarFlat);
+  const diff = useMemo(() => (rawDiff ? { ...rawDiff, files: orderLikeSidebar(rawDiff.files, flat) } : rawDiff), [rawDiff, flat]);
   const { data: info } = useInfo(refParam);
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
-  const manuallyToggledRef = useRef<Set<string>>(new Set());
-  const [pendingSelection, setPendingSelection] = useState<LineSelection | null>(null);
+  const manuallyToggledRef = useRef<Set<string>>(new Set(readViewMemory<string[]>(refParam, 'toggled', [])));
+  const [pendingSelection, setPendingSelection] = useState<LineSelection | null>(() => readViewMemory<LineSelection | null>(refParam, 'composer', null));
+  const location = useLocation();
+  const navigate = useNavigate();
   const mainRef = useRef<HTMLElement | null>(null);
   const diffViewRef = useRef<DiffViewHandle>(null);
   const currentFileIdx = useRef(0);
@@ -58,6 +74,7 @@ export function DiffPage(props: DiffPageProps) {
   const canRevert = !!info?.capabilities?.revert;
   const { isStale, resetStaleness } = useDiffStaleness(refParam, !!info?.capabilities?.staleness);
   const { details: githubDetails } = useGitHubPr();
+  const ownPr = useOwnPr();
   const { reviewedFiles, setReviewed } = useViewedFiles(sessionId, diff);
 
   useEffect(() => {
@@ -67,6 +84,22 @@ export function DiffPage(props: DiffPageProps) {
   useEffect(() => {
     hideStaticSplash();
   }, []);
+
+  useEffect(() => {
+    writeViewMemory(refParam, 'composer', pendingSelection);
+  }, [refParam, pendingSelection]);
+
+  useEffect(() => {
+    const fresh = (location.state as { fresh?: boolean } | null)?.fresh;
+    if (!fresh || !diff) {
+      return;
+    }
+    if (diff.files.length === 0 && refParam === 'work') {
+      navigate(`${repoBase(getRepoPath())}/overview`, { replace: true });
+      return;
+    }
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location, diff, refParam, navigate]);
 
   const { data: serverThreads, isFetched: threadsFetched } = useReviewThreads(reviewsEnabled ? sessionId : null);
   const threads = reviewsEnabled && serverThreads ? serverThreads : [];
@@ -131,6 +164,7 @@ export function DiffPage(props: DiffPageProps) {
     } else {
       toggled.add(path);
     }
+    writeViewMemory(refParam, 'toggled', [...toggled]);
     setCollapsedFiles((prev) => {
       const next = new Set(prev);
       if (next.has(path)) {
@@ -246,7 +280,6 @@ export function DiffPage(props: DiffPageProps) {
   });
 
   const queryClient = useQueryClient();
-  const nav = useRepoNav();
 
   const handleRevert = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['diff'] });
@@ -256,6 +289,24 @@ export function DiffPage(props: DiffPageProps) {
     queryClient.invalidateQueries({ queryKey: ['diff'] });
     resetStaleness();
   }, [queryClient, resetStaleness]);
+
+  const composing = pendingSelection !== null;
+  useEffect(() => {
+    if (!isStale || composing) {
+      return;
+    }
+    const timer = window.setTimeout(handleRefreshDiff, 400);
+    return () => window.clearTimeout(timer);
+  }, [isStale, composing, handleRefreshDiff]);
+
+  const initialScrollTop = useMemo(() => readViewMemory<number>(refParam, 'scrollTop', 0), [refParam]);
+  const scrollSaveTimer = useRef<number | null>(null);
+  const handleScrollTop = useCallback((top: number) => {
+    if (scrollSaveTimer.current) {
+      window.clearTimeout(scrollSaveTimer.current);
+    }
+    scrollSaveTimer.current = window.setTimeout(() => writeViewMemory(refParam, 'scrollTop', Math.round(top)), 150);
+  }, [refParam]);
 
   const handleSidebarFileClick = useCallback((path: string) => {
     setActiveFile(path);
@@ -317,6 +368,38 @@ export function DiffPage(props: DiffPageProps) {
     handleScrollToThread(threadId, path);
   }, [firstOpenThreadByFile, handleSidebarFileClick, handleScrollToThread]);
 
+  const paletteFiles = useMemo(() => diff ? diff.files.map((file) => {
+    const path = getFilePath(file);
+    return {
+      path,
+      status: statusLetter(file.status).letter,
+      additions: file.additions,
+      deletions: file.deletions,
+      comments: commentCountsByFile.get(path) ?? 0,
+      viewed: reviewedFiles.has(path),
+    };
+  }) : null, [diff, commentCountsByFile, reviewedFiles]);
+  useViewFiles(paletteFiles, handleSidebarFileClick);
+
+  const paletteActions = useMemo<PaletteAction[]>(() => {
+    const list: PaletteAction[] = [
+      { id: 'view-unified', title: 'Unified diff', group: 'View', hint: 'U', icon: <UnifiedViewIcon size="sm" />, run: () => setViewMode('unified') },
+      { id: 'view-split', title: 'Split diff', group: 'View', hint: 'S', icon: <SplitViewIcon size="sm" />, run: () => setViewMode('split') },
+      { id: 'view-whitespace', title: hideWhitespace ? 'Show whitespace changes' : 'Hide whitespace changes', group: 'View', icon: <EyeOffIcon size="sm" />, run: () => setHideWhitespace(!hideWhitespace) },
+      { id: 'view-collapse', title: 'Collapse all files', group: 'View', hint: '⇧X', icon: <CollapseAllIcon size="sm" />, run: () => setCollapsedFiles(new Set(diff?.files.map((file) => getFilePath(file)) ?? [])) },
+      { id: 'view-expand', title: 'Expand all files', group: 'View', icon: <ExpandAllIcon size="sm" />, run: () => setCollapsedFiles(new Set()) },
+      { id: 'file-next', title: 'Next file', group: 'View', hint: 'J', keywords: 'down', icon: <ChevronDownIcon size="sm" />, run: () => navigateFile(1) },
+      { id: 'file-prev', title: 'Previous file', group: 'View', hint: 'K', keywords: 'up', icon: <ChevronUpIcon size="sm" />, run: () => navigateFile(-1) },
+      { id: 'claude-review', title: 'Ask Claude to review…', group: 'Actions', keywords: 'ai review', icon: <SparkleIcon size="sm" className="text-claude" />, run: () => requestAskClaude(refParam) },
+      { id: 'claude-send', title: 'Send comments to Claude…', group: 'Actions', keywords: 'ai resolve fix', icon: <SendIcon size="sm" className="text-claude" />, run: requestSendToClaude },
+    ];
+    if (ownPr && githubDetails) {
+      list.push({ id: 'commit-push', title: `Commit & push to PR #${githubDetails.prNumber}`, group: 'Actions', icon: <PushIcon size="sm" />, run: () => openCommitDialog(githubDetails.prNumber) });
+    }
+    return list;
+  }, [hideWhitespace, diff, navigateFile, refParam, ownPr, githubDetails]);
+  usePageActions('diff', paletteActions);
+
   const handleActiveFileFromScroll = useCallback((path: string) => {
     setActiveFile(path);
   }, []);
@@ -338,13 +421,11 @@ export function DiffPage(props: DiffPageProps) {
   }
 
   const isEmpty = diff.files.length === 0;
-  if (isEmpty && refParam === 'work' && !hideWhitespace) {
-    return <Dashboard onNavigate={nav.toDiff} />;
-  }
+  const composerMoved = pendingSelection !== null && !selectionInDiff(diff, pendingSelection);
   const allPaths = diff.files.map((file) => getFilePath(file));
 
   return (
-    <ReviewStateProvider sessionId={reviewsEnabled ? sessionId : null} prMode={!!githubDetails}>
+    <ReviewStateProvider sessionId={reviewsEnabled ? sessionId : null} prMode={!!githubDetails && !ownPr} ownPrNumber={ownPr && githubDetails && refParam === prDiffRef(githubDetails) ? githubDetails.prNumber : null}>
     <div className="flex flex-col h-screen bg-frame text-text font-sans">
       <Toolbar
         theme={theme}
@@ -358,6 +439,7 @@ export function DiffPage(props: DiffPageProps) {
         githubDetails={githubDetails}
         hasGitHubRemote={!!info?.github}
         sessionId={sessionId}
+        focusedFile={activeFile}
       />
       <Workspace>
       <PrBar diffRef={refParam} threads={threads} />
@@ -373,23 +455,38 @@ export function DiffPage(props: DiffPageProps) {
         />
         {isEmpty ? (
           <div className="flex flex-1 min-w-0 flex-col overflow-y-auto">
-            {reviewsEnabled && (
-              <OutsideThreads
-                threads={threads}
-                commentActions={commentActions}
-                viewEmpty
-                className="mx-auto mt-4 w-full max-w-2xl rounded-lg border border-border"
-              />
-            )}
             <DiffEmptyState
               diffRef={refParam}
               hideWhitespace={hideWhitespace}
               onShowWhitespace={() => setHideWhitespace(false)}
               branch={info?.branch || null}
             />
+            {reviewsEnabled && (
+              <OutsideThreads
+                threads={threads}
+                commentActions={commentActions}
+                viewEmpty
+                className="mx-auto mt-8 mb-10 w-full max-w-[760px] px-6"
+              />
+            )}
+            {composerMoved && pendingSelection && (
+              <MovedComposer selection={pendingSelection} onSubmit={handleAddThread} onCancel={() => setPendingSelection(null)} />
+            )}
           </div>
         ) : (
           <div className="flex flex-1 min-w-0 flex-col">
+            {ownPr && githubDetails && refParam === 'work' && (
+              <div className="flex items-center gap-3 h-10 shrink-0 px-5 border-b border-border-muted bg-claude/6 text-[13px]">
+                <GitPullRequestIcon size="sm" className="text-added" />
+                <span className="min-w-0 truncate text-text-secondary">
+                  These changes are on the branch of your PR <span className="font-medium text-text">#{githubDetails.prNumber}</span>
+                </span>
+                <span className="flex-1" />
+                <button onClick={() => openCommitDialog(githubDetails.prNumber)} className={cn(buttonPrimary, 'h-7')}>
+                  Commit & push
+                </button>
+              </div>
+            )}
             <DiffBar
               viewMode={viewMode}
               onViewModeChange={setViewMode}
@@ -414,6 +511,9 @@ export function DiffPage(props: DiffPageProps) {
                 />
               }
             />
+            {composerMoved && pendingSelection && (
+              <MovedComposer selection={pendingSelection} onSubmit={handleAddThread} onCancel={() => setPendingSelection(null)} />
+            )}
             <DiffView
               diff={diff}
               viewMode={viewMode}
@@ -436,6 +536,8 @@ export function DiffPage(props: DiffPageProps) {
               onAddThread={handleAddThread}
               pendingSelection={pendingSelection}
               onPendingSelectionChange={setPendingSelection}
+              initialScrollTop={initialScrollTop}
+              onScrollTopChange={handleScrollTop}
             />
           </div>
         )}

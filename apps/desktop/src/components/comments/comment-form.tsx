@@ -3,6 +3,9 @@ import type { SubmitOptions } from './types';
 import { MentionTextarea } from './mention-textarea';
 import { useReviewState } from '../../features/review/review-state';
 import { modKey } from '../../lib/platform';
+import { getRepoPathOrNull } from '../../lib/api';
+import { mentionsAgent } from '../../lib/mentions';
+import { useGitHubPr } from '../../hooks/use-repo-state';
 import { buttonGhost, buttonOutline, buttonPrimary } from '../ui/button-styles';
 
 interface CommentFormProps {
@@ -14,6 +17,59 @@ interface CommentFormProps {
   lineLabel?: string;
   reviewable?: boolean;
   threadPending?: boolean;
+  /** Persists unsent text (per repo) so it survives refreshes and reloads; cleared on submit or cancel. */
+  draftKey?: string;
+  isReply?: boolean;
+}
+
+const DRAFT_PREFIX = 'diffity-draft:';
+
+function draftStorageKey(key: string) {
+  return `${DRAFT_PREFIX}${getRepoPathOrNull() ?? ''}:${key}`;
+}
+
+function readDraft(key: string | undefined): string {
+  if (!key) {
+    return '';
+  }
+  try {
+    return localStorage.getItem(draftStorageKey(key)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function writeDraft(key: string | undefined, value: string) {
+  if (!key) {
+    return;
+  }
+  try {
+    if (value.trim()) {
+      localStorage.setItem(draftStorageKey(key), value);
+      return;
+    }
+    localStorage.removeItem(draftStorageKey(key));
+  } catch {
+    return;
+  }
+}
+
+export function hasDraft(sessionId: string | null, key: string): boolean {
+  return readDraft(`${sessionId ?? 'none'}:${key}`).trim().length > 0;
+}
+
+function destinationHint(input: { reviewMode: boolean; prNumber: number | null; mentions: boolean; ownPr?: number | null }): string {
+  const { reviewMode, prNumber, mentions, ownPr } = input;
+  if (ownPr) {
+    return mentions ? `A note on your PR #${ownPr}, kept in Diffity · Claude will reply` : `A note for Claude on your PR #${ownPr}, kept in Diffity`;
+  }
+  if (reviewMode && prNumber) {
+    return mentions ? `Goes into your review on PR #${prNumber} · Claude will reply` : `Goes into your review on PR #${prNumber}, posted when you submit`;
+  }
+  if (mentions) {
+    return 'Saved in Diffity · Claude will reply';
+  }
+  return 'Saved in Diffity only · @claude asks Claude';
 }
 
 const primaryClass = buttonPrimary;
@@ -29,10 +85,20 @@ export function CommentForm(props: CommentFormProps) {
     lineLabel,
     reviewable = false,
     threadPending = false,
+    draftKey,
+    isReply = false,
   } = props;
-  const [body, setBody] = useState('');
+  const reviewState = useReviewState();
+  const storageKey = draftKey ? `${reviewState.sessionId ?? 'none'}:${draftKey}` : undefined;
+  const [body, setBodyState] = useState(() => readDraft(storageKey));
+  const setBody = (value: string) => {
+    setBodyState(value);
+    writeDraft(storageKey, value);
+  };
+  const { details } = useGitHubPr();
+  const prNumber = details?.prNumber ?? null;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const review = useReviewState();
+  const review = reviewState;
   const reviewMode = reviewable && review.enabled && review.prMode;
   const hasPendingReview = review.pendingReview !== null;
 
@@ -51,6 +117,20 @@ export function CommentForm(props: CommentFormProps) {
     setBody('');
   };
 
+  const postNow = () => {
+    const trimmed = body.trim();
+    if (!trimmed || !prNumber) {
+      return;
+    }
+    onSubmit(trimmed, { pending: false, postToGitHub: prNumber });
+    setBody('');
+  };
+
+  const cancel = () => {
+    writeDraft(storageKey, '');
+    onCancel();
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
@@ -59,16 +139,36 @@ export function CommentForm(props: CommentFormProps) {
     }
     if (e.key === 'Escape') {
       e.preventDefault();
-      onCancel();
+      cancel();
     }
   };
 
   const renderButtons = () => {
     if (!reviewMode) {
+      const ownPr = review.ownPrNumber;
       return (
-        <button onClick={() => submit(false)} disabled={!body.trim()} className={primaryClass}>
-          {submitLabel}
-        </button>
+        <>
+          {ownPr && !isReply && (
+            <button
+              onClick={() => {
+                const trimmed = body.trim();
+                if (!trimmed) {
+                  return;
+                }
+                onSubmit(trimmed, { pending: false, postToGitHub: ownPr });
+                setBody('');
+              }}
+              disabled={!body.trim()}
+              className={secondaryClass}
+              title={`Also post this comment to your pull request #${ownPr} on GitHub`}
+            >
+              Comment & post to GitHub
+            </button>
+          )}
+          <button onClick={() => submit(false)} disabled={!body.trim()} className={primaryClass}>
+            {submitLabel}
+          </button>
+        </>
       );
     }
     if (threadPending) {
@@ -80,14 +180,16 @@ export function CommentForm(props: CommentFormProps) {
     }
     return (
       <>
-        <button
-          onClick={() => submit(false)}
-          disabled={!body.trim()}
-          className={secondaryClass}
-          title="Publish this comment right away (an @claude mention is answered immediately)"
-        >
-          {submitLabel === 'Reply' ? 'Reply now' : 'Comment now'}
-        </button>
+        {!isReply && prNumber && (
+          <button
+            onClick={postNow}
+            disabled={!body.trim()}
+            className={secondaryClass}
+            title={`Post this comment to pull request #${prNumber} on GitHub right away, outside your review`}
+          >
+            Post to GitHub now
+          </button>
+        )}
         <button
           onClick={() => submit(true)}
           disabled={!body.trim()}
@@ -118,11 +220,13 @@ export function CommentForm(props: CommentFormProps) {
           className="block w-full px-3 py-2 text-[13px] leading-5 bg-bg text-text rounded-md border border-border focus:border-focus resize-y outline-none placeholder:text-text-muted min-h-[72px]"
         />
       </div>
-      <div className="flex items-center gap-2 px-2 pb-2">
-        <span className="flex-1 pl-1 text-xs text-text-muted truncate" title={`${modKey}Enter submits`}>
-          {review.enabled ? '@claude to ask Claude' : ''}
-        </span>
-        <button onClick={onCancel} className={buttonGhost}>
+      {review.enabled && (
+        <div className="px-3 pb-2 text-xs text-text-muted" title={`${modKey}Enter submits`}>
+          {destinationHint({ reviewMode, prNumber, mentions: mentionsAgent(body), ownPr: review.ownPrNumber })}
+        </div>
+      )}
+      <div className="flex items-center justify-end gap-2 px-2 pb-2">
+        <button onClick={cancel} className={buttonGhost}>
           Cancel
         </button>
         {renderButtons()}

@@ -6,8 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { diffOptions } from '../../queries/diff';
-import * as tauri from '../../lib/tauri';
-import { enqueueClaude } from '../../features/claude/claude-runner';
+import { AskClaudePopover, requestAskClaude } from '../../features/claude/ask-claude-review';
 import { usePullRequests } from '../../features/pr/pull-requests-dialog';
 import { checkoutPullRequest } from '../../features/pr/pr-checkout';
 import { BranchSwitcher } from '../../features/pr/branch-switcher';
@@ -30,7 +29,7 @@ import { openSettingsAt } from '../../lib/ui-store';
 import { CommentsButton } from '../../features/comments/comments-button';
 import { cn } from '../../lib/cn';
 import { buttonClaude, buttonIconSmall, buttonOutline, buttonPrimary, inputField } from '../ui/button-styles';
-import { ChangesIcon, ChevronDownIcon, CommentIcon, EditorIcon, FolderSimpleIcon, GitCommitIcon, GitCompareIcon, GitPullRequestIcon, SearchIcon, SparkleIcon, SwapIcon, XIcon, GitHubIcon } from '../ui/icon';
+import { ChangesIcon, ChevronDownIcon, CommentIcon, EditorIcon, FolderSimpleIcon, CheckCircleIcon, GitCompareIcon, GitPullRequestIcon, SearchIcon, SparkleIcon, SwapIcon, XIcon, GitHubIcon } from '../ui/icon';
 import { Popover } from '../ui/popover';
 
 interface DashboardProps {
@@ -107,10 +106,16 @@ function RefInput(props: { value: string; onChange: (value: string) => void; pla
   );
 }
 
-function ComparePopover(props: { onNavigate: (ref: string) => void; defaultBase: string | null }) {
-  const { onNavigate, defaultBase } = props;
+function ComparePopover(props: { onNavigate: (ref: string) => void; defaultBase: string | null; openSignal?: number }) {
+  const { onNavigate, defaultBase, openSignal = 0 } = props;
   const { data: branches } = useBranches();
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (openSignal > 0) {
+      setOpen(true);
+    }
+  }, [openSignal]);
   const [base, setBase] = useState('');
   const [head, setHead] = useState('HEAD');
   const ref = useRef<HTMLDivElement>(null);
@@ -214,16 +219,15 @@ interface Candidate {
   title: string;
   explain: string;
   summary: DiffSummary | null;
+  /** What the primary button does, e.g. "View changes", "Compare with main". */
+  action: string;
+  run?: () => void;
 }
 
-function Hero(props: { item: Candidate; sessionRepo: string; onReview: (ref: string) => void }) {
-  const { item, sessionRepo, onReview } = props;
-
-  const askClaude = async () => {
-    const session = await tauri.getSession(sessionRepo, item.ref).catch(() => null);
-    enqueueClaude({ kind: 'review', ref: item.ref }, { repoPath: sessionRepo, sessionId: session?.id ?? null });
-    onReview(item.ref);
-  };
+function Hero(props: { item: Candidate; onReview: (ref: string) => void }) {
+  const { item, onReview } = props;
+  const [asking, setAsking] = useState(false);
+  const askRef = useRef<HTMLButtonElement>(null);
 
   return (
     <section className="mt-6 rounded-xl border border-border bg-bg-secondary px-6 py-5">
@@ -234,13 +238,21 @@ function Hero(props: { item: Candidate; sessionRepo: string; onReview: (ref: str
       <h2 className="mt-2 text-[18px] leading-6 font-semibold text-text line-clamp-2">{item.title}</h2>
       <p className="mt-1 text-[13px] text-text-secondary">{item.explain}</p>
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button onClick={() => onReview(item.ref)} className={buttonPrimary}>
-          Review
+        <button onClick={() => (item.run ? item.run() : onReview(item.ref))} className={buttonPrimary}>
+          {item.action}
         </button>
-        <button onClick={() => void askClaude()} className={buttonClaude}>
+        <button ref={askRef} onClick={() => setAsking(!asking)} className={buttonClaude} aria-expanded={asking}>
           <SparkleIcon size="sm" />
           Ask Claude to review
         </button>
+        <AskClaudePopover
+          open={asking}
+          onClose={() => setAsking(false)}
+          anchorRef={askRef}
+          diffRef={item.ref}
+          sessionId={null}
+          onStarted={() => onReview(item.ref)}
+        />
         {item.summary && <span className="ml-auto"><StatLine summary={item.summary} /></span>}
       </div>
     </section>
@@ -272,6 +284,7 @@ export function Dashboard(props: DashboardProps) {
   const base = useBaseBranch(details?.baseRef ?? null, branch);
   const [search, setSearch] = useState('');
   const [searching, setSearching] = useState(false);
+  const [compareSignal, setCompareSignal] = useState(0);
   const { data: recent } = useRecentCommits(1);
   const editor = useEditorName();
 
@@ -287,7 +300,6 @@ export function Dashboard(props: DashboardProps) {
   const work = useDiffSummary(uncommitted > 0 ? 'work' : null);
   const prDiff = useDiffSummary(prRef);
   const branchDiff = useDiffSummary(branchRef);
-  const lastDiff = useDiffSummary(last ? commitRef(last.hash) : null);
   const prs = usePullRequests(hasRemote && !!auth?.authenticated);
 
   const candidates: Candidate[] = [];
@@ -298,6 +310,7 @@ export function Dashboard(props: DashboardProps) {
       title: `${files} file${files === 1 ? '' : 's'} changed since your last commit`,
       explain: [status?.staged ? `${status.staged} staged` : null, status?.unstaged ? `${status.unstaged} unstaged` : null, status?.untracked ? `${status.untracked} new` : null].filter(Boolean).join(' · '),
       summary: work.summary,
+      action: 'View changes',
     });
   }
   if (details && prRef) {
@@ -306,6 +319,7 @@ export function Dashboard(props: DashboardProps) {
       title: details.prTitle,
       explain: `${details.pr?.author ? `by ${details.pr.author} · ` : ''}${branch ?? ''} → ${details.baseRef}`,
       summary: prDiff.summary,
+      action: 'View PR diff',
     });
   }
   if (branchRef && base && branchDiff.summary && branchDiff.summary.files > 0) {
@@ -314,24 +328,13 @@ export function Dashboard(props: DashboardProps) {
       title: `${branch} vs ${base.replace(/^origin\//, '')}`,
       explain: 'Everything on this branch since it split from its base',
       summary: branchDiff.summary,
+      action: `Compare with ${base.replace(/^origin\//, '')}`,
     });
   }
-  if (last) {
-    candidates.push({
-      key: 'last', ref: commitRef(last.hash), icon: <GitCommitIcon size="sm" />, eyebrow: 'Latest commit',
-      title: last.message,
-      explain: `${last.shortHash} · ${last.author} · ${last.relativeDate}`,
-      summary: lastDiff.summary,
-    });
-  }
-  const askClaudeFor = async (ref: string) => {
-    const session = await tauri.getSession(nav.repoPath, ref).catch(() => null);
-    enqueueClaude({ kind: 'review', ref }, { repoPath: nav.repoPath, sessionId: session?.id ?? null });
+  const askClaudeFor = (ref: string) => {
     onNavigate(ref);
+    requestAskClaude(ref);
   };
-
-  const [hero, ...rest] = candidates;
-  const queue = rest.filter((item) => item.key !== 'last');
 
   const signedOutEarly = hasRemote && !!auth && !auth.authenticated;
   const openThreads = (repoThreads ?? []).filter(isOpenThread);
@@ -344,6 +347,26 @@ export function Dashboard(props: DashboardProps) {
     }
     threadGroups.set(thread.ref, group);
   }
+  const goToComments = (ref: string) => {
+    if (ref === TREE_REF) {
+      nav.toTree();
+      return;
+    }
+    onNavigate(ref);
+  };
+  const firstCommentGroup = [...threadGroups.entries()][0];
+  if (candidates.length === 0 && firstCommentGroup) {
+    const [ref, group] = firstCommentGroup;
+    candidates.push({
+      key: 'comments', ref, icon: <CommentIcon size="sm" className={group.claude > 0 ? 'text-claude' : undefined} />, eyebrow: 'Open comments',
+      title: `${openThreads.length} open comment${openThreads.length === 1 ? '' : 's'} to address`,
+      explain: `${group.count} in ${group.label}${threadGroups.size > 1 ? ` and more in ${threadGroups.size - 1} other view${threadGroups.size === 2 ? '' : 's'}` : ''}`,
+      summary: null,
+      action: 'Go to comments',
+      run: () => goToComments(ref),
+    });
+  }
+  const [hero, ...queue] = candidates;
   const otherPrs = signedOutEarly ? [] : (prs.data ?? []).filter((pr) => pr.number !== details?.prNumber).slice(0, 5);
 
   const statusParts: ReactNode[] = [];
@@ -403,7 +426,29 @@ export function Dashboard(props: DashboardProps) {
               ))}
             </p>
 
-            {hero && <Hero item={hero} sessionRepo={nav.repoPath} onReview={onNavigate} />}
+            {hero ? (
+              <Hero item={hero} onReview={onNavigate} />
+            ) : (
+              <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 py-3 border-y border-border-muted text-[13px]">
+                <CheckCircleIcon size="md" className="text-added" />
+                <span className="font-medium text-text">You're all caught up</span>
+                <span className="text-text-secondary">nothing to review</span>
+                <span className="flex-1" />
+                {last && (
+                  <button onClick={() => onNavigate(commitRef(last.hash))} className="text-text-secondary hover:text-text underline decoration-text-muted/40 underline-offset-2 cursor-pointer" title={last.message}>
+                    Latest commit <code className="font-mono text-xs">{last.shortHash}</code>
+                  </button>
+                )}
+                <span aria-hidden className="text-text-muted">·</span>
+                <button onClick={() => setCompareSignal((value) => value + 1)} className="text-text-secondary hover:text-text underline decoration-text-muted/40 underline-offset-2 cursor-pointer">
+                  Compare branches
+                </button>
+                <span aria-hidden className="text-text-muted">·</span>
+                <button onClick={() => nav.toTree()} className="text-text-secondary hover:text-text underline decoration-text-muted/40 underline-offset-2 cursor-pointer">
+                  Browse files
+                </button>
+              </div>
+            )}
 
             {hasQueue && (
               <section className="mt-8">
@@ -417,10 +462,14 @@ export function Dashboard(props: DashboardProps) {
                       meta={item.eyebrow}
                       stats={item.summary && <StatCell additions={item.summary.additions} deletions={item.summary.deletions} bar={<DiffStatBar additions={item.summary.additions} deletions={item.summary.deletions} />} />}
                       onClick={() => onNavigate(item.ref)}
-                      actions={[{ label: 'Ask Claude to review', icon: <SparkleIcon size="sm" className="text-claude" />, onSelect: () => void askClaudeFor(item.ref) }]}
+                      tooltip={item.action}
+                      actions={[
+                        { label: item.action, icon: item.icon, onSelect: () => (item.run ? item.run() : onNavigate(item.ref)) },
+                        { label: 'Ask Claude to review', icon: <SparkleIcon size="sm" className="text-claude" />, onSelect: () => askClaudeFor(item.ref) },
+                      ]}
                     />
                   ))}
-                  {[...threadGroups.entries()].map(([ref, group]) => (
+                  {[...threadGroups.entries()].filter(([ref]) => !(hero?.key === 'comments' && hero.ref === ref)).map(([ref, group]) => (
                     <ListRow
                       key={`comments-${ref}`}
                       icon={<CommentIcon size="sm" className={group.claude > 0 ? 'text-claude' : undefined} />}
@@ -507,7 +556,7 @@ export function Dashboard(props: DashboardProps) {
                         </button>
                       )}
                     </div>
-                    <ComparePopover onNavigate={onNavigate} defaultBase={base} />
+                    <ComparePopover onNavigate={onNavigate} defaultBase={base} openSignal={compareSignal} />
                   </>
                 }
               >

@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
-import { useHotkeys } from 'react-hotkeys-hook';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { toast } from 'sonner';
@@ -10,6 +9,8 @@ import { isTauri, modKey } from '../lib/platform';
 import { setRepoPath } from '../lib/api';
 import type { RecentRepo } from '../lib/types';
 import { parsePrUrl, pickFolder, remoteMatches } from '../features/welcome/open-repo';
+import { openQuickOpen } from '../features/palette/quick-open';
+import { useOpening } from '../lib/opening';
 import { openRepoAt, parentPath, useRecentRepos } from '../features/welcome/recent-repos';
 import { RepoBadge } from '../features/welcome/repo-badge';
 import { useTheme } from '../hooks/use-theme';
@@ -72,18 +73,8 @@ export function WelcomePage() {
 
   const openRepo = (path: string, newWindow = false, extra?: Record<string, string>) => openRepoAt(path, navigate, { newWindow, extra });
 
-  const openFolder = async (newWindow = false) => {
-    const path = await pickFolder();
-    if (!path) {
-      return;
-    }
-    await openRepo(path, newWindow);
-  };
 
-  useHotkeys('mod+o', (event) => {
-    event.preventDefault();
-    void openFolder();
-  });
+
 
   useFolderDrop((path) => void openRepo(path), setDragging);
 
@@ -112,7 +103,7 @@ export function WelcomePage() {
               icon={<FolderOpenIcon className="w-[18px] h-[18px]" />}
               title="Open folder"
               detail={`A local Git repository · ${modKey}O`}
-              onClick={() => void openFolder()}
+              onClick={openQuickOpen}
             />
             <StartCard
               icon={<DownloadIcon className="w-[18px] h-[18px]" />}
@@ -213,9 +204,10 @@ function RecentList(props: RecentListProps) {
 
 function RecentRow(props: { repo: RecentRepo; onOpen: (path: string, newWindow?: boolean) => void; onRemove: (path: string) => void }) {
   const { repo, onOpen, onRemove } = props;
+  const opening = useOpening((state) => state.target?.path === repo.path);
 
   return (
-    <li className="group relative flex items-center rounded-md hover:bg-hover transition-colors">
+    <li className={cn('group relative flex items-center rounded-md hover:bg-hover transition-colors', opening && 'bg-selected')}>
       <button
         onClick={(event) => onOpen(repo.path, event.metaKey || event.ctrlKey)}
         className="flex flex-1 min-w-0 items-center gap-3 h-11 px-2 text-left cursor-pointer"
@@ -226,7 +218,14 @@ function RecentRow(props: { repo: RecentRepo; onOpen: (path: string, newWindow?:
           <span className="block text-[13px] font-medium text-text truncate">{repo.name}</span>
           <span className="block text-xs text-text-muted truncate">{parentPath(repo.path)}</span>
         </span>
-        <span className="text-xs text-text-muted shrink-0 group-hover:invisible">{dayjs(repo.lastOpenedAt).fromNow()}</span>
+        {opening ? (
+          <span className="flex items-center gap-2 text-xs text-text-secondary shrink-0">
+            <span className="w-3 h-3 border-[1.5px] border-text-muted/30 border-t-text-secondary rounded-full animate-spin" />
+            Opening…
+          </span>
+        ) : (
+          <span className="text-xs text-text-muted shrink-0 group-hover:invisible">{dayjs(repo.lastOpenedAt).fromNow()}</span>
+        )}
       </button>
       <button
         onClick={() => onRemove(repo.path)}

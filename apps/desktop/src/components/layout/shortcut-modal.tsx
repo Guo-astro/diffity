@@ -32,8 +32,13 @@ export const shortcuts = [
   {
     category: 'App',
     items: [
-      { key: `${modKey}O`, description: 'Open a folder' },
+      { key: `${modKey}K`, description: 'Command palette: actions, projects, branches, commits, comments' },
+      { key: `${modKey}P`, description: `Go to file (this view first, then all files; ${modKey}↵ opens in editor)` },
+      { key: `${modKey}⇧P`, description: 'Actions only' },
+      { key: `${modKey}O`, description: 'Open: type a path, pick a recent project, or paste a GitHub URL to clone' },
+      { key: `${modKey}⇧O`, description: 'Browse for a folder (system dialog)' },
       { key: `${modKey}⇧H`, description: 'Home: history and what to review' },
+      { key: `${modKey}R`, description: 'Refresh data (keeps your place and unsent comments)' },
       { key: `${modKey}1–9`, description: 'Switch project' },
       { key: `${modKey}⇧[ / ]`, description: 'Previous / next project' },
       { key: `${modKey}\\`, description: 'Show or hide the sidebar' },

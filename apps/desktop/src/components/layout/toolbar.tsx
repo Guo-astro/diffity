@@ -24,6 +24,7 @@ interface ToolbarProps {
   githubDetails?: GitHubDetails | null;
   hasGitHubRemote?: boolean;
   sessionId?: string | null;
+  focusedFile?: string | null;
 }
 
 function extractCodeContext(diff: ParsedDiff | undefined, filePath: string, side: 'old' | 'new', startLine: number, endLine: number): string[] {
@@ -125,8 +126,8 @@ export function Toolbar(props: ToolbarProps) {
         <CommentsButton />
         {(hasChanges || threads.length > 0) && (
           <>
-            <ClaudeToolbar diffRef={diffRef ?? null} sessionId={sessionId ?? null} threads={threads} hasChanges={hasChanges} />
-            <FinishReview githubDetails={props.githubDetails ?? null} threads={threads} />
+            <ClaudeToolbar diffRef={diffRef ?? null} sessionId={sessionId ?? null} threads={threads} hasChanges={hasChanges} focusedFile={props.focusedFile ?? null} />
+            <FinishReview githubDetails={props.githubDetails ?? null} threads={threads} diffRef={diffRef ?? null} />
           </>
         )}
         <OptionsMenu theme={theme} onToggleTheme={onToggleTheme} onShowHelp={onShowHelp} />
