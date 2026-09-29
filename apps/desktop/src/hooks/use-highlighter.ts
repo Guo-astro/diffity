@@ -4,7 +4,11 @@ import { createHighlighter, type Highlighter, type BundledLanguage } from 'shiki
 const LANG_MAP: Record<string, BundledLanguage> = {
   ts: 'typescript',
   tsx: 'tsx',
+  mts: 'typescript',
+  cts: 'typescript',
   js: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
   jsx: 'jsx',
   json: 'json',
   css: 'css',

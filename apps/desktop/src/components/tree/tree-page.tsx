@@ -25,7 +25,7 @@ import { SvgPreview } from './svg-preview';
 import { PathComments } from '../comments/path-comments';
 import { CommentToolbarActions } from '../comments/comment-toolbar-actions';
 import { OptionsMenu } from '../layout/options-menu';
-import { RepoTitle, TitleBar, Workspace } from '../layout/title-bar';
+import { Breadcrumb, CurrentCrumb, TitleBar, Workspace } from '../layout/title-bar';
 import { StatusBar } from '../layout/status-bar';
 import { useTreeStaleness } from '../../hooks/use-tree-staleness';
 import { isRenderableFile, isMarkdownFile, isImageFile } from '../../lib/file-types';
@@ -38,10 +38,11 @@ import { setFocusThread } from '../../lib/ui-store';
 import { ReviewStateProvider } from '../../features/review/review-state';
 import { ClaudeToolbar } from '../../features/claude/claude-toolbar';
 import { FinishReview } from '../../features/review/finish-review';
-import { FileBlockSkeleton, hideStaticSplash } from '../layout/skeleton';
+import { DiffSkeleton, FileBlockSkeleton, hideStaticSplash } from '../layout/skeleton';
 import { CodeIcon, EditorIcon, FileIcon } from '../ui/icon';
 import { useEditorName } from '../../hooks/use-editor-name';
 import { modKey } from '../../lib/platform';
+import { handleCopyShortcut } from '../../lib/file-copy';
 
 function formatTreeThreadsForCopy(threads: CommentThread[]): string {
   const unresolvedThreads = threads.filter(
@@ -319,6 +320,14 @@ export function TreePage() {
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
+      handleCopyShortcut(event, isFileMode ? navPath : null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isFileMode, navPath]);
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.key.toLowerCase() !== 'e') {
         return;
       }
@@ -388,12 +397,18 @@ export function TreePage() {
     );
   };
 
+  if (sessionId && !threadsFetched) {
+    return <DiffSkeleton />;
+  }
+
   return (
     <ReviewStateProvider sessionId={sessionId}>
     <div className='flex flex-col h-screen bg-frame text-text'>
       <TitleBar>
         <div data-tauri-drag-region className='flex items-center gap-2.5 min-w-0 shrink'>
-          <RepoTitle name={info?.name} />
+          <Breadcrumb name={info?.name}>
+            <CurrentCrumb>Files</CurrentCrumb>
+          </Breadcrumb>
         </div>
         <div data-tauri-drag-region className='flex-1 min-w-2 self-stretch' />
         <div className='flex items-center gap-2 shrink-0'>
