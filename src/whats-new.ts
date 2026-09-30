@@ -3,23 +3,12 @@
  * add the next release here in the release commit, before tagging.
  */
 
-export type WhatsNewAction = 'find' | 'ignore-settings' | 'appearance-settings' | 'report-issue';
-
-export interface WhatsNewItem {
-  text: string;
-  /** Opens or points at the feature. */
-  action?: WhatsNewAction;
-  /** A short how-to under the bullet. */
-  detail?: string;
-  /** A code sample under the bullet, shown monospaced. */
-  example?: string;
-}
-
 export interface WhatsNewRelease {
   version: string;
   /** ISO date, YYYY-MM-DD. */
   date: string;
-  items: WhatsNewItem[];
+  /** Plain text; `backticks` show as code, or as a key when they hold a shortcut. */
+  items: string[];
 }
 
 export const WHATS_NEW: WhatsNewRelease[] = [
@@ -27,54 +16,46 @@ export const WHATS_NEW: WhatsNewRelease[] = [
     version: '0.0.4',
     date: '2026-09-30',
     items: [
-      { text: 'See what changed in each update from What’s New in the Help menu or ⌘K' },
-      { text: 'Fixed Claude Code not being found when Diffity is opened from Finder or the Dock' },
-      { text: 'Clearer message when Node.js is missing for the Claude features' },
+      'See what changed in each update from What’s New in the Help menu or `⌘K`',
+      'Fixed Claude Code not being found when Diffity is opened from Finder or the Dock',
+      'Clearer message when Node.js is missing for the Claude features',
     ],
   },
   {
     version: '0.0.3',
     date: '2026-09-30',
     items: [
-      { text: 'Find anything in the whole diff with ⌘F, including collapsed and not-yet-loaded files', action: 'find' },
-      {
-        text: 'See which files changed since you marked them viewed, and show just those changes',
-        detail: 'Mark a file viewed (R). If it changes later, its header says “Changed since you viewed it”; click it to see only what changed.',
-      },
-      {
-        text: 'Hide generated files from diffs with a .diffityignore file or a list in Settings',
-        action: 'ignore-settings',
-        detail: 'Put a .diffityignore at the repo root. Gitignore syntax, one pattern per line:',
-        example: 'dist/\n*.min.js\npnpm-lock.yaml',
-      },
-      { text: 'Colour-blind friendly diff colours in Settings', action: 'appearance-settings' },
-      { text: 'Fixed multi-line comments and strings losing their syntax colour in the diff' },
+      'Find anything in the whole diff with `⌘F`, including collapsed and not-yet-loaded files',
+      'See which files changed since you marked them viewed, and show just those changes',
+      'Hide generated files from diffs with a `.diffityignore` file or a list in Settings',
+      'Colour-blind friendly diff colours in Settings',
+      'Fixed multi-line comments and strings losing their syntax colour in the diff',
     ],
   },
   {
     version: '0.0.2',
     date: '2026-09-30',
     items: [
-      { text: 'Report an issue from the Help menu, ⌘K or Settings, with your app and macOS versions filled in', action: 'report-issue' },
-      { text: 'Fixed dragging across lines sometimes not opening the comment box' },
-      { text: 'Fixed quick drags selecting only the first line' },
-      { text: 'Fixed the review panel briefly saying there’s nothing to post' },
-      { text: 'Claude’s progress in a thread now lines up with the comments' },
-      { text: 'Smaller download' },
+      'Report an issue from the Help menu, `⌘K` or Settings, with your app and macOS versions filled in',
+      'Fixed dragging across lines sometimes not opening the comment box',
+      'Fixed quick drags selecting only the first line',
+      'Fixed the review panel briefly saying there’s nothing to post',
+      'Claude’s progress in a thread now lines up with the comments',
+      'Smaller download',
     ],
   },
   {
     version: '0.0.1',
     date: '2026-09-30',
     items: [
-      { text: 'Diffity is now a native Mac app, replacing the CLI and browser viewer' },
-      { text: 'Comment on lines, ranges, files or the whole diff' },
-      { text: '@claude in any comment gets an answer in that thread' },
-      { text: 'Ask Claude to review, or send your comments to Claude to fix' },
-      { text: 'Check out any pull request and post your review to GitHub' },
-      { text: '⌘K for every action, ⌘P for files' },
-      { text: 'Projects rail with ⌘1–9 to switch projects' },
-      { text: 'Updates itself' },
+      'Diffity is now a native Mac app, replacing the CLI and browser viewer',
+      'Comment on lines, ranges, files or the whole diff',
+      '@claude in any comment gets an answer in that thread',
+      'Ask Claude to review, or send your comments to Claude to fix',
+      'Check out any pull request and post your review to GitHub',
+      '`⌘K` for every action, `⌘P` for files',
+      'Projects rail with `⌘1–9` to switch projects',
+      'Updates itself',
     ],
   },
 ];

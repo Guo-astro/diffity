@@ -1,92 +1,35 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import dayjs from 'dayjs';
-import { cn } from '../../lib/cn';
-import { chord } from '../../lib/shortcuts';
-import { reportIssue } from '../../lib/report-issue';
-import { closeWhatsNew, openSettingsAt, useUi } from '../../lib/ui-store';
+import { closeWhatsNew, useUi } from '../../lib/ui-store';
 import { BrandLogo } from '../../components/icons/brand-logo';
-import { KeyCaps } from '../../components/ui/key-caps';
 import { XIcon } from '../../components/ui/icon';
-import { buttonOutline } from '../../components/ui/button-styles';
-import { openFind, useFind } from '../find/find-store';
-import { WHATS_NEW, type WhatsNewAction, type WhatsNewItem } from '../../whats-new';
+import { WHATS_NEW } from '../../whats-new';
 
 const RELEASES_URL = 'https://github.com/nilbuild/diffity/releases';
 
-const actionButton = cn(buttonOutline, 'h-6 px-2 text-xs');
+function InlineText(props: { text: string }) {
+  const { text } = props;
 
-function openIgnoreSettings() {
-  closeWhatsNew();
-  openSettingsAt('general');
-  setTimeout(() => document.getElementById('diff-ignore-rules')?.focus(), 50);
-}
-
-function openAppearanceSettings() {
-  closeWhatsNew();
-  openSettingsAt('general');
-}
-
-function tryFind() {
-  closeWhatsNew();
-  openFind();
-}
-
-function ItemAction(props: { action: WhatsNewAction }) {
-  const { action } = props;
-  const canFind = useFind((state) => !!state.source);
-
-  if (action === 'find') {
-    if (!canFind) {
-      return <KeyCaps keys={[chord('F')]} className="mt-px" />;
+  return text.split('`').map((part, index) => {
+    if (index % 2 === 0) {
+      return part;
+    }
+    if (part.startsWith('⌘')) {
+      return (
+        <kbd
+          key={index}
+          className="mx-px rounded border border-b-2 border-control-border bg-bg px-1 font-mono text-[11px] text-text-secondary"
+        >
+          {part}
+        </kbd>
+      );
     }
     return (
-      <button type="button" className={actionButton} onClick={tryFind}>
-        Try it
-        <KeyCaps keys={[chord('F')]} className="-mr-0.5" />
-      </button>
+      <code key={index} className="rounded bg-bg-tertiary px-1 font-mono text-[12px] text-text">
+        {part}
+      </code>
     );
-  }
-  if (action === 'ignore-settings') {
-    return (
-      <button type="button" className={actionButton} onClick={openIgnoreSettings}>
-        Open settings
-      </button>
-    );
-  }
-  if (action === 'appearance-settings') {
-    return (
-      <button type="button" className={actionButton} onClick={openAppearanceSettings}>
-        Open settings
-      </button>
-    );
-  }
-  return (
-    <button type="button" className={actionButton} onClick={reportIssue}>
-      Report an issue…
-    </button>
-  );
-}
-
-function Item(props: { item: WhatsNewItem }) {
-  const { item } = props;
-
-  return (
-    <li className="flex gap-2.5 py-1.5">
-      <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-text-muted" aria-hidden="true" />
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex items-start justify-between gap-3">
-          <span className="text-[13px] leading-[19px] text-text">{item.text}</span>
-          {item.action && <ItemAction action={item.action} />}
-        </div>
-        {item.detail && <p className="text-xs leading-snug text-text-muted">{item.detail}</p>}
-        {item.example && (
-          <pre className="mt-0.5 rounded-md bg-bg-secondary px-2.5 py-1.5 font-mono text-[11.5px] leading-[18px] text-text-secondary select-text">
-            {item.example}
-          </pre>
-        )}
-      </div>
-    </li>
-  );
+  });
 }
 
 function WhatsNewBody() {
@@ -128,19 +71,27 @@ function WhatsNewBody() {
             <XIcon className="h-3.5 w-3.5" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
           {WHATS_NEW.map((release, index) => (
-            <section key={release.version} className={cn('pt-4', index > 0 && 'mt-2 border-t border-border')}>
-              <div className="mb-1 flex items-baseline gap-2">
-                <h3 className="text-[13px] font-semibold text-text">Diffity {release.version}</h3>
-                <span className="text-xs text-text-muted">{dayjs(release.date).format('D MMM YYYY')}</span>
-                {index === 0 && (
-                  <span className="rounded-full bg-accent/10 px-1.5 text-[11px] font-medium leading-4 text-accent">Latest</span>
-                )}
+            <section
+              key={release.version}
+              className="mb-2.5 rounded-lg border border-border-muted bg-bg-secondary px-3.5 pt-3 pb-2 last:mb-0"
+            >
+              <div className="mb-2 flex items-center gap-2">
+                <h3 className="rounded-full bg-accent/10 px-2 text-[12px] leading-5 font-semibold text-accent tabular-nums">
+                  {release.version}
+                </h3>
+                {index === 0 && <span className="text-[11px] font-medium text-text-muted">Latest</span>}
+                <span className="ml-auto text-xs text-text-muted">{dayjs(release.date).format('D MMM YYYY')}</span>
               </div>
               <ul>
                 {release.items.map((item) => (
-                  <Item key={item.text} item={item} />
+                  <li key={item} className="flex gap-2.5 pb-1.5 text-[13px] leading-5 text-text select-text">
+                    <span className="mt-2 h-[5px] w-[5px] shrink-0 rounded-full bg-text-muted/60" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <InlineText text={item} />
+                    </span>
+                  </li>
                 ))}
               </ul>
             </section>

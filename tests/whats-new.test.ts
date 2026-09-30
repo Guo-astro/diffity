@@ -50,7 +50,7 @@ describe('WHATS_NEW', () => {
       expect(release.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       expect(release.items.length).toBeGreaterThan(0);
       for (const item of release.items) {
-        expect(item.text.trim()).not.toBe('');
+        expect(item.trim()).not.toBe('');
       }
     }
   });
