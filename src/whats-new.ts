@@ -13,6 +13,17 @@ export interface WhatsNewRelease {
 
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
+    version: '0.0.5',
+    date: '2026-09-30',
+    items: [
+      'Check for updates from the Diffity menu or `⌘K`',
+      'Simpler What’s New, with each release’s notes as a plain list',
+      'Close a notification by swiping it away, with the × shown on hover',
+      'The update notification no longer shows buttons while it installs',
+      'Fixed an empty “Results” header in `⌘K` when nothing matches',
+    ],
+  },
+  {
     version: '0.0.4',
     date: '2026-09-30',
     items: [
