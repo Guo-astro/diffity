@@ -5,6 +5,10 @@ import { getRepoPathOrNull } from '../../lib/api';
 import * as tauri from '../../lib/tauri';
 import { PreferencesRow, SettingsButton } from './preferences';
 
+function withoutFinalNewline(text: string) {
+  return text.replace(/\n$/, '');
+}
+
 function repoName(path: string) {
   return path.split('/').filter(Boolean).pop() ?? path;
 }
@@ -25,7 +29,7 @@ export function DiffIgnoreRow() {
     if (rules.data === undefined) {
       return;
     }
-    setDraft(rules.data);
+    setDraft(withoutFinalNewline(rules.data));
   }, [rules.data]);
 
   if (!repoPath) {
@@ -34,7 +38,8 @@ export function DiffIgnoreRow() {
     );
   }
 
-  const dirty = rules.data !== undefined && draft !== rules.data;
+  const saved = withoutFinalNewline(rules.data ?? '');
+  const dirty = rules.data !== undefined && draft !== saved;
 
   const save = async () => {
     setSaving(true);
@@ -61,7 +66,7 @@ export function DiffIgnoreRow() {
       <textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        placeholder={'# generated code\ndist/\n*.min.js\n!dist/keep.js'}
+        placeholder={'For example:\ndist/\n*.min.js'}
         spellCheck={false}
         autoCorrect="off"
         autoCapitalize="off"
@@ -71,7 +76,7 @@ export function DiffIgnoreRow() {
       />
       <div className="flex justify-end gap-2">
         {dirty && (
-          <SettingsButton onClick={() => setDraft(rules.data ?? '')} disabled={saving}>
+          <SettingsButton onClick={() => setDraft(saved)} disabled={saving}>
             Revert
           </SettingsButton>
         )}

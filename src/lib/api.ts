@@ -444,7 +444,7 @@ export async function fetchTreePaths(): Promise<{ paths: string[]; diffIgnored: 
   const files = entries.filter((entry) => entry.kind === 'file');
   return {
     paths: files.map((entry) => entry.path),
-    diffIgnored: files.filter((entry) => entry.diffIgnored).map((entry) => entry.path),
+    diffIgnored: entries.filter((entry) => entry.diffIgnored).map((entry) => entry.path),
   };
 }
 

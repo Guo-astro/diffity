@@ -15,7 +15,7 @@ import { useRestoredScroll, useViewState } from '../../lib/view-state';
 
 interface TreeSidebarProps {
   paths: string[];
-  /** Files `.diffityignore` hides from diffs, shown dimmed. */
+  /** Files and folders `.diffityignore` hides from diffs, shown dimmed. */
   diffIgnored?: Set<string>;
   activeFile: string | null;
   commentCountsByFile: Map<string, number>;
