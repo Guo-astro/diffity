@@ -17,6 +17,8 @@ import { TopProgress, hideStaticSplash } from './components/layout/skeleton';
 import { closeShortcuts, openSettings, openShortcuts, useUi } from './lib/ui-store';
 import { useUpdateChecks } from './features/updates/use-update-checks';
 import { FindHost } from './features/find/find-bar';
+import { WhatsNewDialog } from './features/whats-new/whats-new-dialog';
+import { useWhatsNew } from './features/whats-new/use-whats-new';
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -81,6 +83,7 @@ export function App() {
   useExternalLinks();
   useGlobalShortcuts();
   useUpdateChecks();
+  useWhatsNew();
 
   useEffect(() => {
     const timer = setTimeout(hideStaticSplash, 10_000);
@@ -101,6 +104,7 @@ export function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <SettingsDialog />
+        <WhatsNewDialog />
         <GlobalShortcutModal />
         <QuickOpenHost />
         <FindHost />

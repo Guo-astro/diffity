@@ -10,6 +10,7 @@ interface UiState {
   settingsSection: SettingsSection;
   pullRequestsOpen: boolean;
   shortcutsOpen: boolean;
+  whatsNewOpen: boolean;
   commentsOpen: boolean;
   focusThreadId: string | null;
   sidebarCollapsed: boolean;
@@ -21,6 +22,7 @@ export const useUi = create<UiState>(() => ({
   settingsSection: 'general',
   pullRequestsOpen: false,
   shortcutsOpen: false,
+  whatsNewOpen: false,
   commentsOpen: false,
   focusThreadId: null,
   sidebarCollapsed: readSidebarCollapsed(),
@@ -92,6 +94,14 @@ export function openShortcuts() {
 
 export function closeShortcuts() {
   useUi.setState({ shortcutsOpen: false });
+}
+
+export function openWhatsNew() {
+  useUi.setState({ whatsNewOpen: true, settingsOpen: false });
+}
+
+export function closeWhatsNew() {
+  useUi.setState({ whatsNewOpen: false });
 }
 
 export function openComments() {

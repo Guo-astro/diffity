@@ -4,6 +4,7 @@ import { isTauri } from '../../lib/platform';
 import { BrandLogo } from '../../components/icons/brand-logo';
 import { PreferencesGroup, PreferencesPane, PreferencesRow, SettingsButton } from './preferences';
 import { reportIssue } from '../../lib/report-issue';
+import { openWhatsNew } from '../../lib/ui-store';
 import { canUpdate, checkForUpdates, installUpdate, useUpdates, type UpdateStatus } from '../updates/updater';
 
 async function loadVersions() {
@@ -75,6 +76,9 @@ export function AboutPane() {
         </PreferencesRow>
         <PreferencesRow label="Updates" hint={updateHint(status)}>
           <UpdateControl status={status} />
+        </PreferencesRow>
+        <PreferencesRow label="What’s new" hint="What changed in each release, with shortcuts to try the new features.">
+          <SettingsButton onClick={openWhatsNew}>What’s new</SettingsButton>
         </PreferencesRow>
         <PreferencesRow label="Feedback" hint="Found a bug or have an idea? Opens a GitHub issue with your versions filled in.">
           <SettingsButton onClick={reportIssue}>Report an issue…</SettingsButton>

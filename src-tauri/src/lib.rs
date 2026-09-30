@@ -17,7 +17,7 @@ use crate::agents::AgentManager;
 use crate::core::store::Store;
 use crate::github::GithubService;
 use tauri::menu::{Menu, MenuItem, HELP_SUBMENU_ID};
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, EventTarget, Manager, Runtime};
 
 pub use state::AppState;
 
@@ -47,15 +47,31 @@ fn init_state(app: &tauri::App) -> anyhow::Result<AppState> {
 }
 
 const REPORT_ISSUE_MENU_ID: &str = "report-issue";
+const WHATS_NEW_MENU_ID: &str = "whats-new";
 
-/// Tauri's default menu plus Help → Report an Issue….
+/// Tauri's default menu plus Help → What's New and Report an Issue….
 fn app_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(handle)?;
+    let whats_new = MenuItem::with_id(handle, WHATS_NEW_MENU_ID, "What’s New in Diffity", true, None::<&str>)?;
     let report = MenuItem::with_id(handle, REPORT_ISSUE_MENU_ID, "Report an Issue…", true, None::<&str>)?;
     if let Some(help) = menu.get(HELP_SUBMENU_ID).and_then(|item| item.as_submenu().cloned()) {
+        help.append(&whats_new)?;
         help.append(&report)?;
     }
     Ok(menu)
+}
+
+/// Opens What's New in the focused window, or the main one when none has focus.
+fn show_whats_new<R: Runtime>(app: &AppHandle<R>) {
+    let windows = app.webview_windows();
+    let label = windows
+        .values()
+        .find(|window| window.is_focused().unwrap_or(false))
+        .map(|window| window.label().to_string())
+        .unwrap_or_else(|| "main".to_string());
+    if let Err(e) = app.emit_to(EventTarget::webview_window(label), "open-whats-new", ()) {
+        tracing::warn!("could not open What's New: {e}");
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -83,6 +99,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .menu(app_menu)
         .on_menu_event(|app, event| {
+            if event.id() == WHATS_NEW_MENU_ID {
+                show_whats_new(app);
+                return;
+            }
             if event.id() != REPORT_ISSUE_MENU_ID {
                 return;
             }

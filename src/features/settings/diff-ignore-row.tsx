@@ -71,6 +71,7 @@ export function DiffIgnoreRow() {
         autoCorrect="off"
         autoCapitalize="off"
         rows={5}
+        id="diff-ignore-rules"
         aria-label="Patterns to hide from diffs"
         className="w-full resize-y rounded-md border border-border bg-bg px-2.5 py-2 font-mono text-xs leading-5 text-text outline-none placeholder:text-text-muted focus:border-focus"
       />
