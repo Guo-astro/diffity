@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import type { CommentThread as CommentThreadType, SubmitOptions } from './types';
 import { isThreadResolved } from './types';
 import { CommentBubble } from './comment-bubble';
@@ -14,6 +13,8 @@ import * as api from '../../lib/api';
 import { useGitHubPr } from '../../hooks/use-repo-state';
 import { DEFAULT_AUTHOR } from './types';
 import { hasDraft } from './comment-form';
+import { useViewState } from '../../lib/view-state';
+import { Spinner } from '../icons/spinner';
 
 interface ThreadCardProps {
   thread: CommentThreadType;
@@ -25,6 +26,8 @@ interface ThreadCardProps {
   onUnresolve?: () => void;
   headerLeft?: React.ReactNode;
   headerRight?: React.ReactNode;
+  /** Extra ⋯ entries shown first (e.g. Collapse). */
+  menuItems?: { label: string; onSelect: () => void }[];
   className?: string;
   children?: React.ReactNode;
   /** Narrow cards: secondary actions move into the ⋯ menu. */
@@ -106,13 +109,14 @@ export function ThreadCard(props: ThreadCardProps) {
     onUnresolve,
     headerLeft,
     headerRight,
+    menuItems = [],
     className,
     children,
     compact = false,
   } = props;
   const review = useReviewState();
   const replyKey = `reply:${thread.id}`;
-  const [showReply, setShowReply] = useState(() => hasDraft(review.sessionId, replyKey));
+  const [showReply, setShowReply] = useViewState(`thread:${thread.id}:reply`, () => hasDraft(review.sessionId, replyKey));
   const claudeThread = thread.comments[0]?.author.type === 'agent';
   const resolved = isThreadResolved(thread);
   const activity = useThreadActivity(thread.id);
@@ -193,6 +197,7 @@ export function ThreadCard(props: ThreadCardProps) {
           )}
           <ThreadMenu
             items={[
+              ...menuItems,
               ...(compact && onResolve && onUnresolve && !resolved ? [{ label: 'Mark as addressed', onSelect: onResolve }] : []),
               ...(compact && onUnresolve && resolved ? [{ label: 'Reopen', onSelect: onUnresolve }] : []),
               ...(canAskClaude && (compact || !showAskClaude || canPromote) ? [{ label: 'Ask Claude about it', onSelect: resolveWithClaude }] : []),
@@ -217,7 +222,7 @@ export function ThreadCard(props: ThreadCardProps) {
         <div className="flex items-center gap-2 px-3 pb-2 text-xs text-text-muted">
           <span className="flex w-5 justify-center shrink-0">
             {activity === 'working' ? (
-              <span className="inline-block w-3 h-3 border-2 border-claude/25 border-t-claude rounded-full animate-spin" />
+              <Spinner className="text-claude" />
             ) : (
               <SparkleIcon className="w-3 h-3 text-claude" />
             )}

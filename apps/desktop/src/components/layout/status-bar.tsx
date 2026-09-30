@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { cn } from '../../lib/cn';
 import { toast } from 'sonner';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
-import { CodeIcon, CopyIcon, EditorIcon, FolderSimpleIcon, GitPullRequestIcon } from '../ui/icon';
+import { CopyIcon, EditorIcon, GitPullRequestIcon, RevealIcon, TerminalIcon } from '../ui/icon';
 import { ContextMenu, MenuItem, MenuSeparator } from '../ui/popover';
 import { useEditorName } from '../../hooks/use-editor-name';
 import { errorMessage, openInEditor } from '../../lib/api';
@@ -74,9 +74,9 @@ function RepoPathButton(props: { label: string; path: string }) {
         <span className="truncate">{label}</span>
       </button>
       <ContextMenu position={menu} onClose={() => setMenu(null)}>
-        <MenuItem icon={<FolderSimpleIcon size="sm" />} label="Reveal in Finder" onSelect={run(reveal)} />
+        <MenuItem icon={<RevealIcon size="sm" />} label="Reveal in Finder" onSelect={run(reveal)} />
         <MenuItem
-          icon={<CodeIcon size="sm" />}
+          icon={<TerminalIcon size="sm" />}
           label="Open in Terminal"
           onSelect={run(() => {
             openPath(path, 'Terminal').catch((error) => toast.error('Could not open Terminal', { description: String(error) }));
@@ -104,7 +104,7 @@ function RepoPathButton(props: { label: string; path: string }) {
 }
 
 export function StatusBar(props: StatusBarProps) {
-  const { sessionId, stale } = props;
+  const { diffRef, sessionId, stale } = props;
   const nav = useRepoNav();
   const { data: status } = useGitStatus();
   const { data: meta } = useRepoMeta();
@@ -117,7 +117,7 @@ export function StatusBar(props: StatusBarProps) {
   const reveal = useRevealClass(loading);
 
   return (
-    <div data-tauri-drag-region className="flex items-center gap-1.5 h-8 shrink-0 pl-1.5 pr-2.5 bg-frame text-xs text-text-secondary font-sans select-none">
+    <div data-tauri-drag-region className="group/status flex items-center gap-1.5 h-8 shrink-0 pl-1.5 pr-2.5 bg-frame text-xs text-text-secondary font-sans select-none">
       {loading ? (
         <span aria-busy className="flex items-center gap-1.5">
           <span className={itemClass}><Skeleton className="w-24 h-2.5" /></span>
@@ -136,7 +136,7 @@ export function StatusBar(props: StatusBarProps) {
       {stale && <StaleNotice onRefresh={stale.onRefresh} message={stale.message} />}
       {sessionId && <OtherViewsNotice sessionId={sessionId} />}
       <span className="flex-1" />
-      {details && (
+      {details && diffRef !== prDiffRef(details) && (
         <button
           onClick={() => nav.toDiff(prDiffRef(details))}
           className={`${itemClass} hover:bg-hover hover:text-text cursor-pointer ${prReveal}`}

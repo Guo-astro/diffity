@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import type { DiffFile } from '@diffity/parser';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { useDiff } from '../../hooks/use-diff';
@@ -13,7 +14,8 @@ import { CommentToolbarActions } from '../comments/comment-toolbar-actions';
 import { DiffView, type DiffViewHandle } from './diff-view';
 import { Sidebar } from '../layout/sidebar';
 import { DiffSkeleton, hideStaticSplash } from '../layout/skeleton';
-import { PrBar } from '../../features/pr/pr-bar';
+import { PrSession, openPrDetails, openPrOnGitHub } from '../../features/pr/pr-session';
+import { syncPrCommentsNow } from '../../features/pr/pr-checkout';
 import { StatusBar } from '../layout/status-bar';
 import { DiffEmptyState } from './diff-empty-state';
 import { openShortcuts } from '../../lib/ui-store';
@@ -35,6 +37,7 @@ import { repoBase } from '../../hooks/use-repo';
 import { getRepoPath } from '../../lib/api';
 import { enterLargeDiffScope } from '../../lib/large-diff';
 import { readViewMemory, writeViewMemory } from '../../lib/view-memory';
+import { readViewState, useViewState, writeViewState } from '../../lib/view-state';
 import { MovedComposer, selectionInDiff } from '../comments/moved-composer';
 import { Workspace } from '../layout/title-bar';
 import { ReviewStateProvider } from '../../features/review/review-state';
@@ -42,12 +45,43 @@ import { useViewedFiles } from '../../hooks/use-viewed-files';
 import { useGitHubPr, useOwnPr } from '../../hooks/use-repo-state';
 import { prDiffRef } from '../layout/ref-menu';
 import { openCommitDialog } from '../../features/pr/commit-dialog';
-import { ChevronDownIcon, ChevronUpIcon, CollapseAllIcon, CopyIcon, ExpandAllIcon, EyeOffIcon, GitPullRequestIcon, PushIcon, SendIcon, SparkleIcon, SplitViewIcon, UnifiedViewIcon } from '../ui/icon';
-import { buttonPrimary } from '../ui/button-styles';
-import { cn } from '../../lib/cn';
+import { ChevronDownIcon, ChevronUpIcon, CollapseAllIcon, CopyIcon, ExpandAllIcon, EyeOffIcon, GitHubIcon, GitPullRequestIcon, PushIcon, RefreshIcon, SendIcon, SparkleIcon, SplitViewIcon, UnifiedViewIcon } from '../ui/icon';
 import { shortcutHint } from '../../lib/shortcuts';
 
 const NO_THREADS: CommentThread[] = [];
+
+/** Collapsed unless toggled: generated, lock and very large files, except those with comments. */
+function defaultCollapsed(files: DiffFile[], commented: Set<string>) {
+  const paths = getAutoCollapsedPaths(files);
+  for (const path of commented) {
+    paths.delete(path);
+  }
+  return paths;
+}
+
+function collapsedFromToggles(files: DiffFile[], commented: Set<string>, toggled: Set<string>) {
+  const collapsed = defaultCollapsed(files, commented);
+  for (const path of toggled) {
+    if (collapsed.has(path)) {
+      collapsed.delete(path);
+    } else {
+      collapsed.add(path);
+    }
+  }
+  return collapsed;
+}
+
+function togglesFromCollapsed(files: DiffFile[], commented: Set<string>, collapsed: Set<string>) {
+  const byDefault = defaultCollapsed(files, commented);
+  const toggled = new Set<string>();
+  for (const file of files) {
+    const path = getFilePath(file);
+    if (byDefault.has(path) !== collapsed.has(path)) {
+      toggled.add(path);
+    }
+  }
+  return toggled;
+}
 
 interface DiffPageProps {
   diffRef: string;
@@ -57,7 +91,7 @@ export function DiffPage(props: DiffPageProps) {
   const { diffRef: refParam } = props;
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('diffity-view-mode') as ViewMode | null) ?? 'split');
-  const [hideWhitespace, setHideWhitespace] = useState(false);
+  const [hideWhitespace, setHideWhitespace] = useViewState(`diff:${refParam}:hideWhitespace`, false);
   const { theme, toggleTheme } = useTheme();
   const { data: rawDiff, error } = useDiff(hideWhitespace, refParam);
   useLayoutEffect(() => {
@@ -66,8 +100,7 @@ export function DiffPage(props: DiffPageProps) {
   const flat = useUi((state) => state.sidebarFlat);
   const diff = useMemo(() => (rawDiff ? { ...rawDiff, files: orderLikeSidebar(rawDiff.files, flat) } : rawDiff), [rawDiff, flat]);
   const { data: info } = useInfo(refParam);
-  const [activeFile, setActiveFile] = useState<string | null>(null);
-  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
+  const [activeFile, setActiveFile] = useViewState<string | null>(`diff:${refParam}:activeFile`, null);
   const manuallyToggledRef = useRef<Set<string>>(new Set(readViewMemory<string[]>(refParam, 'toggled', [])));
   const [pendingSelection, setPendingSelection] = useState<LineSelection | null>(() => readViewMemory<LineSelection | null>(refParam, 'composer', null));
   const location = useLocation();
@@ -75,10 +108,16 @@ export function DiffPage(props: DiffPageProps) {
   const mainRef = useRef<HTMLElement | null>(null);
   const diffViewRef = useRef<DiffViewHandle>(null);
   const currentFileIdx = useRef(0);
-  const initializedDiffRef = useRef<typeof diff>(null);
 
   const reviewsEnabled = !!info?.capabilities?.reviews;
   const sessionId = info?.sessionId ?? null;
+  const { data: serverThreads, isFetched: threadsFetched } = useReviewThreads(reviewsEnabled ? sessionId : null);
+  const threads = reviewsEnabled && serverThreads ? serverThreads : NO_THREADS;
+  const commentCountsByFile = useMemo(() => buildThreadCountsByFile(threads), [threads]);
+  const filesWithComments = useMemo(() => new Set(commentCountsByFile.keys()), [commentCountsByFile]);
+  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(() => collapsedFromToggles(diff?.files ?? [], filesWithComments, manuallyToggledRef.current));
+  const initializedDiffRef = useRef<typeof diff>(diff);
+  const commentedSeenRef = useRef(filesWithComments);
   const canRevert = !!info?.capabilities?.revert;
   const { isStale, resetStaleness } = useDiffStaleness(refParam, !!info?.capabilities?.staleness);
   const { details: githubDetails } = useGitHubPr();
@@ -109,15 +148,8 @@ export function DiffPage(props: DiffPageProps) {
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, [location, diff, refParam, navigate]);
 
-  const { data: serverThreads, isFetched: threadsFetched } = useReviewThreads(reviewsEnabled ? sessionId : null);
-  const threads = reviewsEnabled && serverThreads ? serverThreads : NO_THREADS;
   const rawCommentActions = useCommentActions(sessionId, reviewsEnabled);
   const commentActions = useMemo(() => rawCommentActions, Object.values(rawCommentActions));
-  const commentCountsByFile = useMemo(() => buildThreadCountsByFile(threads), [threads]);
-
-  const filesWithComments = useMemo(() => {
-    return new Set(commentCountsByFile.keys());
-  }, [commentCountsByFile]);
 
   const firstOpenThreadByFile = useMemo(() => {
     const fileOrder = diff?.files.map(file => getFilePath(file)) ?? [];
@@ -129,51 +161,43 @@ export function DiffPage(props: DiffPageProps) {
     setPendingSelection(null);
   }, [commentActions]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!diff || diff === initializedDiffRef.current) {
       return;
     }
     initializedDiffRef.current = diff;
-
-    const autoCollapsed = getAutoCollapsedPaths(diff.files);
-    for (const path of filesWithComments) {
-      autoCollapsed.delete(path);
-    }
-    for (const path of manuallyToggledRef.current) {
-      if (autoCollapsed.has(path)) {
-        autoCollapsed.delete(path);
-      } else {
-        autoCollapsed.add(path);
-      }
-    }
-    setCollapsedFiles(autoCollapsed);
+    setCollapsedFiles(collapsedFromToggles(diff.files, filesWithComments, manuallyToggledRef.current));
   }, [diff]);
 
-  useEffect(() => {
-    if (filesWithComments.size === 0) {
+  useLayoutEffect(() => {
+    const seen = commentedSeenRef.current;
+    commentedSeenRef.current = filesWithComments;
+    const added = [...filesWithComments].filter((path) => !seen.has(path));
+    if (added.length === 0) {
       return;
     }
     setCollapsedFiles((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (const path of filesWithComments) {
-        if (next.has(path)) {
-          next.delete(path);
-          changed = true;
-        }
+      if (!added.some((path) => prev.has(path))) {
+        return prev;
       }
-      return changed ? next : prev;
+      const next = new Set(prev);
+      for (const path of added) {
+        next.delete(path);
+      }
+      return next;
     });
   }, [filesWithComments]);
 
-  const handleToggleCollapse = useCallback((path: string) => {
-    const toggled = manuallyToggledRef.current;
-    if (toggled.has(path)) {
-      toggled.delete(path);
-    } else {
-      toggled.add(path);
+  useEffect(() => {
+    if (!diff) {
+      return;
     }
-    writeViewMemory(refParam, 'toggled', [...toggled]);
+    const toggled = togglesFromCollapsed(diff.files, commentedSeenRef.current, collapsedFiles);
+    manuallyToggledRef.current = toggled;
+    writeViewMemory(refParam, 'toggled', toggled.size > 0 ? [...toggled] : null);
+  }, [collapsedFiles]);
+
+  const handleToggleCollapse = useCallback((path: string) => {
     setCollapsedFiles((prev) => {
       const next = new Set(prev);
       if (next.has(path)) {
@@ -257,7 +281,6 @@ export function DiffPage(props: DiffPageProps) {
       }
       const allPaths = diff.files.map((f) => getFilePath(f));
       const anyExpanded = allPaths.some((p) => !collapsedFiles.has(p));
-      manuallyToggledRef.current = new Set();
       if (anyExpanded) {
         setCollapsedFiles(new Set(allPaths));
       } else {
@@ -308,19 +331,26 @@ export function DiffPage(props: DiffPageProps) {
     return () => window.clearTimeout(timer);
   }, [isStale, composing, handleRefreshDiff]);
 
-  const initialScrollTop = useMemo(() => readViewMemory<number>(refParam, 'scrollTop', 0), [refParam]);
+  const initialScrollTop = useMemo(() => readViewState<number | undefined>(`diff:${refParam}:scrollTop`, undefined) ?? readViewMemory<number>(refParam, 'scrollTop', 0), [refParam]);
   const scrollSaveTimer = useRef<number | null>(null);
   const handleScrollTop = useCallback((top: number) => {
+    writeViewState(`diff:${refParam}:scrollTop`, top);
     if (scrollSaveTimer.current) {
       window.clearTimeout(scrollSaveTimer.current);
     }
     scrollSaveTimer.current = window.setTimeout(() => writeViewMemory(refParam, 'scrollTop', Math.round(top)), 150);
   }, [refParam]);
 
+  useEffect(() => () => {
+    if (scrollSaveTimer.current) {
+      window.clearTimeout(scrollSaveTimer.current);
+    }
+  }, []);
+
   const handleSidebarFileClick = useCallback((path: string) => {
     setActiveFile(path);
     diffViewRef.current?.scrollToFile(path);
-  }, []);
+  }, [setActiveFile]);
 
   const handleScrollToThread = useCallback((threadId: string, filePath: string) => {
     setActiveFile(filePath);
@@ -412,6 +442,14 @@ export function DiffPage(props: DiffPageProps) {
         list.push({ id: 'copy-diff', title: `Copy diff of ${activeFile.split('/').pop()}`, group: 'Actions', icon: <CopyIcon size="sm" />, run: () => copyFileDiff(file) });
       }
     }
+    if (githubDetails && refParam === prDiffRef(githubDetails)) {
+      const pr = githubDetails.pr;
+      list.push(
+        { id: 'pr-details', title: `Pull request #${pr.number} details`, group: 'Actions', keywords: 'pr description checks branches', icon: <GitPullRequestIcon size="sm" />, run: openPrDetails },
+        { id: 'pr-github', title: `Open PR #${pr.number} on GitHub`, group: 'Actions', keywords: 'pull request browser', icon: <GitHubIcon size="sm" />, run: () => openPrOnGitHub(pr) },
+        { id: 'pr-sync', title: 'Sync PR comments now', group: 'Actions', keywords: 'pull github review threads refresh', icon: <RefreshIcon size="sm" />, run: () => void syncPrCommentsNow(getRepoPath(), pr) },
+      );
+    }
     if (ownPr && githubDetails) {
       list.push({ id: 'commit-push', title: `Commit & push to PR #${githubDetails.prNumber}`, group: 'Actions', icon: <PushIcon size="sm" />, run: () => openCommitDialog(githubDetails.prNumber) });
     }
@@ -429,7 +467,17 @@ export function DiffPage(props: DiffPageProps) {
 
   const handleActiveFileFromScroll = useCallback((path: string) => {
     setActiveFile(path);
-  }, []);
+  }, [setActiveFile]);
+
+  useEffect(() => {
+    if (!diff || !activeFile) {
+      return;
+    }
+    const index = diff.files.findIndex((file) => getFilePath(file) === activeFile);
+    if (index >= 0) {
+      currentFileIdx.current = index;
+    }
+  }, [diff, activeFile]);
 
   if (error) {
     return (
@@ -469,7 +517,7 @@ export function DiffPage(props: DiffPageProps) {
         focusedFile={activeFile}
       />
       <Workspace>
-      <PrBar diffRef={refParam} threads={threads} />
+      <PrSession diffRef={refParam} threads={threads} />
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar
           files={diff.files}
@@ -479,6 +527,7 @@ export function DiffPage(props: DiffPageProps) {
           onFileClick={handleSidebarFileClick}
           onCommentedFileClick={handleSidebarCommentedFileClick}
           stats={isEmpty ? undefined : diff.stats}
+          stateKey={`diff:${refParam}:sidebar`}
         />
         {isEmpty ? (
           <div className="flex flex-1 min-w-0 flex-col overflow-y-auto">
@@ -502,18 +551,6 @@ export function DiffPage(props: DiffPageProps) {
           </div>
         ) : (
           <div className="flex flex-1 min-w-0 flex-col">
-            {ownPr && githubDetails && refParam === 'work' && (
-              <div className="flex items-center gap-3 h-10 shrink-0 px-5 border-b border-border-muted bg-claude/6 text-[13px]">
-                <GitPullRequestIcon size="sm" className="text-added" />
-                <span className="min-w-0 truncate text-text-secondary">
-                  These changes are on the branch of your PR <span className="font-medium text-text">#{githubDetails.prNumber}</span>
-                </span>
-                <span className="flex-1" />
-                <button onClick={() => openCommitDialog(githubDetails.prNumber)} className={cn(buttonPrimary, 'h-7')}>
-                  Commit & push
-                </button>
-              </div>
-            )}
             <DiffBar
               viewMode={viewMode}
               onViewModeChange={setViewMode}
@@ -521,22 +558,22 @@ export function DiffPage(props: DiffPageProps) {
               onHideWhitespaceChange={setHideWhitespace}
               fileCount={diff.files.length}
               viewedCount={allPaths.filter((path) => reviewedFiles.has(path)).length}
-              onExpandAll={() => {
-                manuallyToggledRef.current = new Set();
-                setCollapsedFiles(new Set());
-              }}
-              onCollapseAll={() => {
-                manuallyToggledRef.current = new Set();
-                setCollapsedFiles(new Set(allPaths));
-              }}
+              onExpandAll={() => setCollapsedFiles(new Set())}
+              onCollapseAll={() => setCollapsedFiles(new Set(allPaths))}
               commentNav={
                 <CommentToolbarActions
                   threads={threads}
                   onScrollToThread={handleScrollToThread}
                   onDeleteAllComments={commentActions.deleteAllThreads}
                   formatForCopy={() => formatThreadsForCopy(threads, diff, refParam)}
+                  extras={false}
                 />
               }
+              comments={{
+                count: threads.length,
+                formatForCopy: () => formatThreadsForCopy(threads, diff, refParam),
+                onDeleteAll: commentActions.deleteAllThreads,
+              }}
             />
             {composerMoved && pendingSelection && (
               <MovedComposer selection={pendingSelection} onSubmit={handleAddThread} onCancel={() => setPendingSelection(null)} />
@@ -566,6 +603,7 @@ export function DiffPage(props: DiffPageProps) {
               initialScrollTop={initialScrollTop}
               onScrollTopChange={handleScrollTop}
               hideWhitespace={hideWhitespace}
+              memoryKey={`diff:${refParam}:${hideWhitespace}`}
             />
           </div>
         )}

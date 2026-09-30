@@ -5,6 +5,7 @@ import { isThreadResolved } from './types';
 import { ThreadBadge } from '../ui/thread-badge';
 import { ThreadCard } from './thread-card';
 import { CommentIcon } from '../ui/icon';
+import { useViewState } from '../../lib/view-state';
 
 interface CommentThreadProps {
   thread: CommentThreadType;
@@ -49,7 +50,7 @@ export function CommentThread(props: CommentThreadProps) {
     side,
     currentCode,
   } = props;
-  const [isCollapsed, setIsCollapsed] = useState(isThreadResolved(thread));
+  const [isCollapsed, setIsCollapsed] = useViewState(`thread:${thread.id}:collapsed`, () => isThreadResolved(thread));
   const rowRef = useRef<HTMLTableRowElement>(null);
   const resolved = isThreadResolved(thread);
   const wasResolved = useRef(resolved);
@@ -144,14 +145,7 @@ export function CommentThread(props: CommentThreadProps) {
             {isOutdated && <ThreadBadge variant='outdated' />}
           </>
         }
-        headerRight={
-          <button
-            onClick={() => setIsCollapsed(true)}
-            className='text-[11px] text-text-muted hover:text-text-secondary transition-colors cursor-pointer ml-2'
-          >
-            Collapse
-          </button>
-        }
+        menuItems={[{ label: 'Collapse', onSelect: () => setIsCollapsed(true) }]}
       />
     </td>
   );
