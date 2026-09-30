@@ -28,6 +28,8 @@ function flashThreadElement(element: Element) {
 
 export interface DiffViewHandle {
   scrollToFile: (path: string) => void;
+  /** Brings a file's card into the virtualised list (no flash); a no-op when it is already mounted. */
+  revealFile: (path: string) => void;
   scrollToThread: (threadId: string, filePath: string) => void;
 }
 
@@ -266,6 +268,16 @@ export function DiffView(props: DiffViewProps) {
         setHighlightedFile(path);
         virtualizer.scrollToIndex(index, { align: 'start' });
         settleScrollToElement(`#file-${CSS.escape(encodeURIComponent(path))}`, 'start');
+      }
+    },
+    revealFile: (path: string) => {
+      if (document.getElementById(`file-${encodeURIComponent(path)}`)) {
+        return;
+      }
+      const index = diff.files.findIndex((f) => getFilePath(f) === path);
+      if (index >= 0) {
+        scrollTargetRef.current = path;
+        virtualizer.scrollToIndex(index, { align: 'start' });
       }
     },
     scrollToThread: (threadId: string, filePath: string) => {

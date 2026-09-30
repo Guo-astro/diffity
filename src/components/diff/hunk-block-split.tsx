@@ -148,7 +148,7 @@ function SplitCell(props: {
         onMouseEnter={() => setContentHovered(true)}
         onMouseLeave={() => setContentHovered(false)}
       >
-        <span className="inline">{renderContent(line, tokens)}</span>
+        <span className="inline" data-find-line={syntaxKey}>{renderContent(line, tokens)}</span>
       </td>
     </>
   );

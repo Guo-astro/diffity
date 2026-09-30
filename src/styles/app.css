@@ -678,3 +678,29 @@ dialog {
   border-radius: 4px;
   transform: none;
 }
+
+[data-find-paint='a'] [data-find-line] {
+  outline: 0 solid transparent;
+}
+
+[data-find-paint='b'] [data-find-line] {
+  outline: 0.01px solid transparent;
+}
+
+::highlight(diffity-find) {
+  background-color: rgba(250, 204, 21, 0.4);
+}
+
+::highlight(diffity-find-current) {
+  background-color: #f59e0b;
+  color: #111111;
+}
+
+[data-theme='dark'] ::highlight(diffity-find) {
+  background-color: rgba(234, 179, 8, 0.32);
+}
+
+[data-theme='dark'] ::highlight(diffity-find-current) {
+  background-color: #f59e0b;
+  color: #111111;
+}

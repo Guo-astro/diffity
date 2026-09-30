@@ -8,6 +8,8 @@ import { CommentForm } from '../comments/comment-form';
 import { CommentLineNumber } from '../comments/comment-line-number';
 import { cn } from '../../lib/cn';
 import { useViewState } from '../../lib/view-state';
+import { useFindSource, type FindSource } from '../../features/find/find-store';
+import { fileFindLines } from '../../lib/find';
 
 interface LineHighlight {
   filePath: string;
@@ -92,6 +94,13 @@ export function FileViewer(props: FileViewerProps) {
     }
     return highlight(content.join('\n'), filePath, theme);
   }, [ready, highlight, content, filePath, theme]);
+
+  const findSource = useMemo<FindSource>(() => ({
+    label: 'file',
+    lines: fileFindLines(filePath, content),
+    reveal: () => undefined,
+  }), [filePath, content]);
+  useFindSource(findSource);
 
   const onSelectionComplete = useCallback((selection: LineSelection) => {
     setPendingSelection(selection);
@@ -213,6 +222,7 @@ export function FileViewer(props: FileViewerProps) {
           showCommentButton={true}
         />
         <td
+          data-find-line={lineNum}
           className={cn(
             'px-4 py-0 code-text whitespace-pre',
             highlightType === 'base' && 'bg-diff-comment-bg/40',
@@ -275,7 +285,7 @@ export function FileViewer(props: FileViewerProps) {
   }
 
   return (
-    <div className={cn(
+    <div data-find-scope={filePath} className={cn(
       'border border-border rounded-lg overflow-x-auto',
       isFullFileHighlight && 'border-l-2 border-l-accent',
     )}>

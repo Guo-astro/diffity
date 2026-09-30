@@ -40,6 +40,8 @@ import { ChevronIcon, CodeIcon, CommentIcon, CopyIcon, EditorIcon, EllipsisIcon,
 import { MenuItem, MenuSeparator, Popover, useMenu } from '../ui/popover';
 import { contentsLabel, copyAbsolutePath, copyFileContents, copyFileDiff, copyRelativePath } from '../../lib/file-copy';
 import { useEditorName } from '../../hooks/use-editor-name';
+import { useCurrentFindKey } from '../../features/find/find-store';
+import { diffLineKey } from '../../lib/find';
 import { SinceViewedBadge, SinceViewedDiff, type SinceViewedInfo } from './since-viewed';
 
 /** Files with more rows than this are not syntax highlighted at all. */
@@ -546,8 +548,10 @@ function FileCard(props: FileCardProps) {
     }
     return set;
   }, [fileThreads, pendingSelection, filePath]);
-  const isPinnedSlice = (hunk: DiffHunk) => pinnedLines.size > 0 && hunk.lines.some((line) =>
-    (line.oldLineNumber !== null && pinnedLines.has(`old:${line.oldLineNumber}`)) || (line.newLineNumber !== null && pinnedLines.has(`new:${line.newLineNumber}`)));
+  const findKey = useCurrentFindKey(filePath);
+  const isPinnedSlice = (hunk: DiffHunk) => (pinnedLines.size > 0 || findKey !== null) && hunk.lines.some((line) =>
+    (line.oldLineNumber !== null && pinnedLines.has(`old:${line.oldLineNumber}`)) || (line.newLineNumber !== null && pinnedLines.has(`new:${line.newLineNumber}`))
+    || (findKey !== null && diffLineKey(line) === findKey));
 
   const total = file.additions + file.deletions;
   const addBlocks = total > 0 ? Math.round((file.additions / total) * Math.min(5, total)) : 0;
@@ -563,6 +567,7 @@ function FileCard(props: FileCardProps) {
     <div
       className={`border rounded-lg overflow-clip scroll-mt-4 ${highlighted ? 'animate-flash-highlight-border' : 'border-border'}`}
       id={`file-${encodeURIComponent(filePath)}`}
+      data-find-scope={filePath}
       onAnimationEnd={() => onHighlightEnd?.(filePath)}
     >
       <div

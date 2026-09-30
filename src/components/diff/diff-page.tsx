@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import type { DiffFile } from '@/lib/diff-parser';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -20,7 +20,7 @@ import { StatusBar } from '../layout/status-bar';
 import { DiffEmptyState } from './diff-empty-state';
 import { openShortcuts } from '../../lib/ui-store';
 import { useDiffStaleness } from '../../hooks/use-diff-staleness';
-import { type ViewMode, getFilePath, getAutoCollapsedPaths } from '../../lib/diff-utils';
+import { type ViewMode, getFilePath, getAutoCollapsedPaths, deferReason } from '../../lib/diff-utils';
 import { buildFirstOpenThreadByFile, buildThreadCountsByFile } from '../../lib/comment-navigation';
 import { focusThreadElement, getHunkHeaders, scrollToElement } from '../../lib/dom-utils';
 import { setFocusThread, useUi } from '../../lib/ui-store';
@@ -48,8 +48,17 @@ import { prDiffRef } from '../layout/ref-menu';
 import { openCommitDialog } from '../../features/pr/commit-dialog';
 import { ChevronDownIcon, ChevronUpIcon, CollapseAllIcon, CopyIcon, ExpandAllIcon, EyeOffIcon, GitHubIcon, GitPullRequestIcon, PushIcon, RefreshIcon, SendIcon, SparkleIcon, SplitViewIcon, UnifiedViewIcon } from '../ui/icon';
 import { shortcutHint } from '../../lib/shortcuts';
+import { FindBar } from '../../features/find/find-bar';
+import { useFind, useFindSource, type FindSource } from '../../features/find/find-store';
+import { diffFindLines } from '../../lib/find';
+import { filePatchOptions } from '../../queries/diff';
+import { loadHeldBackFile } from '../../lib/large-diff';
 
 const NO_THREADS: CommentThread[] = [];
+
+function patchData(results: { data?: DiffFile }[]) {
+  return results.map((result) => result.data);
+}
 
 /** Collapsed unless toggled: generated, lock and very large files, except those with comments. */
 function defaultCollapsed(files: DiffFile[], commented: Set<string>) {
@@ -478,6 +487,52 @@ export function DiffPage(props: DiffPageProps) {
   }, [activeFile, refParam]);
   usePageActions('diff', paletteActions);
 
+  const findOpen = useFind((state) => state.open);
+  const omittedFiles = useMemo(() => (findOpen && diff ? diff.files.filter((file) => file.patchOmitted) : []), [findOpen, diff]);
+  const omittedPatches = useQueries({
+    queries: omittedFiles.map((file) => filePatchOptions(file, hideWhitespace, refParam)),
+    combine: patchData,
+  });
+  const activeFileRef = useRef(activeFile);
+  activeFileRef.current = activeFile;
+  const findSource = useMemo<FindSource | null>(() => {
+    if (!diff || diff.files.length === 0) {
+      return null;
+    }
+    const patched = new Map<string, DiffFile>();
+    omittedFiles.forEach((file, index) => {
+      const data = omittedPatches[index];
+      if (data) {
+        patched.set(getFilePath(file), data);
+      }
+    });
+    return {
+      label: 'changes',
+      lines: diffFindLines(patched.size > 0 ? diff.files.map((file) => patched.get(getFilePath(file)) ?? file) : diff.files),
+      pending: omittedFiles.length - patched.size,
+      currentScope: () => activeFileRef.current,
+      reveal: (match) => {
+        const file = diff.files.find((item) => getFilePath(item) === match.scope);
+        if (!file) {
+          return;
+        }
+        setCollapsedFiles((prev) => {
+          if (!prev.has(match.scope)) {
+            return prev;
+          }
+          const next = new Set(prev);
+          next.delete(match.scope);
+          return next;
+        });
+        if (deferReason(file)) {
+          loadHeldBackFile(match.scope);
+        }
+        diffViewRef.current?.revealFile(match.scope);
+      },
+    };
+  }, [diff, omittedFiles, omittedPatches]);
+  useFindSource(findSource);
+
   const handleActiveFileFromScroll = useCallback((path: string) => {
     setActiveFile(path);
   }, [setActiveFile]);
@@ -570,7 +625,8 @@ export function DiffPage(props: DiffPageProps) {
             )}
           </div>
         ) : (
-          <div className="flex flex-1 min-w-0 flex-col">
+          <div className="relative flex flex-1 min-w-0 flex-col">
+            <FindBar className="top-12" />
             <DiffBar
               viewMode={viewMode}
               onViewModeChange={setViewMode}

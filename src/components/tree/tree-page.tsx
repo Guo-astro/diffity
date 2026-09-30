@@ -20,6 +20,7 @@ import type { CommentThread } from '../comments/types';
 import { TreeSidebar } from './tree-sidebar';
 import { FolderViewer } from './folder-viewer';
 import { FileViewer } from './file-viewer';
+import { FindBar } from '../../features/find/find-bar';
 import { MarkdownPreview } from './markdown-preview';
 import { SvgPreview } from './svg-preview';
 import { PathComments } from '../comments/path-comments';
@@ -425,7 +426,8 @@ export function TreePage() {
         </div>
       </TitleBar>
       <Workspace>
-      <div className='flex flex-1 min-h-0 overflow-hidden'>
+      <div className='relative flex flex-1 min-h-0 overflow-hidden'>
+        <FindBar className='top-2' />
         <TreeSidebar
           ref={searchInputRef}
           paths={paths}

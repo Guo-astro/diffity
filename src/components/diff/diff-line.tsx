@@ -2,6 +2,7 @@ import type { DiffLine as DiffLineType } from '@/lib/diff-parser';
 import { cn } from '../../lib/cn';
 import { getLineBg } from '../../lib/diff-utils';
 import { renderContent } from '../../lib/render-content';
+import { diffLineKey } from '../../lib/find';
 import type { SyntaxToken } from '../../lib/syntax-token';
 import { CommentLineNumber } from '../comments/comment-line-number';
 import type { CommentSide } from '../comments/types';
@@ -70,7 +71,7 @@ export function DiffLine(props: DiffLineProps) {
         {getPrefix(line.type)}
       </td>
       <td className={cn('px-3 whitespace-pre-wrap [overflow-wrap:anywhere]', isSelected && 'bg-diff-comment-bg')}>
-        <span className="inline">{renderContent(line, syntaxTokens)}</span>
+        <span className="inline" data-find-line={diffLineKey(line)}>{renderContent(line, syntaxTokens)}</span>
       </td>
     </tr>
   );

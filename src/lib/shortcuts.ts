@@ -64,6 +64,8 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { id: 'view-collapse', label: 'Collapse or expand all files', keys: ['⇧X'] },
       { label: 'Mark the file as viewed', keys: ['R'] },
       { label: 'Filter files', keys: ['/'] },
+      { id: 'find', label: 'Find in all changed files', keys: [chord('F')] },
+      { label: 'Next or previous match', keys: [chord('G'), chord('G', { shift: true })] },
       { id: 'copy-path', label: 'Copy the focused file’s path', keys: [chord('C', { alt: true })] },
       { id: 'copy-contents', label: 'Copy the focused file’s contents', keys: [chord('C', { alt: true, shift: true })] },
     ],
@@ -72,6 +74,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     title: 'Files',
     shortcuts: [
       { label: 'Filter files', keys: ['/'] },
+      { label: 'Find in the file', keys: [chord('F')] },
       { label: 'Open the file in your editor', keys: [chord('E', { shift: true })] },
     ],
   },
@@ -91,6 +94,14 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { label: 'Move between rows', keys: ['↑', '↓'], join: 'none' },
       { label: 'Run the row', keys: ['↵'] },
       { label: 'Open a file in your editor', keys: [chord('↵')] },
+    ],
+  },
+  {
+    title: 'In the find bar',
+    shortcuts: [
+      { label: 'Next match', keys: ['↵', chord('G')] },
+      { label: 'Previous match', keys: ['⇧↵', chord('G', { shift: true })] },
+      { label: 'Close', keys: ['Esc'] },
     ],
   },
 ];

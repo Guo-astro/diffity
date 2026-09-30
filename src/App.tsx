@@ -16,6 +16,7 @@ import { ShortcutsSheet } from './components/layout/shortcuts-sheet';
 import { TopProgress, hideStaticSplash } from './components/layout/skeleton';
 import { closeShortcuts, openSettings, openShortcuts, useUi } from './lib/ui-store';
 import { useUpdateChecks } from './features/updates/use-update-checks';
+import { FindHost } from './features/find/find-bar';
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -102,6 +103,7 @@ export function App() {
         <SettingsDialog />
         <GlobalShortcutModal />
         <QuickOpenHost />
+        <FindHost />
       </HashRouter>
       <TopProgress />
       <Toaster
