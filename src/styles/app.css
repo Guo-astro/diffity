@@ -710,3 +710,19 @@ dialog {
   background-color: #f59e0b;
   color: #111111;
 }
+
+[data-sonner-toast] [data-close-button] {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+[data-sonner-toast]:hover [data-close-button],
+[data-sonner-toast]:focus-within [data-close-button] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast] [data-close-button] {
+    transition: none;
+  }
+}
