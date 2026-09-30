@@ -1,12 +1,29 @@
 import { useState } from 'react';
 import { cn } from '../../lib/cn';
 import { useTheme, type ThemePreference } from '../../hooks/use-theme';
+import { setDiffPalette, useDiffPalette, type DiffPalette } from '../../lib/diff-palette';
 import { PreferencesGroup, PreferencesPane, PreferencesRow, SegmentedControl } from './preferences';
 
 const PALETTES = {
   light: { bg: '#ffffff', panel: '#f6f8fa', line: '#d0d7de', text: '#8b949e', add: '#abf2bc', del: '#ffc1bf', accent: '#0969da' },
   dark: { bg: '#171717', panel: '#1f1f1f', line: '#2e2e2e', text: '#525252', add: 'rgba(34,197,94,0.4)', del: 'rgba(239,68,68,0.4)', accent: '#60a5fa' },
 };
+
+const DIFF_COLOURS: Record<DiffPalette, Record<'light' | 'dark', { add: string; addText: string; del: string; delText: string }>> = {
+  default: {
+    light: { add: '#d9f6e1', addText: '#1a7f37', del: '#fcdfdd', delText: '#cf222e' },
+    dark: { add: '#1c3a27', addText: '#4ade80', del: '#3d1f21', delText: '#f87171' },
+  },
+  colorblind: {
+    light: { add: '#d6ebff', addText: '#0969da', del: '#ffe5cf', delText: '#bc4c00' },
+    dark: { add: '#1b3552', addText: '#58a6ff', del: '#3d2712', delText: '#f0883e' },
+  },
+};
+
+const PALETTE_OPTIONS: { value: DiffPalette; label: string; hint: string }[] = [
+  { value: 'default', label: 'Default', hint: 'Green and red' },
+  { value: 'colorblind', label: 'Colour-blind friendly', hint: 'Blue and orange' },
+];
 
 const THEMES: { value: ThemePreference; label: string; hint: string }[] = [
   { value: 'system', label: 'System', hint: 'Follows macOS' },
@@ -16,7 +33,10 @@ const THEMES: { value: ThemePreference; label: string; hint: string }[] = [
 
 function MiniWindow(props: { theme: 'light' | 'dark' }) {
   const { theme } = props;
-  const palette = PALETTES[theme];
+  const diffPalette = useDiffPalette((state) => state.palette);
+  const palette = diffPalette === 'default'
+    ? PALETTES[theme]
+    : { ...PALETTES[theme], add: DIFF_COLOURS.colorblind[theme].add, del: DIFF_COLOURS.colorblind[theme].del };
 
   return (
     <div className="flex h-full w-full flex-col" style={{ background: palette.bg }}>
@@ -96,6 +116,50 @@ function ThemePicker() {
   );
 }
 
+function DiffColoursPicker() {
+  const { theme } = useTheme();
+  const palette = useDiffPalette((state) => state.palette);
+
+  return (
+    <div role="radiogroup" aria-label="Diff colours" className="grid grid-cols-2 gap-3">
+      {PALETTE_OPTIONS.map((option) => {
+        const active = palette === option.value;
+        const colours = DIFF_COLOURS[option.value][theme];
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => setDiffPalette(option.value)}
+            className="group cursor-pointer text-left"
+          >
+            <div
+              className={cn(
+                'flex flex-col gap-[3px] overflow-hidden rounded-lg border-2 bg-bg p-2 font-mono text-[10px] leading-[14px] transition-colors',
+                active ? 'border-accent' : 'border-border group-hover:border-text-muted',
+              )}
+            >
+              <div className="flex gap-1.5 rounded-sm px-1" style={{ background: colours.del, color: colours.delText }}>
+                <span>−</span>
+                <span className="text-text-secondary">return a - b;</span>
+              </div>
+              <div className="flex gap-1.5 rounded-sm px-1" style={{ background: colours.add, color: colours.addText }}>
+                <span>+</span>
+                <span className="text-text-secondary">return a + b;</span>
+              </div>
+            </div>
+            <div className="mt-1.5 flex items-baseline gap-1.5">
+              <span className="text-xs font-medium text-text">{option.label}</span>
+              <span className="text-[11px] text-text-muted">{option.hint}</span>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 type ViewMode = 'split' | 'unified';
 
 const VIEW_MODE_KEY = 'diffity-view-mode';
@@ -139,6 +203,9 @@ export function GeneralPane() {
       <PreferencesGroup label="Appearance">
         <PreferencesRow stacked label="Theme" hint="System switches with your macOS appearance.">
           <ThemePicker />
+        </PreferencesRow>
+        <PreferencesRow stacked label="Diff colours" hint="Colours for added and removed lines, stats and status letters.">
+          <DiffColoursPicker />
         </PreferencesRow>
       </PreferencesGroup>
       <PreferencesGroup label="Diffs">

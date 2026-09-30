@@ -132,6 +132,31 @@
   --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
+/* Colour-blind friendly diff colours: blue for added, orange for removed (GitHub's colourblind palette). */
+[data-diff-palette='colorblind'] {
+  --color-diff-add-bg: #eaf5ff;
+  --color-diff-add-line: #d6ebff;
+  --color-diff-add-word: #b6e3ff;
+  --color-diff-del-bg: #fff4eb;
+  --color-diff-del-line: #ffe5cf;
+  --color-diff-del-word: #ffcf9f;
+  --color-added: #0969da;
+  --color-deleted: #bc4c00;
+  --color-renamed: #8250df;
+}
+
+[data-theme='dark'][data-diff-palette='colorblind'] {
+  --color-diff-add-bg: #172a3f;
+  --color-diff-add-line: #14243a;
+  --color-diff-add-word: #1f4a78;
+  --color-diff-del-bg: #33200f;
+  --color-diff-del-line: #2c1c0e;
+  --color-diff-del-word: #6b3a12;
+  --color-added: #58a6ff;
+  --color-deleted: #f0883e;
+  --color-renamed: #a371f7;
+}
+
 :root {
   --code-size: 13px;
   --code-line: 22px;

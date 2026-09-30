@@ -10,6 +10,7 @@
         try { stored = localStorage.getItem('diffity-theme'); } catch (e) {}
         var dark = stored ? stored === 'dark' : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
         document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        try { if (localStorage.getItem('diffity-diff-palette') === 'colorblind') document.documentElement.setAttribute('data-diff-palette', 'colorblind'); } catch (e) {}
       })();
     </script>
     <style>

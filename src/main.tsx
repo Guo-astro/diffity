@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { isTauri, shouldUseMockApi } from './lib/platform';
 import './styles/app.css';
+import './lib/diff-palette';
 
 async function bootstrap() {
   if (shouldUseMockApi) {
