@@ -81,6 +81,32 @@ async function run(asked: boolean) {
 }
 
 /**
+ * A check from the app menu or ⌘K: always answers with a toast — the update prompt, "up to date", or the error.
+ */
+export async function checkForUpdatesAndTell() {
+  if (!canUpdate) {
+    toast('Updates are only available in the installed app', { id: TOAST_ID });
+    return;
+  }
+  toast.loading('Checking for updates…', { id: TOAST_ID });
+  await checkForUpdates({ asked: true });
+  const status = useUpdates.getState().status;
+  if (status.kind === 'available' && pending) {
+    offer(pending);
+    return;
+  }
+  if (status.kind === 'upToDate') {
+    toast.success('Diffity is up to date', { id: TOAST_ID, duration: 4000 });
+    return;
+  }
+  if (status.kind === 'failed') {
+    toast.error('Could not check for updates', { id: TOAST_ID, description: status.message, duration: 8000 });
+    return;
+  }
+  toast.dismiss(TOAST_ID);
+}
+
+/**
  * One check at a time: a second would stack another prompt and could start a second download into the same bundle.
  * A check the viewer asked for (Settings → About) answers there instead of raising the prompt.
  */

@@ -48,10 +48,15 @@ fn init_state(app: &tauri::App) -> anyhow::Result<AppState> {
 
 const REPORT_ISSUE_MENU_ID: &str = "report-issue";
 const WHATS_NEW_MENU_ID: &str = "whats-new";
+const CHECK_UPDATES_MENU_ID: &str = "check-for-updates";
 
-/// Tauri's default menu plus Help → What's New and Report an Issue….
+/// Tauri's default menu plus Diffity → Check for Updates… and Help → What's New and Report an Issue….
 fn app_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(handle)?;
+    let check = MenuItem::with_id(handle, CHECK_UPDATES_MENU_ID, "Check for Updates…", true, None::<&str>)?;
+    if let Some(app_submenu) = menu.items()?.first().and_then(|item| item.as_submenu().cloned()) {
+        app_submenu.insert(&check, 1)?;
+    }
     let whats_new = MenuItem::with_id(handle, WHATS_NEW_MENU_ID, "What’s New in Diffity", true, None::<&str>)?;
     let report = MenuItem::with_id(handle, REPORT_ISSUE_MENU_ID, "Report an Issue…", true, None::<&str>)?;
     if let Some(help) = menu.get(HELP_SUBMENU_ID).and_then(|item| item.as_submenu().cloned()) {
@@ -61,16 +66,16 @@ fn app_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     Ok(menu)
 }
 
-/// Opens What's New in the focused window, or the main one when none has focus.
-fn show_whats_new<R: Runtime>(app: &AppHandle<R>) {
+/// Sends a menu command to the focused window, or the main one when none has focus.
+fn emit_to_focused<R: Runtime>(app: &AppHandle<R>, event: &str) {
     let windows = app.webview_windows();
     let label = windows
         .values()
         .find(|window| window.is_focused().unwrap_or(false))
         .map(|window| window.label().to_string())
         .unwrap_or_else(|| "main".to_string());
-    if let Err(e) = app.emit_to(EventTarget::webview_window(label), "open-whats-new", ()) {
-        tracing::warn!("could not open What's New: {e}");
+    if let Err(e) = app.emit_to(EventTarget::webview_window(label), event, ()) {
+        tracing::warn!("could not send {event}: {e}");
     }
 }
 
@@ -100,7 +105,11 @@ pub fn run() {
         .menu(app_menu)
         .on_menu_event(|app, event| {
             if event.id() == WHATS_NEW_MENU_ID {
-                show_whats_new(app);
+                emit_to_focused(app, "open-whats-new");
+                return;
+            }
+            if event.id() == CHECK_UPDATES_MENU_ID {
+                emit_to_focused(app, "check-for-updates");
                 return;
             }
             if event.id() != REPORT_ISSUE_MENU_ID {
