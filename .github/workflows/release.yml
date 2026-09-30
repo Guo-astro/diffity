@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   desktop:
-    name: Diffity (macOS universal)
+    name: macOS universal
     permissions:
       contents: write
     runs-on: macos-latest
@@ -39,6 +39,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
+          workspaces: src-tauri
           key: universal
 
       - run: pnpm install --frozen-lockfile
@@ -46,14 +47,14 @@ jobs:
       # `tauri build` runs this again from beforeBuildCommand (a no-op once
       # built); doing it here first makes a sidecar failure its own red step.
       - name: Build the diffity-mcp sidecar for both architectures
-        run: node apps/desktop/scripts/prepare-mcp.mjs --release
+        run: node scripts/prepare-mcp.mjs --release
         env:
           TAURI_ENV_TARGET_TRIPLE: universal-apple-darwin
 
       - name: Stamp version from tag
         run: |
           VER="${GITHUB_REF_NAME#v}"
-          python3 -c "import json,sys; p='apps/desktop/src-tauri/tauri.conf.json'; d=json.load(open(p)); d['version']=sys.argv[1]; json.dump(d,open(p,'w'),indent=2)" "$VER"
+          python3 -c "import json,sys; p='src-tauri/tauri.conf.json'; d=json.load(open(p)); d['version']=sys.argv[1]; json.dump(d,open(p,'w'),indent=2)" "$VER"
           echo "Building Diffity $VER"
 
       - name: Resolve release notes from tag
@@ -102,9 +103,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          projectPath: apps/desktop
+          projectPath: .
           tagName: ${{ github.ref_name }}
-          releaseName: Diffity __VERSION__
+          releaseName: v__VERSION__
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false

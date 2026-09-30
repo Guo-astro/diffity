@@ -1,0 +1,132 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { DiffFile, ParsedDiff } from '@/lib/diff-parser';
+import { DiffStats } from '../diff/diff-stats';
+import { setSidebarFlat, useUi } from '../../lib/ui-store';
+import { useViewState } from '../../lib/view-state';
+import { FileTree } from '../tree/file-tree';
+import type { FileTreeHandle } from '../tree/file-tree';
+import { CommentedOnlyToggle, SidebarFilter, SidebarFrame, SidebarMenu, SidebarSummary } from './sidebar-frame';
+import { MenuItem, MenuLabel, MenuSeparator } from '../ui/popover';
+import { CollapseAllIcon, ExpandAllIcon, ListIcon, TreeIcon } from '../ui/icon';
+
+interface SidebarProps {
+  files: DiffFile[];
+  activeFile: string | null;
+  reviewedFiles: Set<string>;
+  commentCountsByFile: Map<string, number>;
+  onFileClick: (path: string) => void;
+  onCommentedFileClick: (path: string) => void;
+  stats?: ParsedDiff['stats'];
+  /** Remembers the filter, folders and scroll per view. */
+  stateKey: string;
+}
+
+export function Sidebar(props: SidebarProps) {
+  const {
+    files,
+    activeFile,
+    reviewedFiles,
+    commentCountsByFile,
+    onFileClick,
+    onCommentedFileClick,
+    stats,
+    stateKey,
+  } = props;
+  const fileTreeRef = useRef<FileTreeHandle>(null);
+  const [search, setSearch] = useViewState(`${stateKey}:filter`, '');
+  const [commentedFilesOnly, setCommentedFilesOnly] = useViewState(`${stateKey}:commentedOnly`, false);
+  const [allExpanded, setAllExpanded] = useState(true);
+  const flat = useUi((state) => state.sidebarFlat);
+  const setFlat = setSidebarFlat;
+
+  const commentedFileCount = commentCountsByFile.size;
+  const countLabel = useMemo(() => {
+    if (commentedFilesOnly) {
+      return `${commentedFileCount} of ${files.length} files`;
+    }
+    if (reviewedFiles.size > 0) {
+      return `${reviewedFiles.size} of ${files.length} viewed`;
+    }
+    return `${files.length} file${files.length === 1 ? '' : 's'}`;
+  }, [commentedFilesOnly, commentedFileCount, files.length, reviewedFiles.size]);
+
+  useEffect(() => {
+    if (commentedFileCount === 0 && commentedFilesOnly) {
+      setCommentedFilesOnly(false);
+    }
+  }, [commentedFileCount, commentedFilesOnly, setCommentedFilesOnly]);
+
+  const handleTreeFileClick = (path: string) => {
+    if (commentedFilesOnly && commentCountsByFile.has(path)) {
+      onCommentedFileClick(path);
+      return;
+    }
+    onFileClick(path);
+  };
+
+  return (
+    <SidebarFrame view="diff">
+      {files.length === 0 ? (
+        <div className="px-4 pt-6 text-center text-xs text-text-muted">Nothing changed here</div>
+      ) : (
+      <>
+      <SidebarFilter
+        value={search}
+        onChange={setSearch}
+        placeholder="Filter files"
+        trailing={
+          <>
+            {commentedFileCount > 0 && (
+              <CommentedOnlyToggle
+                active={commentedFilesOnly}
+                count={commentedFileCount}
+                onToggle={() => setCommentedFilesOnly((prev) => !prev)}
+              />
+            )}
+            <SidebarMenu title="File list options">
+              {(close) => (
+                <>
+                  <MenuLabel>Show files as</MenuLabel>
+                  <MenuItem icon={<TreeIcon size="sm" />} label="Tree" checked={!flat} onSelect={() => { setFlat(false); close(); }} />
+                  <MenuItem icon={<ListIcon size="sm" />} label="List" checked={flat} onSelect={() => { setFlat(true); close(); }} />
+                  <MenuSeparator />
+                  <MenuItem
+                    icon={<ExpandAllIcon size="sm" />}
+                    label="Expand all folders"
+                    disabled={flat || allExpanded}
+                    onSelect={() => { fileTreeRef.current?.expandAll(); close(); }}
+                  />
+                  <MenuItem
+                    icon={<CollapseAllIcon size="sm" />}
+                    label="Collapse all folders"
+                    disabled={flat}
+                    onSelect={() => { fileTreeRef.current?.collapseAll(); close(); }}
+                  />
+                </>
+              )}
+            </SidebarMenu>
+          </>
+        }
+      />
+      <SidebarSummary>
+        <span className="truncate">{countLabel}</span>
+        {stats && <DiffStats additions={stats.totalAdditions} deletions={stats.totalDeletions} />}
+      </SidebarSummary>
+      <FileTree
+        ref={fileTreeRef}
+        files={files}
+        search={search}
+        activeFile={activeFile}
+        reviewedFiles={reviewedFiles}
+        commentCountsByFile={commentCountsByFile}
+        commentedFilesOnly={commentedFilesOnly}
+        flat={flat}
+        stateKey={stateKey}
+        onFileClick={handleTreeFileClick}
+        onExpandedStateChange={setAllExpanded}
+      />
+      </>
+      )}
+    </SidebarFrame>
+  );
+}
