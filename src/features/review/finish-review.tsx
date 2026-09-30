@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { useQuery } from '@tanstack/react-query';
+import { Skeleton } from '../../components/ui/skeleton';
 import { buttonClaudeSolid, buttonGhost, buttonOutline, buttonPrimary } from '../../components/ui/button-styles';
 import { cn } from '../../lib/cn';
 import * as tauri from '../../lib/tauri';
@@ -516,11 +517,15 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
     retry: false,
   });
   const { refetch } = candidatesQuery;
+  const [openedAt, setOpenedAt] = useState(0);
   useEffect(() => {
-    if (open) {
-      void refetch();
+    if (!open) {
+      return;
     }
+    setOpenedAt(Date.now());
+    void refetch();
   }, [open, refetch]);
+  const checkingCandidates = candidatesQuery.isLoading || (open && candidatesQuery.isFetching && candidatesQuery.dataUpdatedAt < openedAt);
 
   const candidateItems = useMemo(
     () => toCandidateItems(candidatesQuery.data?.candidates ?? [], prRefFor({ baseRef: pr.baseRef })),
@@ -569,7 +574,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
     blockedCount,
     hasBody,
     verdict,
-    loading: candidatesQuery.isLoading,
+    loading: checkingCandidates,
     blocker: candidatesQuery.data?.blocker ?? null,
     needsPendingChoice: showPendingChoice && pendingAction === null,
     claudeHasWork,
@@ -664,7 +669,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
           <div className="px-4 pt-3.5 pb-3">
             <div className="text-[13px] font-semibold text-text">Submit review · #{pr.prNumber}</div>
             <div className="text-xs text-text-secondary mt-0.5 truncate" title={pr.prTitle}>
-              {postToGitHub ? headerLine(selected.length, blockedCount, candidatesQuery.isLoading) : pendingCount > 0 ? `${plural(pendingCount, 'draft comment')}, private until you submit` : 'No draft comments'}
+              {postToGitHub ? headerLine(selected.length, blockedCount, checkingCandidates) : pendingCount > 0 ? `${plural(pendingCount, 'draft comment')}, private until you submit` : 'No draft comments'}
               {' · '}
               {pr.prTitle}
             </div>
@@ -686,7 +691,13 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
                 Couldn't check which comments can be posted: {tauri.errorMessage(candidatesQuery.error)}
               </div>
             )}
-            {postToGitHub && candidateItems.length > 0 && <CandidateList items={candidateItems} excluded={excluded} onToggle={toggle} />}
+            {postToGitHub && checkingCandidates && (
+              <div className="mt-2.5 flex flex-col gap-2" aria-hidden>
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            )}
+            {postToGitHub && !checkingCandidates && candidateItems.length > 0 && <CandidateList items={candidateItems} excluded={excluded} onToggle={toggle} />}
           </div>
 
           <Section
