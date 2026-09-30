@@ -71,6 +71,7 @@ export const gitStatus = (repoPath: string) => invoke<GitStatus>('git_status', {
 export const repoOverview = (repoPath: string) => invoke<OverviewFile[]>('repo_overview', { repoPath });
 export const openInEditor = (repoPath: string, path: string, line?: number | null, editor?: string | null) =>
   invoke<void>('open_in_editor', { repoPath, path, line: line ?? null, editor: editor ?? null });
+export const reportIssue = () => invoke<void>('report_issue');
 export const getSetting = (key: string) => invoke<string | null>('get_setting', { key });
 export const setSetting = (key: string, value: string) => invoke<void>('set_setting', { key, value });
 

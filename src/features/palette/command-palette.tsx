@@ -8,6 +8,7 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { cn } from '../../lib/cn';
 import * as tauri from '../../lib/tauri';
 import { commitRef, errorMessage, openInEditor } from '../../lib/api';
+import { reportIssue } from '../../lib/report-issue';
 import { modKey } from '../../lib/platform';
 import { shortcutHint } from '../../lib/shortcuts';
 import { KeyCaps } from '../../components/ui/key-caps';
@@ -24,7 +25,7 @@ import { usePullRequests } from '../pr/pull-requests-dialog';
 import { checkoutPullRequest } from '../pr/pr-checkout';
 import { prDiffRef } from '../../components/layout/ref-menu';
 import {
-  ChangesIcon, CommentIcon, EditorIcon, FetchIcon, FileIcon, FilesIcon, GitCommitIcon, GitPullRequestIcon,
+  AlertCircleIcon, ChangesIcon, CommentIcon, EditorIcon, FetchIcon, FileIcon, FilesIcon, GitCommitIcon, GitPullRequestIcon,
   HomeIcon, KeyboardIcon, MoonIcon, PullIcon, PushIcon, RevealIcon, SearchIcon, SettingsIcon, SidebarIcon,
 } from '../../components/ui/icon';
 import {
@@ -70,6 +71,7 @@ function useGlobalActions(): PaletteAction[] {
     { id: 'reveal', title: 'Reveal in Finder', group: 'Actions', icon: <RevealIcon size="sm" />, run: () => { revealItemInDir(nav.repoPath).catch(() => undefined); } },
     { id: 'settings', title: 'Settings', group: 'Actions', hint: shortcutHint('settings'), icon: <SettingsIcon size="sm" />, run: openSettings },
     { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Actions', hint: shortcutHint('shortcuts'), icon: <KeyboardIcon size="sm" />, run: openShortcuts },
+    { id: 'report-issue', title: 'Report an issue…', group: 'Actions', keywords: 'bug feedback github idea feature request help', icon: <AlertCircleIcon size="sm" />, run: reportIssue },
   ], [nav, theme, toggleTheme]);
 }
 

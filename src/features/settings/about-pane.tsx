@@ -3,6 +3,7 @@ import { getTauriVersion, getVersion } from '@tauri-apps/api/app';
 import { isTauri } from '../../lib/platform';
 import { BrandLogo } from '../../components/icons/brand-logo';
 import { PreferencesGroup, PreferencesPane, PreferencesRow, SettingsButton } from './preferences';
+import { reportIssue } from '../../lib/report-issue';
 import { canUpdate, checkForUpdates, installUpdate, useUpdates, type UpdateStatus } from '../updates/updater';
 
 async function loadVersions() {
@@ -74,6 +75,9 @@ export function AboutPane() {
         </PreferencesRow>
         <PreferencesRow label="Updates" hint={updateHint(status)}>
           <UpdateControl status={status} />
+        </PreferencesRow>
+        <PreferencesRow label="Feedback" hint="Found a bug or have an idea? Opens a GitHub issue with your versions filled in.">
+          <SettingsButton onClick={reportIssue}>Report an issue…</SettingsButton>
         </PreferencesRow>
       </PreferencesGroup>
       <PreferencesGroup label="Your data">

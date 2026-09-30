@@ -16,7 +16,8 @@ use std::sync::Arc;
 use crate::agents::AgentManager;
 use crate::core::store::Store;
 use crate::github::GithubService;
-use tauri::{Emitter, Manager};
+use tauri::menu::{Menu, MenuItem, HELP_SUBMENU_ID};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 pub use state::AppState;
 
@@ -45,6 +46,18 @@ fn init_state(app: &tauri::App) -> anyhow::Result<AppState> {
     Ok(AppState { store, agents, github })
 }
 
+const REPORT_ISSUE_MENU_ID: &str = "report-issue";
+
+/// Tauri's default menu plus Help → Report an Issue….
+fn app_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let menu = Menu::default(handle)?;
+    let report = MenuItem::with_id(handle, REPORT_ISSUE_MENU_ID, "Report an Issue…", true, None::<&str>)?;
+    if let Some(help) = menu.get(HELP_SUBMENU_ID).and_then(|item| item.as_submenu().cloned()) {
+        help.append(&report)?;
+    }
+    Ok(menu)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let _ = tracing_subscriber::fmt()
@@ -68,6 +81,15 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .menu(app_menu)
+        .on_menu_event(|app, event| {
+            if event.id() != REPORT_ISSUE_MENU_ID {
+                return;
+            }
+            if let Err(e) = commands::feedback::open_bug_report(app) {
+                tracing::warn!("could not open the issue form: {}", e.message);
+            }
+        })
         .setup(|app| {
             let state = init_state(app)?;
             app.manage(state);
@@ -140,6 +162,7 @@ pub fn run() {
             commands::comments::discard_review,
             commands::dev::log_frontend,
             commands::dev::dev_launch_target,
+            commands::feedback::report_issue,
             commands::agents::list_agents,
             commands::agents::start_chat,
             commands::agents::list_chats,
