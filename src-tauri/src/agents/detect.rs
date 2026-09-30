@@ -171,7 +171,8 @@ pub fn adapter_launch(kind: AgentKind, npx: Option<&Path>) -> Result<LaunchSpec,
     }
     let Some(npx) = npx else {
         return Err(format!(
-            "Node.js (npx) is required to run {package}, or install `{bin}` on PATH"
+            "Found {name}, but Diffity also needs Node.js to talk to it. Install Node.js from nodejs.org or with `brew install node`, then click Re-detect.",
+            name = kind.display_name()
         ));
     };
     Ok(LaunchSpec {
