@@ -207,8 +207,8 @@ function StatLine(props: { summary: DiffSummary }) {
   return (
     <span className="inline-flex items-center gap-2.5 text-xs tabular-nums">
       <span className="text-text-secondary">{summary.files} file{summary.files === 1 ? '' : 's'}</span>
-      {summary.additions > 0 && <span className="font-mono text-added">+{summary.additions}</span>}
-      {summary.deletions > 0 && <span className="font-mono text-deleted">−{summary.deletions}</span>}
+      {summary.additions > 0 && <span className="font-mono text-diff-added">+{summary.additions}</span>}
+      {summary.deletions > 0 && <span className="font-mono text-diff-deleted">−{summary.deletions}</span>}
       <DiffStatBar additions={summary.additions} deletions={summary.deletions} />
     </span>
   );

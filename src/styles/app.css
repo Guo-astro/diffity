@@ -52,6 +52,9 @@
   --color-deleted: #cf222e;
   --color-modified: #9a6700;
   --color-renamed: #0969da;
+  --color-diff-added: #1a7f37;
+  --color-diff-deleted: #cf222e;
+  --color-diff-renamed: #0969da;
 
   --color-raised: #ffffff;
   --color-control-border: #d2d6dc;
@@ -112,6 +115,9 @@
   --color-deleted: #f87171;
   --color-modified: #e3b341;
   --color-renamed: #60a5fa;
+  --color-diff-added: #4ade80;
+  --color-diff-deleted: #f87171;
+  --color-diff-renamed: #60a5fa;
 
   --color-raised: #242428;
   --color-control-border: #3a3a41;
@@ -140,9 +146,9 @@
   --color-diff-del-bg: #fff4eb;
   --color-diff-del-line: #ffe5cf;
   --color-diff-del-word: #ffcf9f;
-  --color-added: #0969da;
-  --color-deleted: #bc4c00;
-  --color-renamed: #8250df;
+  --color-diff-added: #0969da;
+  --color-diff-deleted: #bc4c00;
+  --color-diff-renamed: #8250df;
 }
 
 [data-theme='dark'][data-diff-palette='colorblind'] {
@@ -152,9 +158,9 @@
   --color-diff-del-bg: #33200f;
   --color-diff-del-line: #2c1c0e;
   --color-diff-del-word: #6b3a12;
-  --color-added: #58a6ff;
-  --color-deleted: #f0883e;
-  --color-renamed: #a371f7;
+  --color-diff-added: #58a6ff;
+  --color-diff-deleted: #f0883e;
+  --color-diff-renamed: #a371f7;
 }
 
 :root {
@@ -201,23 +207,23 @@ td.diff-gutter {
 tr.bg-diff-add-bg > td.diff-gutter:not(.bg-diff-comment-gutter),
 td.diff-gutter.bg-diff-add-bg {
   background-color: var(--color-diff-add-line);
-  color: color-mix(in srgb, var(--color-added) 75%, transparent);
+  color: color-mix(in srgb, var(--color-diff-added) 75%, transparent);
 }
 
 tr.bg-diff-del-bg > td.diff-gutter:not(.bg-diff-comment-gutter),
 td.diff-gutter.bg-diff-del-bg {
   background-color: var(--color-diff-del-line);
-  color: color-mix(in srgb, var(--color-deleted) 75%, transparent);
+  color: color-mix(in srgb, var(--color-diff-deleted) 75%, transparent);
 }
 
 tr.bg-diff-add-bg > td.diff-gutter:first-child,
 td.diff-gutter.bg-diff-add-bg {
-  box-shadow: inset 2px 0 0 var(--color-added);
+  box-shadow: inset 2px 0 0 var(--color-diff-added);
 }
 
 tr.bg-diff-del-bg > td.diff-gutter:first-child,
 td.diff-gutter.bg-diff-del-bg {
-  box-shadow: inset 2px 0 0 var(--color-deleted);
+  box-shadow: inset 2px 0 0 var(--color-diff-deleted);
 }
 
 * {

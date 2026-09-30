@@ -132,8 +132,8 @@ export function StatCell(props: { additions: number; deletions: number; bar: Rea
 
   return (
     <span className="inline-flex items-center justify-end gap-1.5 font-mono text-[11px] tabular-nums whitespace-nowrap">
-      {additions > 0 && <span className="text-added">+{additions}</span>}
-      {deletions > 0 && <span className="text-deleted">−{deletions}</span>}
+      {additions > 0 && <span className="text-diff-added">+{additions}</span>}
+      {deletions > 0 && <span className="text-diff-deleted">−{deletions}</span>}
       <span className="ml-1">{bar}</span>
     </span>
   );

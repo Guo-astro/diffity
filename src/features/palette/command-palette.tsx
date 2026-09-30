@@ -143,8 +143,8 @@ function PaletteBody(props: { mode: PaletteMode }) {
           detail: (
             <span className="flex items-center gap-2 font-mono text-[11px] tabular-nums">
               {!!file.comments && <span className="inline-flex items-center gap-1 text-text-secondary"><CommentIcon size={11} />{file.comments}</span>}
-              {!!file.additions && <span className="text-added">+{file.additions}</span>}
-              {!!file.deletions && <span className="text-deleted">−{file.deletions}</span>}
+              {!!file.additions && <span className="text-diff-added">+{file.additions}</span>}
+              {!!file.deletions && <span className="text-diff-deleted">−{file.deletions}</span>}
               {file.viewed && <span className="text-text-muted">viewed</span>}
               {file.status && <span className="w-3 text-center text-modified">{file.status}</span>}
             </span>

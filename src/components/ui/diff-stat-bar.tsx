@@ -11,7 +11,7 @@ export function DiffStatBar(props: { additions: number; deletions: number; block
       {Array.from({ length: blocks }, (_, index) => (
         <span
           key={index}
-          className={cn('w-[7px] h-[7px] rounded-[2px]', index < added ? 'bg-added' : index < added + removed ? 'bg-deleted' : 'bg-fill-hover')}
+          className={cn('w-[7px] h-[7px] rounded-[2px]', index < added ? 'bg-diff-added' : index < added + removed ? 'bg-diff-deleted' : 'bg-fill-hover')}
         />
       ))}
     </span>

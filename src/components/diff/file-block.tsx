@@ -644,10 +644,10 @@ function FileCard(props: FileCardProps) {
             <DiffStats additions={file.additions} deletions={file.deletions} />
             <div className="flex gap-px">
               {Array.from({ length: addBlocks }).map((_, i) => (
-                <span key={`a${i}`} className="w-1.5 h-1.5 rounded-sm bg-added" />
+                <span key={`a${i}`} className="w-1.5 h-1.5 rounded-sm bg-diff-added" />
               ))}
               {Array.from({ length: delBlocks }).map((_, i) => (
-                <span key={`d${i}`} className="w-1.5 h-1.5 rounded-sm bg-deleted" />
+                <span key={`d${i}`} className="w-1.5 h-1.5 rounded-sm bg-diff-deleted" />
               ))}
               {Array.from({ length: neutralBlocks }).map((_, i) => (
                 <span key={`n${i}`} className="w-1.5 h-1.5 rounded-sm bg-border" />

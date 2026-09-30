@@ -111,7 +111,7 @@ export function SinceViewedDiff(props: SinceViewedDiffProps) {
     <div className="border-b-4 border-modified/25">
       <div className="flex h-8 items-center gap-2 border-b border-border-muted bg-modified/8 pl-3 pr-2 text-xs text-text-secondary">
         <span className="font-medium text-modified">Changes since you viewed it</span>
-        {file && <span className="tabular-nums"><span className="text-added">+{file.additions}</span> <span className="text-deleted">-{file.deletions}</span></span>}
+        {file && <span className="tabular-nums"><span className="text-diff-added">+{file.additions}</span> <span className="text-diff-deleted">-{file.deletions}</span></span>}
         <span className="flex-1" />
         <button
           type="button"

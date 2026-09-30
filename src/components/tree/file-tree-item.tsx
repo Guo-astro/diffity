@@ -35,13 +35,13 @@ const rowClass = 'relative flex items-center gap-1.5 w-full h-7 pr-2 rounded-md 
 export function statusLetter(status: string): { letter: string; className: string; label: string } {
   switch (status) {
     case 'added':
-      return { letter: 'A', className: 'text-added', label: 'Added' };
+      return { letter: 'A', className: 'text-diff-added', label: 'Added' };
     case 'deleted':
-      return { letter: 'D', className: 'text-deleted', label: 'Deleted' };
+      return { letter: 'D', className: 'text-diff-deleted', label: 'Deleted' };
     case 'renamed':
-      return { letter: 'R', className: 'text-renamed', label: 'Renamed' };
+      return { letter: 'R', className: 'text-diff-renamed', label: 'Renamed' };
     case 'copied':
-      return { letter: 'C', className: 'text-renamed', label: 'Copied' };
+      return { letter: 'C', className: 'text-diff-renamed', label: 'Copied' };
     default:
       return { letter: 'M', className: 'text-modified', label: 'Modified' };
   }

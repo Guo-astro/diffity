@@ -10,10 +10,10 @@ export function DiffStats(props: DiffStatsProps) {
   return (
     <span className={`flex gap-1 shrink-0 font-mono text-xs tabular-nums ${className}`}>
       {additions > 0 && (
-        <span className="text-added font-medium">+{additions}</span>
+        <span className="text-diff-added font-medium">+{additions}</span>
       )}
       {deletions > 0 && (
-        <span className="text-deleted font-medium">-{deletions}</span>
+        <span className="text-diff-deleted font-medium">-{deletions}</span>
       )}
     </span>
   );

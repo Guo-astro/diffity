@@ -73,7 +73,7 @@ function PrRow(props: { pr: PullRequest; active: boolean; current: boolean; busy
         <ChecksStatus checks={pr.checks} />
         {(pr.additions > 0 || pr.deletions > 0) && (
           <span className="font-mono tabular-nums">
-            <span className="text-added">+{pr.additions}</span> <span className="text-deleted">−{pr.deletions}</span>
+            <span className="text-diff-added">+{pr.additions}</span> <span className="text-diff-deleted">−{pr.deletions}</span>
           </span>
         )}
         {busy && <Spinner className="h-3 w-3" />}

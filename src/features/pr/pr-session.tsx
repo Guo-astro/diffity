@@ -271,8 +271,8 @@ function PrDetailsDialog(props: DetailsDialogProps) {
           <SideSection label="Changes">
             <span className="flex items-center gap-2.5 tabular-nums">
               <span>{pr.changedFiles} file{pr.changedFiles === 1 ? '' : 's'}</span>
-              <span className="font-mono text-added">+{pr.additions}</span>
-              <span className="font-mono text-deleted">−{pr.deletions}</span>
+              <span className="font-mono text-diff-added">+{pr.additions}</span>
+              <span className="font-mono text-diff-deleted">−{pr.deletions}</span>
               <DiffStatBar additions={pr.additions} deletions={pr.deletions} />
             </span>
           </SideSection>

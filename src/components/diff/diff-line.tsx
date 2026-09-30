@@ -33,9 +33,9 @@ function getPrefix(type: string): string {
 function getPrefixColor(type: string): string {
   switch (type) {
     case 'add':
-      return 'text-added';
+      return 'text-diff-added';
     case 'delete':
-      return 'text-deleted';
+      return 'text-diff-deleted';
     default:
       return 'text-text-muted';
   }
