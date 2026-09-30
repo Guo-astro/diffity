@@ -88,6 +88,21 @@ macOS 13.3 or later, Apple Silicon and Intel. The AI features need [Claude Code]
 
 <img src="./.github/screenshots/projects.gif" alt="Switching between projects in the rail" />
 
+### More
+
+- **Find in the whole diff.** `⌘F` searches every file in the diff, including collapsed ones, and `⌘G` jumps to the next match.
+- **Changed since you viewed it.** Files you marked Viewed get a badge when they change again, and one click shows just what changed.
+- **Hide generated files.** Add a `.diffityignore` to your repo (same syntax as `.gitignore`), or a list in Settings, and those files stay out of your diffs:
+
+  ```gitignore
+  dist/
+  *.generated.ts
+  !dist/keep-me.js
+  ```
+- **Colour-blind friendly colours.** Settings → Appearance switches the diff to blue and orange, in light and dark.
+- **Split or unified, light or dark.** Toggle the diff layout anytime; the theme follows your Mac unless you pick one in Settings.
+- **Updates itself.** New versions install in place, and What's New in the Help menu shows what changed.
+
 Found a bug or have an idea? [Open an issue](https://github.com/nilbuild/diffity/issues/new/choose).
 
 ## License
