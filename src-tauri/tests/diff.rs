@@ -360,6 +360,41 @@ fn large_file_patches_are_withheld_and_fetched_per_file() {
 }
 
 #[test]
+fn viewed_snapshot_diffs_against_current_contents() {
+    let repo = Repo::with_commit();
+    repo.write("app.ts", "one\ntwo\n");
+    let blob = diff::snapshot_blob(&repo.path, "work", "app.ts").unwrap().unwrap();
+    assert_eq!(repo.git(&["cat-file", "-p", &blob]).trim_end(), "one\ntwo");
+    assert_eq!(diff::changes_since_blob(&repo.path, "work", "app.ts", &blob).unwrap(), "");
+
+    repo.write("app.ts", "one\nTWO\nthree\n");
+    let patch = diff::changes_since_blob(&repo.path, "work", "app.ts", &blob).unwrap();
+    assert!(patch.starts_with("diff --git a/app.ts b/app.ts\n"), "{patch}");
+    assert!(patch.contains("--- a/app.ts\n+++ b/app.ts\n"), "{patch}");
+    assert!(patch.contains("-two\n+TWO\n+three\n"), "{patch}");
+    assert!(!patch.contains(&blob));
+
+    assert!(diff::snapshot_blob(&repo.path, "work", "missing.ts").unwrap().is_none());
+    repo.write_bytes("image.bin", &[0, 1, 2, 0]);
+    assert!(diff::snapshot_blob(&repo.path, "work", "image.bin").unwrap().is_none());
+    repo.write("huge.txt", &"x".repeat(diff::VIEWED_SNAPSHOT_MAX_BYTES + 1));
+    assert!(diff::snapshot_blob(&repo.path, "work", "huge.txt").unwrap().is_none());
+
+    let gone = "0123456789abcdef0123456789abcdef01234567";
+    assert_eq!(diff::changes_since_blob(&repo.path, "work", "app.ts", gone).unwrap_err().code, "not_found");
+    assert_eq!(diff::changes_since_blob(&repo.path, "work", "app.ts", "HEAD").unwrap_err().code, "invalid");
+}
+
+#[test]
+fn viewed_snapshot_of_a_commit_ref_reads_the_commit() {
+    let repo = Repo::with_commit();
+    repo.write("a.txt", "v1\n");
+    let sha = repo.commit("v1");
+    let blob = diff::snapshot_blob(&repo.path, &sha, "a.txt").unwrap().unwrap();
+    assert_eq!(repo.git(&["rev-parse", &format!("{sha}:a.txt")]).trim(), blob);
+}
+
+#[test]
 fn diffityignore_hides_files_before_patching() {
     let repo = Repo::with_commit();
     repo.write("dist/bundle.js", "a\n");

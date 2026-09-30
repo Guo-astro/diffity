@@ -847,3 +847,57 @@ pub fn revert_hunk(repo: &Path, patch: &str) -> Result<()> {
     git::run_with_stdin(repo, &["apply", "--reverse", "--unidiff-zero", "-"], input.as_bytes())?;
     Ok(())
 }
+
+/// Files bigger than this get no "viewed" snapshot (the since-viewed diff is then unavailable).
+pub const VIEWED_SNAPSHOT_MAX_BYTES: usize = 1024 * 1024;
+
+fn write_blob(repo: &Path, data: &[u8]) -> Result<String> {
+    Ok(git::run_with_stdin(repo, &["hash-object", "-w", "--stdin"], data)?.trim().to_string())
+}
+
+/// Stores the current new-side contents of `path` in the repo's object database and returns the blob id, so the
+/// file can later be compared with what was viewed. `None` when the file is missing, binary or too large.
+pub fn snapshot_blob(repo: &Path, r: &str, path: &str) -> Result<Option<String>> {
+    let plan = plan(repo, r)?;
+    let Some(data) = read_source(repo, &plan.new, path)? else {
+        return Ok(None);
+    };
+    if data.len() > VIEWED_SNAPSHOT_MAX_BYTES || is_binary(&data) {
+        return Ok(None);
+    }
+    Ok(Some(write_blob(repo, &data)?))
+}
+
+/// Unified patch of `path` from the viewed snapshot `blob` to its current new-side contents (empty when unchanged).
+pub fn changes_since_blob(repo: &Path, r: &str, path: &str, blob: &str) -> Result<String> {
+    if blob.is_empty() || !blob.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(AppError::invalid("invalid snapshot id"));
+    }
+    let spec = format!("{blob}^{{blob}}");
+    if git::run_opt(repo, &["cat-file", "-e", &spec])?.is_none() {
+        return Err(AppError::not_found("the viewed version of this file is no longer available"));
+    }
+    let plan = plan(repo, r)?;
+    let data = read_source(repo, &plan.new, path)?.unwrap_or_default();
+    if data.len() > VIEWED_SNAPSHOT_MAX_BYTES || is_binary(&data) {
+        return Err(AppError::invalid("file is too large or binary to compare"));
+    }
+    let current = write_blob(repo, &data)?;
+    if current == blob {
+        return Ok(String::new());
+    }
+    let raw = git::run(
+        repo,
+        &["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", blob, &current],
+    )?;
+    Ok(relabel_blob_patch(&raw, blob, &current, path))
+}
+
+/// `git diff <blob> <blob>` names both sides by blob id; point them at `path` instead.
+fn relabel_blob_patch(raw: &str, old: &str, new: &str, path: &str) -> String {
+    let body_start = raw.find("\n@@ ").map(|i| i + 1).unwrap_or(raw.len());
+    let header = raw[..body_start]
+        .replace(&format!("a/{old}"), &format!("a/{path}"))
+        .replace(&format!("b/{new}"), &format!("b/{path}"));
+    format!("{header}{}", &raw[body_start..])
+}

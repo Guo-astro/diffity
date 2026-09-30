@@ -106,7 +106,28 @@ ALTER TABLE comments ADD COLUMN review_id TEXT NULL REFERENCES reviews(id) ON DE
 CREATE INDEX IF NOT EXISTS idx_comments_review ON comments(review_id);
 "#;
 
-const SCHEMA_VERSION: i64 = 2;
+/// `blob_id`: git blob of the file as it was when marked viewed (in the repo's object db), for "changes since viewed".
+fn migrate_v3(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS viewed_files (
+           session_id TEXT NOT NULL,
+           file_path TEXT NOT NULL,
+           content_hash TEXT NOT NULL,
+           PRIMARY KEY(session_id, file_path)
+         );",
+    )?;
+    let has_blob: bool = conn.query_row(
+        "SELECT count(*) > 0 FROM pragma_table_info('viewed_files') WHERE name = 'blob_id'",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_blob {
+        conn.execute_batch("ALTER TABLE viewed_files ADD COLUMN blob_id TEXT NULL;")?;
+    }
+    Ok(())
+}
+
+const SCHEMA_VERSION: i64 = 3;
 
 pub struct Store {
     conn: Mutex<Connection>,
@@ -148,6 +169,9 @@ impl Store {
             }
             if version < 2 {
                 conn.execute_batch(MIGRATION_V2)?;
+            }
+            if version < 3 {
+                migrate_v3(conn)?;
             }
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             Ok(())
@@ -1103,18 +1127,44 @@ impl Store {
     pub fn list_viewed(&self, session_id: &str) -> Result<Vec<ViewedFile>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT file_path, content_hash FROM viewed_files WHERE session_id = ?1 ORDER BY file_path",
+            "SELECT file_path, content_hash, blob_id FROM viewed_files WHERE session_id = ?1 ORDER BY file_path",
         )?;
         let rows = stmt.query_map([session_id], |r| {
             Ok(ViewedFile {
                 file_path: r.get(0)?,
                 content_hash: r.get(1)?,
+                blob_id: r.get(2)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    pub fn set_viewed(&self, session_id: &str, file_path: &str, content_hash: &str, viewed: bool) -> Result<()> {
+    pub fn get_viewed(&self, session_id: &str, file_path: &str) -> Result<Option<ViewedFile>> {
+        Ok(self
+            .conn()?
+            .query_row(
+                "SELECT file_path, content_hash, blob_id FROM viewed_files WHERE session_id = ?1 AND file_path = ?2",
+                params![session_id, file_path],
+                |r| {
+                    Ok(ViewedFile {
+                        file_path: r.get(0)?,
+                        content_hash: r.get(1)?,
+                        blob_id: r.get(2)?,
+                    })
+                },
+            )
+            .optional()?)
+    }
+
+    /// Marks a file viewed (`blob_id`: its content snapshot, when one was stored) or clears the mark.
+    pub fn set_viewed(
+        &self,
+        session_id: &str,
+        file_path: &str,
+        content_hash: &str,
+        blob_id: Option<&str>,
+        viewed: bool,
+    ) -> Result<()> {
         let conn = self.conn()?;
         if !viewed {
             conn.execute(
@@ -1124,9 +1174,9 @@ impl Store {
             return Ok(());
         }
         conn.execute(
-            "INSERT INTO viewed_files (session_id, file_path, content_hash) VALUES (?1, ?2, ?3)
-             ON CONFLICT(session_id, file_path) DO UPDATE SET content_hash = excluded.content_hash",
-            params![session_id, file_path, content_hash],
+            "INSERT INTO viewed_files (session_id, file_path, content_hash, blob_id) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(session_id, file_path) DO UPDATE SET content_hash = excluded.content_hash, blob_id = excluded.blob_id",
+            params![session_id, file_path, content_hash, blob_id],
         )?;
         Ok(())
     }

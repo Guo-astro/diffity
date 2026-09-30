@@ -156,6 +156,7 @@ pub fn run() {
             commands::comments::set_thread_status,
             commands::comments::list_viewed,
             commands::comments::set_viewed,
+            commands::comments::viewed_changes,
             commands::comments::get_pending_review,
             commands::comments::start_review,
             commands::comments::get_review,

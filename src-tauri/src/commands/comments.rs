@@ -1,7 +1,9 @@
-use crate::core::repo_threads;
+use std::path::Path;
+
 use crate::core::types::{
-    AuthorType, NewThread, RepoThread, Review, ReviewSession, ReviewVerdict, Thread, ThreadStatus, ViewedFile,
+    AuthorType, NewThread, RepoThread, Review, ReviewSession, ReviewVerdict, Thread, ThreadStatus, ViewedFile, TREE_REF,
 };
+use crate::core::{diff, repo_threads};
 use crate::core::AppError;
 use tauri::{AppHandle, State};
 
@@ -125,7 +127,31 @@ pub async fn set_viewed(
     content_hash: String,
     viewed: bool,
 ) -> Result<(), AppError> {
-    state.store.set_viewed(&session_id, &file_path, &content_hash, viewed)
+    if !viewed {
+        return state.store.set_viewed(&session_id, &file_path, &content_hash, None, false);
+    }
+    let session = state.store.get_session_by_id(&session_id)?;
+    let path = file_path.clone();
+    let blob = blocking(move || {
+        if session.r#ref == TREE_REF {
+            return Ok(None);
+        }
+        Ok(diff::snapshot_blob(Path::new(&session.repo_path), &session.r#ref, &path).unwrap_or(None))
+    })
+    .await?;
+    state.store.set_viewed(&session_id, &file_path, &content_hash, blob.as_deref(), true)
+}
+
+/// Patch from the version of `file_path` last marked viewed to its current contents (empty when unchanged).
+#[tauri::command]
+pub async fn viewed_changes(state: State<'_, AppState>, session_id: String, file_path: String) -> Result<String, AppError> {
+    let session = state.store.get_session_by_id(&session_id)?;
+    let blob = state
+        .store
+        .get_viewed(&session_id, &file_path)?
+        .and_then(|v| v.blob_id)
+        .ok_or_else(|| AppError::not_found("no viewed snapshot for this file"))?;
+    blocking(move || diff::changes_since_blob(Path::new(&session.repo_path), &session.r#ref, &file_path, &blob)).await
 }
 
 #[tauri::command]

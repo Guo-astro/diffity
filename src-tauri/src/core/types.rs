@@ -273,6 +273,9 @@ pub struct NewThread {
 pub struct ViewedFile {
     pub file_path: String,
     pub content_hash: String,
+    /// Git blob of the file when it was marked viewed; `None` for rows from before snapshots, binary or huge files.
+    #[serde(default)]
+    pub blob_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]

@@ -138,13 +138,13 @@ fn github_helpers() {
 #[test]
 fn viewed_settings_repos() {
     let store = Store::open_in_memory().unwrap();
-    store.set_viewed("s1", "a.rs", "h1", true).unwrap();
-    store.set_viewed("s1", "a.rs", "h2", true).unwrap();
-    store.set_viewed("s1", "b.rs", "h3", true).unwrap();
+    store.set_viewed("s1", "a.rs", "h1", None, true).unwrap();
+    store.set_viewed("s1", "a.rs", "h2", Some("abc"), true).unwrap();
+    store.set_viewed("s1", "b.rs", "h3", None, true).unwrap();
     let v = store.list_viewed("s1").unwrap();
     assert_eq!(v.len(), 2);
     assert_eq!(v[0].content_hash, "h2");
-    store.set_viewed("s1", "a.rs", "", false).unwrap();
+    store.set_viewed("s1", "a.rs", "", None, false).unwrap();
     assert_eq!(store.list_viewed("s1").unwrap().len(), 1);
 
     assert!(store.get_setting("editor").unwrap().is_none());
@@ -327,7 +327,7 @@ fn migrates_v1_database() {
         .unwrap()
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
     let t = store.get_thread("t1").unwrap();
     assert!(!t.pending);
     assert!(t.review_id.is_none());
@@ -362,4 +362,34 @@ fn lists_threads_across_a_repos_sessions() {
     let (session, _) = rows.iter().find(|(_, t)| t.id == b.id).unwrap();
     assert_eq!(session.r#ref, "abc1234~1..abc1234");
     assert!(store.list_repo_threads("/nowhere").unwrap().is_empty());
+}
+
+#[test]
+fn v2_database_gains_viewed_snapshots() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("diffity.db");
+    {
+        let store = Store::open(&path).unwrap();
+        let conn = store.conn().unwrap();
+        conn.execute_batch("ALTER TABLE viewed_files DROP COLUMN blob_id; PRAGMA user_version = 2;").unwrap();
+        conn.execute(
+            "INSERT INTO viewed_files (session_id, file_path, content_hash) VALUES ('s1', 'old.rs', 'h0')",
+            [],
+        )
+        .unwrap();
+    }
+    let store = Store::open(&path).unwrap();
+    let version: i64 = store.conn().unwrap().pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+    assert_eq!(version, 3);
+    let old = store.get_viewed("s1", "old.rs").unwrap().unwrap();
+    assert_eq!((old.content_hash.as_str(), old.blob_id), ("h0", None));
+
+    store.set_viewed("s1", "old.rs", "h1", Some("deadbeef"), true).unwrap();
+    assert_eq!(store.get_viewed("s1", "old.rs").unwrap().unwrap().blob_id.as_deref(), Some("deadbeef"));
+    store.set_viewed("s1", "old.rs", "h2", None, true).unwrap();
+    assert_eq!(store.get_viewed("s1", "old.rs").unwrap().unwrap().blob_id, None);
+    store.set_viewed("s1", "old.rs", "", None, false).unwrap();
+    assert!(store.get_viewed("s1", "old.rs").unwrap().is_none());
+    drop(store);
+    assert!(Store::open(&path).is_ok());
 }
