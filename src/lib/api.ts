@@ -146,9 +146,10 @@ export function parseGitHubRemote(url: string | null): GitHubRemote | null {
   return { owner: match[1], repo: match[2] };
 }
 
-export async function fetchDiff(hideWhitespace: boolean, ref?: string): Promise<ParsedDiff> {
-  const result = await tauri.getDiff(getRepoPath(), ref || 'work', hideWhitespace);
+export async function fetchDiff(hideWhitespace: boolean, ref?: string, showIgnored = false): Promise<ParsedDiff> {
+  const result = await tauri.getDiff(getRepoPath(), ref || 'work', hideWhitespace, showIgnored);
   const diff = parseDiff(result.patch);
+  diff.hiddenFiles = result.hiddenFiles ?? [];
   const summaries = new Map<string, DiffFileSummary>();
   for (const file of result.files) {
     summaries.set(file.path, file);
@@ -438,9 +439,17 @@ function loadTree(fresh: boolean): Promise<TreeEntry[]> {
   return entries;
 }
 
-export async function fetchTreePaths(): Promise<{ paths: string[] }> {
+export async function fetchTreePaths(): Promise<{ paths: string[]; diffIgnored: string[] }> {
   const entries = await loadTree(true);
-  return { paths: entries.filter((entry) => entry.kind === 'file').map((entry) => entry.path) };
+  const files = entries.filter((entry) => entry.kind === 'file');
+  return {
+    paths: files.map((entry) => entry.path),
+    diffIgnored: files.filter((entry) => entry.diffIgnored).map((entry) => entry.path),
+  };
+}
+
+export function fetchViewedChanges(sessionId: string, filePath: string): Promise<string> {
+  return tauri.viewedChanges(sessionId, filePath);
 }
 
 export async function fetchTreeEntries(dirPath?: string): Promise<{ entries: TreeEntryResponse[] }> {

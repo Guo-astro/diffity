@@ -46,6 +46,8 @@ export interface DiffFile {
 
 export interface ParsedDiff {
   files: DiffFile[];
+  /** Changed files the backend left out because `.diffityignore` hides them. */
+  hiddenFiles?: string[];
   stats: {
     totalAdditions: number;
     totalDeletions: number;

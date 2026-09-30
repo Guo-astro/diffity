@@ -32,7 +32,7 @@ import { requestAskClaude } from '../../features/claude/ask-claude-review';
 import { requestSendToClaude } from '../../features/review/finish-review';
 import { OutsideThreads } from '../comments/outside-threads';
 import type { CommentThread, LineSelection } from '../comments/types';
-import { DiffBar } from './view-options';
+import { DiffBar, hiddenFilesLabel } from './view-options';
 import { repoBase } from '../../hooks/use-repo';
 import { getRepoPath } from '../../lib/api';
 import { enterLargeDiffScope } from '../../lib/large-diff';
@@ -42,6 +42,7 @@ import { MovedComposer, selectionInDiff } from '../comments/moved-composer';
 import { Workspace } from '../layout/title-bar';
 import { ReviewStateProvider } from '../../features/review/review-state';
 import { useViewedFiles } from '../../hooks/use-viewed-files';
+import type { SinceViewedInfo } from './since-viewed';
 import { useGitHubPr, useOwnPr } from '../../hooks/use-repo-state';
 import { prDiffRef } from '../layout/ref-menu';
 import { openCommitDialog } from '../../features/pr/commit-dialog';
@@ -93,7 +94,8 @@ export function DiffPage(props: DiffPageProps) {
   const [viewMode, setViewMode] = useState<ViewMode>(() => (localStorage.getItem('diffity-view-mode') as ViewMode | null) ?? 'split');
   const [hideWhitespace, setHideWhitespace] = useViewState(`diff:${refParam}:hideWhitespace`, false);
   const { theme, toggleTheme } = useTheme();
-  const { data: rawDiff, error } = useDiff(hideWhitespace, refParam);
+  const [showIgnored, setShowIgnored] = useViewState(`diff:${refParam}:showIgnored`, false);
+  const { data: rawDiff, error } = useDiff(hideWhitespace, refParam, showIgnored);
   useLayoutEffect(() => {
     enterLargeDiffScope(`${getRepoPath()}\u0000${refParam}`);
   }, [refParam]);
@@ -122,7 +124,18 @@ export function DiffPage(props: DiffPageProps) {
   const { isStale, resetStaleness } = useDiffStaleness(refParam, !!info?.capabilities?.staleness);
   const { details: githubDetails } = useGitHubPr();
   const ownPr = useOwnPr();
-  const { reviewedFiles, setReviewed, loading: viewedLoading } = useViewedFiles(sessionId, diff);
+  const { reviewedFiles, changedFiles, hashes, setReviewed, loading: viewedLoading } = useViewedFiles(sessionId, diff);
+  const sinceViewedFiles = useMemo(() => {
+    const map = new Map<string, SinceViewedInfo>();
+    if (!sessionId) {
+      return map;
+    }
+    for (const [path, changed] of changedFiles) {
+      map.set(path, { sessionId, canDiff: changed.canDiff, version: hashes.get(path) ?? '' });
+    }
+    return map;
+  }, [sessionId, changedFiles, hashes]);
+  const changedSinceViewed = useMemo(() => new Set(changedFiles.keys()), [changedFiles]);
 
   useEffect(() => {
     localStorage.setItem('diffity-view-mode', viewMode);
@@ -523,6 +536,7 @@ export function DiffPage(props: DiffPageProps) {
           files={diff.files}
           activeFile={isEmpty ? null : activeFile}
           reviewedFiles={reviewedFiles}
+          changedSinceViewed={changedSinceViewed}
           commentCountsByFile={commentCountsByFile}
           onFileClick={handleSidebarFileClick}
           onCommentedFileClick={handleSidebarCommentedFileClick}
@@ -537,6 +551,12 @@ export function DiffPage(props: DiffPageProps) {
               onShowWhitespace={() => setHideWhitespace(false)}
               branch={info?.branch || null}
             />
+            {(diff.hiddenFiles?.length ?? 0) > 0 && (
+              <p className="mx-auto -mt-4 text-center text-xs text-text-muted">
+                {hiddenFilesLabel(diff.hiddenFiles?.length ?? 0)}.{' '}
+                <button className="cursor-pointer text-accent hover:underline" onClick={() => setShowIgnored(true)}>Show them</button>
+              </p>
+            )}
             {reviewsEnabled && (
               <OutsideThreads
                 threads={threads}
@@ -558,6 +578,8 @@ export function DiffPage(props: DiffPageProps) {
               onHideWhitespaceChange={setHideWhitespace}
               fileCount={diff.files.length}
               viewedCount={allPaths.filter((path) => reviewedFiles.has(path)).length}
+              changedSinceViewedCount={changedFiles.size}
+              ignored={{ hiddenCount: diff.hiddenFiles?.length ?? 0, showing: showIgnored, onShowingChange: setShowIgnored }}
               onExpandAll={() => setCollapsedFiles(new Set())}
               onCollapseAll={() => setCollapsedFiles(new Set(allPaths))}
               commentNav={
@@ -586,6 +608,7 @@ export function DiffPage(props: DiffPageProps) {
               onToggleCollapse={handleToggleCollapse}
               reviewedFiles={reviewedFiles}
               onReviewedChange={handleReviewedChange}
+              sinceViewedFiles={sinceViewedFiles}
               onActiveFileChange={handleActiveFileFromScroll}
               handle={diffViewRef}
               baseRef={refParam}

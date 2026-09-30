@@ -58,6 +58,8 @@ export interface DiffResult {
   files: DiffFileSummary[];
   patch: string;
   fingerprint: string;
+  /** Changed files hidden by `.diffityignore` or the repo's local ignore list. */
+  hiddenFiles?: string[];
 }
 
 export interface FileVersions {
@@ -99,6 +101,8 @@ export interface GitStatus {
 export interface TreeEntry {
   path: string;
   kind: 'file' | 'dir';
+  /** Hidden from diffs by `.diffityignore`. */
+  diffIgnored?: boolean;
 }
 
 export interface FileContent {
@@ -189,6 +193,8 @@ export interface Review {
 export interface ViewedFile {
   filePath: string;
   contentHash: string;
+  /** Git blob of the file as viewed; null when no snapshot was kept (binary, huge or marked before snapshots). */
+  blobId?: string | null;
 }
 
 export type AgentMode = 'ask' | 'review' | 'resolve' | 'edit';

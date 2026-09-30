@@ -3,6 +3,7 @@ import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import { useViewStateSlot } from '../../lib/view-state';
 import type { ParsedDiff } from '@/lib/diff-parser';
 import { FileBlock } from './file-block';
+import type { SinceViewedInfo } from './since-viewed';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { buttonGhost } from '../ui/button-styles';
 import { cn } from '../../lib/cn';
@@ -47,6 +48,8 @@ interface DiffViewProps {
   onToggleCollapse: (path: string) => void;
   reviewedFiles: Set<string>;
   onReviewedChange: (path: string, reviewed: boolean) => void;
+  /** Files that changed after being marked viewed. */
+  sinceViewedFiles?: Map<string, SinceViewedInfo>;
   onActiveFileChange?: (path: string) => void;
   scrollRef?: React.RefCallback<HTMLElement>;
   handle?: React.Ref<DiffViewHandle>;
@@ -113,7 +116,7 @@ function LargeDiffNotice(props: { files: DiffFile[] }) {
 export function DiffView(props: DiffViewProps) {
   const {
     diff, viewMode, theme, collapsedFiles, onToggleCollapse,
-    reviewedFiles, onReviewedChange, onActiveFileChange, scrollRef,
+    reviewedFiles, onReviewedChange, sinceViewedFiles, onActiveFileChange, scrollRef,
     handle, baseRef, canRevert, onRevert,
     threads, commentsEnabled, commentActions, onAddThread,
     pendingSelection, onPendingSelectionChange, initialScrollTop = 0, onScrollTopChange, hideWhitespace = false,
@@ -414,6 +417,7 @@ export function DiffView(props: DiffViewProps) {
                 onToggleCollapse={onToggleCollapse}
                 reviewed={reviewedFiles.has(filePath)}
                 onReviewedChange={onReviewedChange}
+                sinceViewed={sinceViewedFiles?.get(filePath) ?? null}
                 highlightCode={highlighters.get(filePath)}
                 baseRef={baseRef}
                 canRevert={canRevert}

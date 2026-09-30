@@ -551,6 +551,12 @@ const handlers: Record<string, (args: Args) => unknown> = {
     viewed.set(sessionId, map);
     return null;
   },
+  viewed_changes: () => '',
+  get_diff_ignore_rules: (args) => settings.get(`diffignore:${String(args.repoPath)}`) ?? '',
+  set_diff_ignore_rules: (args) => {
+    settings.set(`diffignore:${String(args.repoPath)}`, String(args.rules));
+    return null;
+  },
   get_setting: (args) => settings.get(String(args.key)) ?? null,
   set_setting: (args) => {
     settings.set(String(args.key), String(args.value));

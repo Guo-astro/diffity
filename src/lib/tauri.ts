@@ -77,8 +77,10 @@ export const setSetting = (key: string, value: string) => invoke<void>('set_sett
 
 // diff
 export const resolveRef = (repoPath: string, ref: string) => invoke<ResolvedRef>('resolve_ref', { repoPath, ref });
-export const getDiff = (repoPath: string, ref: string, ignoreWhitespace: boolean) =>
-  invoke<DiffResult>('get_diff', { repoPath, ref, ignoreWhitespace });
+export const getDiff = (repoPath: string, ref: string, ignoreWhitespace: boolean, showIgnored = false) =>
+  invoke<DiffResult>('get_diff', { repoPath, ref, ignoreWhitespace, showIgnored });
+export const getDiffIgnoreRules = (repoPath: string) => invoke<string>('get_diff_ignore_rules', { repoPath });
+export const setDiffIgnoreRules = (repoPath: string, rules: string) => invoke<void>('set_diff_ignore_rules', { repoPath, rules });
 export const getFilePatch = (repoPath: string, ref: string, path: string, oldPath: string | null, ignoreWhitespace: boolean) =>
   invoke<string>('get_file_patch', { repoPath, ref, path, oldPath, ignoreWhitespace });
 export const getFileVersions = (repoPath: string, ref: string, path: string, oldPath?: string | null) =>
@@ -130,6 +132,7 @@ export const discardReview = (sessionId: string) => invoke<void>('discard_review
 export const listViewed = (sessionId: string) => invoke<ViewedFile[]>('list_viewed', { sessionId });
 export const setViewed = (sessionId: string, filePath: string, contentHash: string, viewed: boolean) =>
   invoke<void>('set_viewed', { sessionId, filePath, contentHash, viewed });
+export const viewedChanges = (sessionId: string, filePath: string) => invoke<string>('viewed_changes', { sessionId, filePath });
 
 // agents
 export const listAgents = (refresh?: boolean) => invoke<AgentInfo[]>('list_agents', { refresh: refresh ?? null });

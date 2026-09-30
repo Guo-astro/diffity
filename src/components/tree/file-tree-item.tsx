@@ -14,6 +14,8 @@ interface FileTreeItemProps {
   depth: number;
   activeFile: string | null;
   reviewedFiles: Set<string>;
+  /** Files hidden from diffs by `.diffityignore`. */
+  dimmedFiles?: Set<string>;
   commentCountsByFile: Map<string, number>;
   expandedDirs: Set<string>;
   onToggleDir: (path: string) => void;
@@ -57,6 +59,10 @@ export function CommentCount(props: { count: number }) {
       {count}
     </span>
   );
+}
+
+export function ChangedSinceViewedDot() {
+  return <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-modified" title="Changed since you viewed it" aria-label="Changed since you viewed it" />;
 }
 
 export function StatusLetter(props: { status: string }) {
@@ -146,6 +152,10 @@ interface FileTreeRowProps {
   depth: number;
   active: boolean;
   reviewed: boolean;
+  /** Changed after it was marked viewed. */
+  changedSinceViewed?: boolean;
+  /** Hidden from diffs by `.diffityignore`. */
+  diffIgnored?: boolean;
   threadCount: number;
   expanded: boolean;
   onToggleDir: (path: string) => void;
@@ -156,7 +166,7 @@ interface FileTreeRowProps {
 
 /** One row of the tree (a folder or a file), without its children; the context menu mounts only while open. */
 export function FileTreeRow(props: FileTreeRowProps) {
-  const { node, depth, active, reviewed, threadCount, expanded, onToggleDir, onCollapseDir, onExpandOnly, onFileClick } = props;
+  const { node, depth, active, reviewed, changedSinceViewed = false, diffIgnored = false, threadCount, expanded, onToggleDir, onCollapseDir, onExpandOnly, onFileClick } = props;
   const paddingLeft = BASE_PADDING + depth * INDENT;
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const openMenu = (event: React.MouseEvent) => {
@@ -208,15 +218,17 @@ export function FileTreeRow(props: FileTreeRowProps) {
         className={cn(rowClass, active ? 'bg-selected' : 'hover:bg-hover')}
         style={{ paddingLeft: paddingLeft + CHEVRON + 6 }}
         onClick={() => onFileClick(node.path)}
-        title={node.path}
+        title={diffIgnored ? `${node.path} (ignored in diffs by .diffityignore)` : node.path}
         onContextMenu={openMenu}
       >
         <IndentGuides depth={depth} />
-        <FileIcon className={cn('w-3.5 h-3.5 shrink-0', active ? 'text-text-secondary' : 'text-text-muted')} />
-        <span className={cn('flex-1 min-w-0 truncate', active ? 'text-text font-medium' : 'text-text', reviewed && 'text-text-muted line-through decoration-text-muted/60')}>
+        <FileIcon className={cn('w-3.5 h-3.5 shrink-0', active ? 'text-text-secondary' : 'text-text-muted', diffIgnored && 'opacity-50')} />
+        <span className={cn('flex-1 min-w-0 truncate', active ? 'text-text font-medium' : 'text-text', reviewed && 'text-text-muted line-through decoration-text-muted/60', diffIgnored && 'opacity-50')}>
           {node.name}
         </span>
+        {diffIgnored && <span className="shrink-0 text-[11px] text-text-muted">ignored in diffs</span>}
         <CommentCount count={threadCount} />
+        {changedSinceViewed && <ChangedSinceViewedDot />}
         {reviewed && <span className="text-added text-[11px] shrink-0" title="Viewed">&#10003;</span>}
         {node.file && <StatusLetter status={node.file.status} />}
       </button>
@@ -243,6 +255,7 @@ export function FileTreeItem(props: FileTreeItemProps) {
     depth,
     activeFile,
     reviewedFiles,
+    dimmedFiles,
     commentCountsByFile,
     expandedDirs,
     onToggleDir,
@@ -259,6 +272,7 @@ export function FileTreeItem(props: FileTreeItemProps) {
         depth={depth}
         active={activeFile === node.path}
         reviewed={reviewedFiles.has(node.path)}
+        diffIgnored={node.type === 'file' && !!dimmedFiles?.has(node.path)}
         threadCount={commentCountsByFile.get(node.path) ?? 0}
         expanded={expanded}
         onToggleDir={onToggleDir}
@@ -273,6 +287,7 @@ export function FileTreeItem(props: FileTreeItemProps) {
           depth={depth + 1}
           activeFile={activeFile}
           reviewedFiles={reviewedFiles}
+          dimmedFiles={dimmedFiles}
           commentCountsByFile={commentCountsByFile}
           expandedDirs={expandedDirs}
           onToggleDir={onToggleDir}

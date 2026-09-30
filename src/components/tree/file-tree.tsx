@@ -10,7 +10,7 @@ import {
   collectAllDirPaths,
   type TreeNode,
 } from '../../lib/file-tree';
-import { CommentCount, FileTreeRow, StatusLetter, TreeItemMenu } from './file-tree-item';
+import { ChangedSinceViewedDot, CommentCount, FileTreeRow, StatusLetter, TreeItemMenu } from './file-tree-item';
 import { getFilePath } from '../../lib/diff-utils';
 import { cn } from '../../lib/cn';
 import { readViewState, useRestoredScroll, useViewState } from '../../lib/view-state';
@@ -20,6 +20,7 @@ interface FileTreeProps {
   search: string;
   activeFile: string | null;
   reviewedFiles: Set<string>;
+  changedSinceViewed?: Set<string>;
   commentCountsByFile: Map<string, number>;
   commentedFilesOnly: boolean;
   flat?: boolean;
@@ -51,6 +52,7 @@ export const FileTree = forwardRef<FileTreeHandle, FileTreeProps>(function FileT
     search,
     activeFile,
     reviewedFiles,
+    changedSinceViewed,
     commentCountsByFile,
     commentedFilesOnly,
     flat,
@@ -202,6 +204,7 @@ export const FileTree = forwardRef<FileTreeHandle, FileTreeProps>(function FileT
           {dir && <span className="min-w-0 truncate text-xs text-text-muted" dir="rtl"><bdi>{dir}</bdi></span>}
         </span>
         <CommentCount count={commentCountsByFile.get(entry.path) ?? 0} />
+        {changedSinceViewed?.has(entry.path) && <ChangedSinceViewedDot />}
         {isReviewed && <span className="text-added text-[11px] shrink-0" title="Viewed">&#10003;</span>}
         <StatusLetter status={entry.file.status} />
       </button>
@@ -216,6 +219,7 @@ export const FileTree = forwardRef<FileTreeHandle, FileTreeProps>(function FileT
         depth={row.depth}
         active={activeFile === row.node.path}
         reviewed={reviewedFiles.has(row.node.path)}
+        changedSinceViewed={changedSinceViewed?.has(row.node.path)}
         threadCount={commentCountsByFile.get(row.node.path) ?? 0}
         expanded={row.node.type === 'dir' && effectiveExpandedDirs.has(row.node.path)}
         onToggleDir={handleToggleDir}

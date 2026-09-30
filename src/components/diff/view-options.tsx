@@ -3,7 +3,8 @@ import { cn } from '../../lib/cn';
 import type { ViewMode } from '../../lib/diff-utils';
 import { SegmentedToggle } from '../ui/segmented-toggle';
 import { buttonIconOutline } from '../ui/button-styles';
-import { CollapseAllIcon, CopyIcon, EllipsisIcon, EyeOffIcon, ExpandAllIcon, SplitViewIcon, TrashIcon, UnifiedViewIcon, XIcon } from '../ui/icon';
+import { viewedSummary } from '../../lib/viewed-state';
+import { CollapseAllIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, ExpandAllIcon, SplitViewIcon, TrashIcon, UnifiedViewIcon, XIcon } from '../ui/icon';
 import { MenuItem, MenuSeparator, Popover, useMenu } from '../ui/popover';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { toast } from 'sonner';
@@ -15,6 +16,10 @@ interface DiffBarProps {
   onHideWhitespaceChange: (hide: boolean) => void;
   fileCount: number;
   viewedCount: number;
+  /** Files marked viewed that changed since. */
+  changedSinceViewedCount?: number;
+  /** Files `.diffityignore` hides, and whether they are temporarily shown. */
+  ignored?: { hiddenCount: number; showing: boolean; onShowingChange: (showing: boolean) => void };
   onExpandAll: () => void;
   onCollapseAll: () => void;
   commentNav?: ReactNode;
@@ -22,8 +27,44 @@ interface DiffBarProps {
   comments?: { count: number; formatForCopy: () => string; onDeleteAll: () => void };
 }
 
-function ViewedProgress(props: { viewed: number; total: number }) {
-  const { viewed, total } = props;
+export function hiddenFilesLabel(count: number) {
+  return `${count} file${count === 1 ? '' : 's'} hidden by .diffityignore`;
+}
+
+function IgnoredFilesChip(props: { hiddenCount: number; showing: boolean; onShowingChange: (showing: boolean) => void }) {
+  const { hiddenCount, showing, onShowingChange } = props;
+
+  if (showing) {
+    return (
+      <button
+        onClick={() => onShowingChange(false)}
+        className="inline-flex items-center gap-1.5 h-6 pl-2 pr-1.5 rounded-full bg-selected text-xs text-text cursor-pointer hover:bg-fill-hover transition-colors"
+        title="Files hidden by .diffityignore are shown for now. Click to hide them again"
+      >
+        <EyeIcon size="xs" className="text-text-secondary" />
+        Ignored files shown
+        <XIcon size={10} className="text-text-muted" />
+      </button>
+    );
+  }
+  if (hiddenCount === 0) {
+    return null;
+  }
+  return (
+    <button
+      onClick={() => onShowingChange(true)}
+      className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-xs text-text-secondary cursor-pointer hover:bg-hover hover:text-text transition-colors"
+      title="Matched by .diffityignore or this repo's ignore list in Settings. Click to show them for now"
+    >
+      <EyeOffIcon size="xs" />
+      {hiddenFilesLabel(hiddenCount)}
+      <span className="text-accent">Show</span>
+    </button>
+  );
+}
+
+function ViewedProgress(props: { viewed: number; total: number; changed: number }) {
+  const { viewed, total, changed } = props;
   const percent = total === 0 ? 0 : Math.round((viewed / total) * 100);
 
   return (
@@ -32,14 +73,14 @@ function ViewedProgress(props: { viewed: number; total: number }) {
         <span className="absolute inset-y-0 left-0 rounded-full bg-added transition-[width] duration-300" style={{ width: `${percent}%` }} />
       </span>
       <span className="truncate">
-        {viewed === total && total > 0 ? 'All files viewed' : `${viewed} of ${total} files viewed`}
+        {viewedSummary(viewed, changed, total)}
       </span>
     </div>
   );
 }
 
 export function DiffBar(props: DiffBarProps) {
-  const { viewMode, onViewModeChange, hideWhitespace, onHideWhitespaceChange, fileCount, viewedCount, onExpandAll, onCollapseAll, commentNav, comments } = props;
+  const { viewMode, onViewModeChange, hideWhitespace, onHideWhitespaceChange, fileCount, viewedCount, changedSinceViewedCount = 0, ignored, onExpandAll, onCollapseAll, commentNav, comments } = props;
   const menu = useMenu();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const run = (action: () => void) => () => {
@@ -49,9 +90,10 @@ export function DiffBar(props: DiffBarProps) {
 
   return (
     <div className="flex items-center gap-2 h-10 shrink-0 px-5 border-b border-border-muted bg-bg">
-      <ViewedProgress viewed={viewedCount} total={fileCount} />
+      <ViewedProgress viewed={viewedCount} total={fileCount} changed={changedSinceViewedCount} />
       {commentNav}
       <span className="flex-1" />
+      {ignored && <IgnoredFilesChip {...ignored} />}
       {hideWhitespace && (
         <button
           onClick={() => onHideWhitespaceChange(false)}

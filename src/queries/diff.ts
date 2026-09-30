@@ -3,10 +3,10 @@ import type { DiffFile } from '@/lib/diff-parser';
 import { fetchDiff, fetchFilePatch } from '../lib/api';
 import { getFilePath } from '../lib/diff-utils';
 
-export function diffOptions(hideWhitespace: boolean, ref?: string) {
+export function diffOptions(hideWhitespace: boolean, ref?: string, showIgnored = false) {
   return queryOptions({
-    queryKey: ['diff', hideWhitespace, ref ?? null],
-    queryFn: () => fetchDiff(hideWhitespace, ref),
+    queryKey: ['diff', hideWhitespace, ref ?? null, showIgnored],
+    queryFn: () => fetchDiff(hideWhitespace, ref, showIgnored),
   });
 }
 

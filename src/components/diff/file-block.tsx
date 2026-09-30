@@ -40,6 +40,7 @@ import { ChevronIcon, CodeIcon, CommentIcon, CopyIcon, EditorIcon, EllipsisIcon,
 import { MenuItem, MenuSeparator, Popover, useMenu } from '../ui/popover';
 import { contentsLabel, copyAbsolutePath, copyFileContents, copyFileDiff, copyRelativePath } from '../../lib/file-copy';
 import { useEditorName } from '../../hooks/use-editor-name';
+import { SinceViewedBadge, SinceViewedDiff, type SinceViewedInfo } from './since-viewed';
 
 /** Files with more rows than this are not syntax highlighted at all. */
 const HIGHLIGHT_MAX_ROWS = 10000;
@@ -68,6 +69,8 @@ interface FileBlockProps {
   highlighted?: boolean;
   onHighlightEnd?: (path: string) => void;
   hideWhitespace?: boolean;
+  /** Set when the file changed after it was marked viewed. */
+  sinceViewed?: SinceViewedInfo | null;
 }
 
 interface FileCardProps extends FileBlockProps {
@@ -192,8 +195,9 @@ function FileCard(props: FileCardProps) {
   const {
     file, viewMode, collapsed, onToggleCollapse, reviewed, onReviewedChange, highlightCode, baseRef, canRevert, onRevert,
     threads: allThreads, commentsEnabled, commentActions, onAddThread: rawAddThread, pendingSelection, onPendingSelectionChange,
-    highlighted, onHighlightEnd, heldBack, loadingPatch,
+    highlighted, onHighlightEnd, heldBack, loadingPatch, sinceViewed,
   } = props;
+  const [showSinceViewed, setShowSinceViewed] = useState(false);
 
   const rendersLines = !collapsed && !heldBack && !loadingPatch && !file.isBinary && file.hunks.length > 0;
   const filePath = getFilePath(file);
@@ -587,6 +591,18 @@ function FileCard(props: FileCardProps) {
         </button>
         {file.status !== 'modified' && <StatusBadge status={file.status} />}
         {file.isBinary && <Badge className="bg-bg-tertiary text-text-muted">Binary</Badge>}
+        {sinceViewed && (
+          <SinceViewedBadge
+            canDiff={sinceViewed.canDiff}
+            open={showSinceViewed}
+            onToggle={() => {
+              setShowSinceViewed(!showSinceViewed);
+              if (collapsed) {
+                onToggleCollapse(filePath);
+              }
+            }}
+          />
+        )}
         <div className="ml-auto flex items-center gap-2.5 shrink-0">
           <div className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 transition-opacity">
             <FileCardMenu
@@ -646,6 +662,15 @@ function FileCard(props: FileCardProps) {
       </div>
       {!collapsed && (
         <div>
+          {sinceViewed?.canDiff && showSinceViewed && (
+            <SinceViewedDiff
+              sessionId={sinceViewed.sessionId}
+              filePath={filePath}
+              version={sinceViewed.version}
+              viewMode={viewMode}
+              onClose={() => setShowSinceViewed(false)}
+            />
+          )}
           {richView && renderable ? (
             <RichDiffViewer filePath={filePath} oldPath={file.oldPath} status={file.status} baseRef={baseRef} />
           ) : heldBack ? (

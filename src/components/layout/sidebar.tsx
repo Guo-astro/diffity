@@ -13,6 +13,7 @@ interface SidebarProps {
   files: DiffFile[];
   activeFile: string | null;
   reviewedFiles: Set<string>;
+  changedSinceViewed?: Set<string>;
   commentCountsByFile: Map<string, number>;
   onFileClick: (path: string) => void;
   onCommentedFileClick: (path: string) => void;
@@ -26,6 +27,7 @@ export function Sidebar(props: SidebarProps) {
     files,
     activeFile,
     reviewedFiles,
+    changedSinceViewed,
     commentCountsByFile,
     onFileClick,
     onCommentedFileClick,
@@ -118,6 +120,7 @@ export function Sidebar(props: SidebarProps) {
         search={search}
         activeFile={activeFile}
         reviewedFiles={reviewedFiles}
+        changedSinceViewed={changedSinceViewed}
         commentCountsByFile={commentCountsByFile}
         commentedFilesOnly={commentedFilesOnly}
         flat={flat}
