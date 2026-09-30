@@ -63,7 +63,7 @@ export function CommentThread(props: CommentThreadProps) {
     wasResolved.current = resolved;
     setJustChanged(true);
     setIsCollapsed(resolved);
-  }, [resolved]);
+  }, [resolved, setIsCollapsed]);
 
   useEffect(() => {
     const el = rowRef.current;
@@ -73,7 +73,7 @@ export function CommentThread(props: CommentThreadProps) {
     const handler = () => setIsCollapsed(false);
     el.addEventListener('diffity:focus-thread', handler);
     return () => el.removeEventListener('diffity:focus-thread', handler);
-  }, []);
+  }, [setIsCollapsed]);
 
   const isOutdated =
     thread.anchorContent && currentCode && thread.anchorContent !== currentCode;

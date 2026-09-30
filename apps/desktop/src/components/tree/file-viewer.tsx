@@ -95,7 +95,7 @@ export function FileViewer(props: FileViewerProps) {
 
   const onSelectionComplete = useCallback((selection: LineSelection) => {
     setPendingSelection(selection);
-  }, []);
+  }, [setPendingSelection]);
 
   const {
     handleLineMouseDown,
@@ -165,7 +165,7 @@ export function FileViewer(props: FileViewerProps) {
       options,
     );
     setPendingSelection(null);
-  }, [pendingSelection, sessionId, content, filePath, commentActions]);
+  }, [pendingSelection, sessionId, content, filePath, commentActions, setPendingSelection]);
 
   const handleCommentClick = useCallback((lineNum: number) => {
     setPendingSelection({
@@ -174,7 +174,7 @@ export function FileViewer(props: FileViewerProps) {
       startLine: lineNum,
       endLine: lineNum,
     });
-  }, [filePath]);
+  }, [filePath, setPendingSelection]);
 
   const getOriginalCode = useCallback((_side: 'old' | 'new', startLine: number, endLine: number) => {
     return content.slice(startLine - 1, endLine).join('\n');

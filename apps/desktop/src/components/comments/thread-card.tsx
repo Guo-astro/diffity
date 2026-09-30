@@ -219,8 +219,8 @@ export function ThreadCard(props: ThreadCardProps) {
         ))}
       </div>
       {activity !== 'idle' && (
-        <div className="flex items-center gap-2 px-3 pb-2 text-xs text-text-muted">
-          <span className="flex w-5 justify-center shrink-0">
+        <div className="flex items-center gap-2 pl-10 pr-3 pb-2 text-xs text-text-muted">
+          <span className="flex justify-center shrink-0">
             {activity === 'working' ? (
               <Spinner className="text-claude" />
             ) : (

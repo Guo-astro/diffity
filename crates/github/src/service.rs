@@ -620,9 +620,7 @@ impl GithubService {
         let pending = self.fetch_pending_review(token, &ctx.slug, pr_number).await?;
         let draft_values: Vec<&review::DraftThread> = plan.drafts.iter().map(|(_, d)| d).collect();
         let mut mapped: Vec<(String, String, Option<i64>)> = Vec::new();
-        let github_review_id: Option<String>;
-
-        match (pending, pending_action) {
+        let github_review_id: Option<String> = match (pending, pending_action) {
             (Some(existing), None) => {
                 return Err(pending_exists_error(pr_number, existing.comment_count));
             }
@@ -651,7 +649,7 @@ impl GithubService {
                     .map_err(|e| github_rejected(&e))?;
                 let node = submitted.and_then(|d| d.submit_pull_request_review.pull_request_review);
                 result.review_url = node.as_ref().and_then(|n| n.url.clone()).or(existing.url);
-                github_review_id = node.map(|n| n.id);
+                node.map(|n| n.id)
             }
             (existing, _) => {
                 if let Some(existing) = existing {
@@ -687,9 +685,9 @@ impl GithubService {
                     return Err(AppError::new("github", "GitHub did not return a review"));
                 }
                 result.review_url = node.as_ref().and_then(|n| n.url.clone());
-                github_review_id = node.map(|n| n.id);
+                node.map(|n| n.id)
             }
-        }
+        };
 
         for (github_thread_id, comment_id, reply_body) in &review_replies {
             let variables = json!({ "input": { "pullRequestReviewThreadId": github_thread_id, "body": reply_body } });

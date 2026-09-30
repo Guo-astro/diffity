@@ -34,7 +34,7 @@ export function PathComments(props: PathCommentsProps) {
     if (hasThread) {
       setIsExpanded(true);
     }
-  }, [focusedThreadId, threads]);
+  }, [focusedThreadId, threads, setIsExpanded]);
 
   const handleToggle = () => {
     if (isExpanded) {

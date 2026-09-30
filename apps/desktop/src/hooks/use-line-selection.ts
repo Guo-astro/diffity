@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { CommentSide, LineSelection } from '../components/comments/types';
+import { extendLineDrag, finishLineDrag, isLineInDrag, lineDragRange, startLineDrag, type LineDrag } from '../lib/line-drag';
 
 interface UseLineSelectionOptions {
   filePath: string;
@@ -7,11 +8,7 @@ interface UseLineSelectionOptions {
 }
 
 interface UseLineSelectionReturn {
-  selectionState: {
-    side: CommentSide;
-    anchorLine: number;
-    currentLine: number;
-  } | null;
+  selectionState: LineDrag | null;
   handleLineMouseDown: (line: number, side: CommentSide) => void;
   handleLineMouseEnter: (line: number, side: CommentSide) => void;
   isLineInSelection: (line: number, side: CommentSide) => boolean;
@@ -43,37 +40,34 @@ function getLineNumberFromPoint(x: number, y: number): number | null {
 }
 
 export function useLineSelection(options: UseLineSelectionOptions): UseLineSelectionReturn {
-  const { filePath, onSelectionComplete } = options;
-  const [selectionState, setSelectionState] = useState<{
-    side: CommentSide;
-    anchorLine: number;
-    currentLine: number;
-  } | null>(null);
+  const { filePath } = options;
+  const [selectionState, setSelectionState] = useState<LineDrag | null>(null);
   const isDragging = useRef(false);
   const anchorX = useRef(0);
-  const selectionRef = useRef(selectionState);
-  selectionRef.current = selectionState;
+  const dragRef = useRef<LineDrag | null>(null);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+
+  const updateDrag = useCallback((next: LineDrag | null) => {
+    if (next === dragRef.current) {
+      return;
+    }
+    dragRef.current = next;
+    setSelectionState(next);
+  }, []);
 
   const handleLineMouseDown = useCallback((line: number, side: CommentSide) => {
     isDragging.current = true;
     anchorX.current = 0;
-    setSelectionState({ side, anchorLine: line, currentLine: line });
-  }, []);
+    updateDrag(startLineDrag(optionsRef.current.filePath, line, side));
+  }, [updateDrag]);
 
   const handleLineMouseEnter = useCallback((line: number, side: CommentSide) => {
-    if (!isDragging.current || !selectionRef.current) {
+    if (!isDragging.current) {
       return;
     }
-    if (side !== selectionRef.current.side) {
-      return;
-    }
-    setSelectionState(prev => {
-      if (!prev) {
-        return prev;
-      }
-      return { ...prev, currentLine: line };
-    });
-  }, []);
+    updateDrag(extendLineDrag(dragRef.current, line, side));
+  }, [updateDrag]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -86,34 +80,27 @@ export function useLineSelection(options: UseLineSelectionOptions): UseLineSelec
       }
 
       const lineNum = getLineNumberFromPoint(anchorX.current, e.clientY);
-      if (lineNum !== null) {
-        setSelectionState(prev => {
-          if (!prev || prev.currentLine === lineNum) {
-            return prev;
-          }
-          return { ...prev, currentLine: lineNum };
-        });
+      if (lineNum === null) {
+        return;
       }
+      const drag = dragRef.current;
+      if (!drag) {
+        return;
+      }
+      updateDrag(extendLineDrag(drag, lineNum, drag.side));
     };
 
     const handleMouseUp = () => {
-      const state = selectionRef.current;
-      if (!isDragging.current || !state) {
-        isDragging.current = false;
+      if (!isDragging.current) {
         return;
       }
       isDragging.current = false;
 
-      const startLine = Math.min(state.anchorLine, state.currentLine);
-      const endLine = Math.max(state.anchorLine, state.currentLine);
-
-      onSelectionComplete({
-        filePath,
-        side: state.side,
-        startLine,
-        endLine,
-      });
-      setSelectionState(null);
+      const selection = finishLineDrag(dragRef.current, optionsRef.current.filePath);
+      updateDrag(null);
+      if (selection) {
+        optionsRef.current.onSelectionComplete(selection);
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -122,30 +109,18 @@ export function useLineSelection(options: UseLineSelectionOptions): UseLineSelec
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [filePath, onSelectionComplete]);
+  }, [updateDrag]);
 
   const isLineInSelection = useCallback((line: number, side: CommentSide) => {
-    if (!selectionState) {
-      return false;
-    }
-    if (side !== selectionState.side) {
-      return false;
-    }
-    const start = Math.min(selectionState.anchorLine, selectionState.currentLine);
-    const end = Math.max(selectionState.anchorLine, selectionState.currentLine);
-    return line >= start && line <= end;
-  }, [selectionState]);
+    return isLineInDrag(selectionState, filePath, line, side);
+  }, [selectionState, filePath]);
 
   const getSelectionRange = useCallback(() => {
-    if (!selectionState) {
+    if (!selectionState || selectionState.filePath !== filePath) {
       return null;
     }
-    return {
-      startLine: Math.min(selectionState.anchorLine, selectionState.currentLine),
-      endLine: Math.max(selectionState.anchorLine, selectionState.currentLine),
-      side: selectionState.side,
-    };
-  }, [selectionState]);
+    return lineDragRange(selectionState);
+  }, [selectionState, filePath]);
 
   return {
     selectionState,
