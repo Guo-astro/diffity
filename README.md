@@ -2,7 +2,7 @@
 
 # diffity
 
-[![Latest release](https://img.shields.io/github/v/release/nilbuild/diffity)](https://github.com/nilbuild/diffity/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/nilbuild/diffity?display_name=tag&sort=semver&cacheSeconds=3600)](https://github.com/nilbuild/diffity/releases/latest)
 [![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/nilbuild/diffity/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
