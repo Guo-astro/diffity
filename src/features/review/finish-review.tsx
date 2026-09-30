@@ -120,6 +120,16 @@ function threadLocation(thread: CommentThread): string {
   return range;
 }
 
+/** Claude's own open review comments nobody has replied to yet. */
+export function claudeReviewThreads(threads: CommentThread[]): CommentThread[] {
+  return threads.filter((thread) => {
+    if (thread.status !== 'open' || thread.pending || thread.githubThreadId || thread.filePath === GENERAL_THREAD_FILE_PATH) {
+      return false;
+    }
+    return thread.comments.length > 0 && thread.comments.every((comment) => comment.author.type === 'agent');
+  });
+}
+
 /** Open GitHub review threads whose latest comment is from a reviewer (not you or Claude). */
 export function reviewerThreads(threads: CommentThread[]): CommentThread[] {
   return threads.filter((thread) => {
@@ -145,12 +155,14 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [claudePicked, setClaudePicked] = useState<Set<string> | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const pendingCount = prMode ? 0 : pendingReview?.pendingCount ?? 0;
   const [postReplies, setPostReplies] = useState(false);
   const openRequest = useSendRequest((state) => state.open);
   const local = unaddressedThreads(threads).filter((thread) => !busy.has(thread.id) && !thread.githubThreadId);
   const remote = includeGitHub ? reviewerThreads(threads).filter((thread) => !busy.has(thread.id)) : [];
+  const fromClaude = claudeReviewThreads(threads).filter((thread) => !busy.has(thread.id));
   const candidates = [...local, ...remote];
   const remoteSelected = remote.filter((thread) => !excluded.has(thread.id));
 
@@ -162,18 +174,14 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
     seenRequest.current = openRequest;
     setOpen(true);
   }, [openRequest]);
-  const selected = candidates.filter((thread) => !excluded.has(thread.id));
-  const count = candidates.length + pendingCount;
+  const pickedClaude = claudePicked ?? new Set(candidates.length + pendingCount === 0 ? fromClaude.map((thread) => thread.id) : []);
+  const selectedClaude = fromClaude.filter((thread) => pickedClaude.has(thread.id));
+  const selected = [...candidates.filter((thread) => !excluded.has(thread.id)), ...selectedClaude];
+  const count = candidates.length + fromClaude.length + pendingCount;
   const claudeProblem = useClaudeProblem(count > 0);
 
-  const groups = useMemo(() => {
-    const byFile = new Map<string, CommentThread[]>();
-    for (const thread of local) {
-      const key = thread.filePath === GENERAL_THREAD_FILE_PATH ? 'General comments' : thread.filePath;
-      byFile.set(key, [...(byFile.get(key) ?? []), thread]);
-    }
-    return [...byFile.entries()];
-  }, [local]);
+  const groups = useMemo(() => threadsByFile(local), [local]);
+  const claudeGroups = useMemo(() => threadsByFile(fromClaude), [fromClaude]);
 
   if (count === 0) {
     return null;
@@ -198,6 +206,22 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
     );
     setNote('');
     setExcluded(new Set());
+    setClaudePicked(null);
+  };
+
+  const toggleClaude = (id: string) => {
+    const next = new Set(pickedClaude);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
+    setClaudePicked(next);
+  };
+
+  const allClaudePicked = selectedClaude.length === fromClaude.length;
+  const toggleAllClaude = () => {
+    setClaudePicked(new Set(allClaudePicked ? [] : fromClaude.map((thread) => thread.id)));
   };
 
   const toggle = (id: string) => {
@@ -243,19 +267,25 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
             <div className="text-[13px] font-semibold text-text">Send comments to Claude</div>
             <p className="mt-0.5 text-xs text-text-secondary">Claude edits your working tree to address them, asks before each edit, and replies on each thread.</p>
           </div>
-          <div className="max-h-[260px] overflow-y-auto px-2">
+          <div className="max-h-[300px] overflow-y-auto px-2">
+            {local.length > 0 && fromClaude.length > 0 && <div className="px-2 pt-2 pb-0.5 text-[11px] font-medium text-text-muted">Your comments</div>}
             {groups.map(([file, items]) => (
-              <div key={file} className="pb-1">
-                <div className="px-2 pt-1.5 pb-1 font-mono text-[11px] text-text-muted truncate">{file}</div>
-                {items.map((thread) => (
-                  <label key={thread.id} className="flex items-start gap-2.5 px-2 py-1.5 rounded-md hover:bg-hover cursor-pointer">
-                    <input type="checkbox" checked={!excluded.has(thread.id)} onChange={() => toggle(thread.id)} className="mt-0.5 accent-claude" />
-                    <span className="shrink-0 w-12 pt-px font-mono text-[11px] text-text-muted">{threadLocation(thread)}</span>
-                    <span className="min-w-0 flex-1 text-xs leading-5 text-text line-clamp-2">{thread.comments[thread.comments.length - 1]?.body}</span>
-                  </label>
+              <ThreadGroup key={file} file={file} threads={items} isChecked={(id) => !excluded.has(id)} onToggle={toggle} />
+            ))}
+            {fromClaude.length > 0 && (
+              <div className="pb-1">
+                <div className="flex items-center gap-1.5 px-2 pt-2 pb-0.5 text-[11px] font-medium text-text-muted">
+                  <SparkleIcon size="xs" className="text-claude" />
+                  <span className="flex-1">Claude’s comments</span>
+                  <button type="button" onClick={toggleAllClaude} className="text-text-secondary hover:text-text cursor-pointer">
+                    {allClaudePicked ? 'Select none' : 'Select all'}
+                  </button>
+                </div>
+                {claudeGroups.map(([file, items]) => (
+                  <ThreadGroup key={file} file={file} threads={items} isChecked={(id) => pickedClaude.has(id)} onToggle={toggleClaude} />
                 ))}
               </div>
-            ))}
+            )}
             {remote.length > 0 && (
               <div className="pb-1">
                 <div className="flex items-center gap-1.5 px-2 pt-2 pb-1 text-[11px] font-medium text-text-muted">
@@ -300,6 +330,32 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
         </form>
       </Popover>
     </>
+  );
+}
+
+function threadsByFile(threads: CommentThread[]): [string, CommentThread[]][] {
+  const byFile = new Map<string, CommentThread[]>();
+  for (const thread of threads) {
+    const key = thread.filePath === GENERAL_THREAD_FILE_PATH ? 'General comments' : thread.filePath;
+    byFile.set(key, [...(byFile.get(key) ?? []), thread]);
+  }
+  return [...byFile.entries()];
+}
+
+function ThreadGroup(props: { file: string; threads: CommentThread[]; isChecked: (id: string) => boolean; onToggle: (id: string) => void }) {
+  const { file, threads, isChecked, onToggle } = props;
+
+  return (
+    <div className="pb-1">
+      <div className="px-2 pt-1.5 pb-1 font-mono text-[11px] text-text-muted truncate">{file}</div>
+      {threads.map((thread) => (
+        <label key={thread.id} className="flex items-start gap-2.5 px-2 py-1.5 rounded-md hover:bg-hover cursor-pointer">
+          <input type="checkbox" checked={isChecked(thread.id)} onChange={() => onToggle(thread.id)} className="mt-0.5 accent-claude" />
+          <span className="shrink-0 w-12 pt-px font-mono text-[11px] text-text-muted">{threadLocation(thread)}</span>
+          <span className="min-w-0 flex-1 text-xs leading-5 text-text line-clamp-2">{thread.comments[thread.comments.length - 1]?.body}</span>
+        </label>
+      ))}
+    </div>
   );
 }
 
