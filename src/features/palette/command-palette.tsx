@@ -26,8 +26,9 @@ import { checkoutPullRequest } from '../pr/pr-checkout';
 import { prDiffRef } from '../../components/layout/ref-menu';
 import {
   AlertCircleIcon, ChangesIcon, CommentIcon, EditorIcon, FetchIcon, FileIcon, FilesIcon, GitCommitIcon, GitPullRequestIcon,
-  HomeIcon, KeyboardIcon, MoonIcon, SparkleIcon, PullIcon, PushIcon, RevealIcon, SearchIcon, SettingsIcon, SidebarIcon,
+  HomeIcon, KeyboardIcon, MoonIcon, SparkleIcon, PullIcon, PushIcon, RefreshIcon, RevealIcon, SearchIcon, SettingsIcon, SidebarIcon,
 } from '../../components/ui/icon';
+import { checkForUpdatesAndTell } from '../updates/updater';
 import {
   closePalette, fuzzyScore, recentActionIds, recentFiles, rememberAction, rememberFile, usePalette,
   type PaletteAction, type PaletteMode,
@@ -72,6 +73,7 @@ function useGlobalActions(): PaletteAction[] {
     { id: 'settings', title: 'Settings', group: 'Actions', hint: shortcutHint('settings'), icon: <SettingsIcon size="sm" />, run: openSettings },
     { id: 'shortcuts', title: 'Keyboard shortcuts', group: 'Actions', hint: shortcutHint('shortcuts'), icon: <KeyboardIcon size="sm" />, run: openShortcuts },
     { id: 'report-issue', title: 'Report an issue…', group: 'Actions', keywords: 'bug feedback github idea feature request help', icon: <AlertCircleIcon size="sm" />, run: reportIssue },
+    { id: 'check-updates', title: 'Check for updates…', group: 'Actions', keywords: 'update upgrade new version release', icon: <RefreshIcon size="sm" />, run: () => { void checkForUpdatesAndTell(); } },
     { id: 'whats-new', title: 'What’s new in Diffity', group: 'Actions', keywords: 'release notes changelog updates new features version', icon: <SparkleIcon size="sm" />, run: openWhatsNew },
   ], [nav, theme, toggleTheme]);
 }
@@ -256,6 +258,9 @@ function PaletteBody(props: { mode: PaletteMode }) {
 
   const grouped = useMemo(() => {
     if (query) {
+      if (items.length === 0) {
+        return [];
+      }
       return [{ group: mode === 'files' ? 'Files' : 'Results', items }];
     }
     const groups: { group: string; items: Item[] }[] = [];
