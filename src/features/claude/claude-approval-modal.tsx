@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { buttonOutline, buttonPrimary } from '../../components/ui/button-styles';
-import { getRepoPathOrNull } from '../../lib/api';
 import { collapseContext, diffLines } from '../../lib/line-diff';
 import { answerClaudePermission, useClaude } from './claude-runner';
+import { useRepoPath } from '../../hooks/use-repo';
 import type { PermissionOption } from '../../lib/types';
 import { SparkleIcon } from '../../components/ui/icon';
 import { savePermissionSetting } from './permission-setting';
@@ -16,11 +16,7 @@ function isAllowOnce(option: PermissionOption) {
   return option.kind === 'allow_once' || option.kind === 'allowOnce';
 }
 
-function relativePath(path: string) {
-  const root = getRepoPathOrNull();
-  if (!root) {
-    return path;
-  }
+function relativePath(path: string, root: string) {
   const prefix = root.endsWith('/') ? root : `${root}/`;
   return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
@@ -57,7 +53,8 @@ function DiffPreview(props: { oldText: string | null; newText: string }) {
 }
 
 export function ClaudeApprovalModal() {
-  const permission = useClaude((state) => state.permission);
+  const repoPath = useRepoPath();
+  const permission = useClaude((state) => state.permissions.find((item) => item.repoPath === repoPath) ?? state.permissions[0] ?? null);
   const [dontAsk, setDontAsk] = useState(false);
 
   const reject = permission?.options.find(isReject) ?? null;
@@ -65,17 +62,20 @@ export function ClaudeApprovalModal() {
   const isEdit = !!permission?.diff;
 
   const deny = () => {
-    void answerClaudePermission(reject?.id ?? null);
+    if (!permission) {
+      return;
+    }
+    void answerClaudePermission(permission.requestId, reject?.id ?? null);
   };
 
   const allow = (forRun: boolean) => {
-    if (!allowOnce) {
+    if (!permission || !allowOnce) {
       return;
     }
     if (dontAsk) {
       void savePermissionSetting('skip');
     }
-    void answerClaudePermission(allowOnce.id, forRun || dontAsk);
+    void answerClaudePermission(permission.requestId, allowOnce.id, forRun || dontAsk);
   };
 
   useEffect(() => {
@@ -88,7 +88,7 @@ export function ClaudeApprovalModal() {
     }
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        void answerClaudePermission(permission.options.find(isReject)?.id ?? null);
+        void answerClaudePermission(permission.requestId, permission.options.find(isReject)?.id ?? null);
       }
     };
     window.addEventListener('keydown', handleKey);
@@ -101,7 +101,8 @@ export function ClaudeApprovalModal() {
 
   const diff = permission.diff;
   const verb = diff ? (diff.oldText === null ? 'create' : 'edit') : 'run';
-  const target = diff ? relativePath(diff.path) : permission.title;
+  const target = diff ? relativePath(diff.path, permission.repoPath) : permission.title;
+  const otherProject = permission.repoPath !== repoPath ? permission.repoPath.split('/').filter(Boolean).pop() : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
@@ -109,7 +110,7 @@ export function ClaudeApprovalModal() {
         <div className="flex items-start gap-2.5 px-4 pt-4 pb-3">
           <SparkleIcon className="w-4 h-4 mt-0.5 text-claude shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-text">Claude wants to {verb} {diff ? 'a file' : 'a command'}</h3>
+            <h3 className="text-sm font-semibold text-text">Claude wants to {verb} {diff ? 'a file' : 'a command'}{otherProject && ` in ${otherProject}`}</h3>
             <p className="text-xs text-text-muted font-mono break-all mt-0.5">{target}</p>
           </div>
         </div>

@@ -7,7 +7,7 @@ import { openSettings } from '../../lib/ui-store';
 import { modKey } from '../../lib/platform';
 import { openRepoAt, shortPath, useRecentRepos } from '../../features/welcome/recent-repos';
 import { repoInitials } from '../../features/welcome/repo-badge';
-import { useActiveRun } from '../../features/claude/claude-runner';
+import { useBusyRepoPaths } from '../../features/claude/claude-runner';
 import { lastLocationFor } from '../../lib/repo-locations';
 import { beginOpening, useOpening } from '../../lib/opening';
 import { ArrowDownIcon, ArrowUpIcon, CopyIcon, EditorIcon, ExternalLinkIcon, FolderOpenIcon, PlusIcon, RevealIcon, SettingsIcon, TerminalIcon, XIcon } from '../ui/icon';
@@ -238,7 +238,7 @@ export function RailFrame(props: { children: ReactNode }) {
 function ActivityRail() {
   const nav = useRepoNav();
   const navigate = useNavigate();
-  const run = useActiveRun();
+  const busyRepos = useBusyRepoPaths();
   const openingPath = useOpening((state) => state.target?.path ?? null);
   const { projects, move, remove } = useProjectOrder(nav.repoPath, openingPath);
   const [drag, setDrag] = useState<{ from: number; startY: number; dy: number; active: boolean } | null>(null);
@@ -418,7 +418,7 @@ function ActivityRail() {
             index={index}
             current={openingPath ? path === openingPath : path === nav.repoPath}
             loading={path === openingPath}
-            busy={run?.context.repoPath === path}
+            busy={busyRepos.has(path)}
             offset={offsetFor(index)}
             dragging={drag?.active === true && drag.from === index}
             animate={drag?.active === true && !settling}

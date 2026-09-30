@@ -4,6 +4,7 @@ import { TREE_REF } from '../../lib/types';
 import type { CommentThread } from '../../components/comments/types';
 import { enqueueClaude, openRunResult, runLabel, runViewLabel, stopClaude, useActiveRun, useQueuedCount } from './claude-runner';
 import { useCurrentViewRef } from '../../hooks/use-current-view';
+import { useRepoPath } from '../../hooks/use-repo';
 import { buttonClaude } from '../../components/ui/button-styles';
 import { AskClaudePopover, useAskClaudeRequest } from './ask-claude-review';
 import { cn } from '../../lib/cn';
@@ -39,8 +40,9 @@ function useNow(active: boolean) {
 }
 
 export function ClaudeStatus() {
-  const run = useActiveRun();
-  const queued = useQueuedCount();
+  const repoPath = useRepoPath();
+  const run = useActiveRun(repoPath);
+  const queued = useQueuedCount(repoPath);
   const now = useNow(run !== null);
   const currentRef = useCurrentViewRef();
 
@@ -90,7 +92,7 @@ export function ClaudeStatus() {
         {queued > 0 && <span className="text-text-muted">+{queued} queued</span>}
       </span>
       <button
-        onClick={() => void stopClaude()}
+        onClick={() => void stopClaude(repoPath)}
         className="flex items-center gap-1 px-2 border-l border-control-border text-text-secondary hover:text-text hover:bg-control-hover transition-colors cursor-pointer"
         title="Stop Claude"
       >
@@ -106,7 +108,7 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  const run = useActiveRun();
+  const run = useActiveRun(useRepoPath());
   const { prMode } = useReviewState();
   const requested = useAskClaudeRequest((state) => state.ref);
 

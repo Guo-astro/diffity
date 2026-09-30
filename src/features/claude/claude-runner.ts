@@ -44,6 +44,7 @@ export interface ClaudeRun {
 
 export interface ClaudePermission {
   runId: string;
+  repoPath: string;
   requestId: string;
   title: string;
   options: PermissionOption[];
@@ -52,15 +53,16 @@ export interface ClaudePermission {
 
 interface ClaudeState {
   runs: ClaudeRun[];
-  permission: ClaudePermission | null;
+  /** Waiting approvals, oldest first; runs in different projects can ask at the same time. */
+  permissions: ClaudePermission[];
 }
 
-export const useClaude = create<ClaudeState>(() => ({ runs: [], permission: null }));
+export const useClaude = create<ClaudeState>(() => ({ runs: [], permissions: [] }));
 
 export type ThreadActivity = 'idle' | 'queued' | 'working';
 
 let counter = 0;
-let pumping = false;
+const pumping = new Set<string>();
 
 const AGENT_ID = 'claude';
 
@@ -116,7 +118,7 @@ function patchRun(runId: string, patch: Partial<ClaudeRun>) {
 function removeRun(runId: string) {
   useClaude.setState((state) => ({
     runs: state.runs.filter((run) => run.id !== runId),
-    permission: state.permission?.runId === runId ? null : state.permission,
+    permissions: state.permissions.filter((permission) => permission.runId !== runId),
   }));
 }
 
@@ -155,29 +157,32 @@ export function enqueueClaude(action: ClaudeAction, context: ClaudeRunContext) {
     editsApproved: false,
   };
   useClaude.setState((state) => ({ runs: [...state.runs, run] }));
-  void pump();
+  void pump(context.repoPath);
 }
 
-export async function stopClaude() {
-  const { runs } = useClaude.getState();
-  const running = runs.find((run) => run.state === 'running');
-  useClaude.setState((state) => ({ runs: state.runs.filter((run) => run.state === 'running') }));
+/** Stops the project's running run and drops the ones queued behind it. */
+export async function stopClaude(repoPath: string) {
+  const { runs, permissions } = useClaude.getState();
+  const running = runs.find((run) => run.state === 'running' && run.context.repoPath === repoPath);
+  useClaude.setState((state) => ({
+    runs: state.runs.filter((run) => run.context.repoPath !== repoPath || run.state === 'running'),
+  }));
   if (!running?.chatId) {
     return;
   }
-  const permission = useClaude.getState().permission;
-  if (permission) {
-    await answerClaudePermission(null);
+  const waiting = permissions.filter((permission) => permission.runId === running.id);
+  for (const permission of waiting) {
+    await answerClaudePermission(permission.requestId, null);
   }
   await tauri.cancelPrompt(running.chatId).catch(() => undefined);
 }
 
-export async function answerClaudePermission(optionId: string | null, forRun = false) {
-  const permission = useClaude.getState().permission;
+export async function answerClaudePermission(requestId: string, optionId: string | null, forRun = false) {
+  const permission = useClaude.getState().permissions.find((item) => item.requestId === requestId);
   if (!permission) {
     return;
   }
-  useClaude.setState({ permission: null });
+  useClaude.setState((state) => ({ permissions: state.permissions.filter((item) => item.requestId !== requestId) }));
   if (optionId && forRun && permission.diff) {
     patchRun(permission.runId, { editsApproved: true });
   }
@@ -375,15 +380,15 @@ async function execute(run: ClaudeRun) {
   try {
     await tauri.sendPrompt(chat.id, '', [], run.action, (event) => {
       if (event.type === 'permissionRequest') {
-        useClaude.setState({
-          permission: {
-            runId: run.id,
-            requestId: event.requestId,
-            title: event.title,
-            options: event.options,
-            diff: event.diff ?? null,
-          },
-        });
+        const permission: ClaudePermission = {
+          runId: run.id,
+          repoPath: run.context.repoPath,
+          requestId: event.requestId,
+          title: event.title,
+          options: event.options,
+          diff: event.diff ?? null,
+        };
+        useClaude.setState((state) => ({ permissions: [...state.permissions, permission] }));
         return;
       }
       if (event.type === 'error') {
@@ -431,14 +436,15 @@ function threadRef(run: ClaudeRun): string | null {
   return refForThread(run.context.repoPath, threadId);
 }
 
-async function pump() {
-  if (pumping) {
+/** Runs one at a time per project, since they edit the same working tree; projects run side by side. */
+async function pump(repoPath: string) {
+  if (pumping.has(repoPath)) {
     return;
   }
-  pumping = true;
+  pumping.add(repoPath);
   try {
     for (;;) {
-      const next = useClaude.getState().runs.find((run) => run.state === 'queued');
+      const next = useClaude.getState().runs.find((run) => run.state === 'queued' && run.context.repoPath === repoPath);
       if (!next) {
         return;
       }
@@ -455,7 +461,7 @@ async function pump() {
       }
     }
   } finally {
-    pumping = false;
+    pumping.delete(repoPath);
   }
 }
 
@@ -481,10 +487,16 @@ export function useBusyThreadIds(): Set<string> {
   return new Set(runs.flatMap((run) => run.threadIds));
 }
 
-export function useActiveRun(): ClaudeRun | null {
-  return useClaude((state) => state.runs.find((run) => run.state === 'running') ?? null);
+export function useActiveRun(repoPath: string): ClaudeRun | null {
+  return useClaude((state) => state.runs.find((run) => run.state === 'running' && run.context.repoPath === repoPath) ?? null);
 }
 
-export function useQueuedCount(): number {
-  return useClaude((state) => state.runs.filter((run) => run.state === 'queued').length);
+export function useQueuedCount(repoPath: string): number {
+  return useClaude((state) => state.runs.filter((run) => run.state === 'queued' && run.context.repoPath === repoPath).length);
+}
+
+/** Projects with a Claude run going. */
+export function useBusyRepoPaths(): Set<string> {
+  const runs = useClaude((state) => state.runs);
+  return new Set(runs.filter((run) => run.state === 'running').map((run) => run.context.repoPath));
 }
