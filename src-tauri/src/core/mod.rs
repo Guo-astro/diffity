@@ -1,4 +1,5 @@
 pub mod diff;
+pub mod diffignore;
 pub mod editor;
 pub mod error;
 pub mod git;

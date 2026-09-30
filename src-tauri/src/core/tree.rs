@@ -3,6 +3,7 @@ use std::path::{Component, Path, PathBuf};
 
 use base64::Engine;
 
+use crate::core::diffignore::DiffIgnore;
 use crate::core::error::{AppError, Result};
 use crate::core::git;
 use crate::core::types::{FileContent, TreeEntry, TreeEntryKind};
@@ -59,7 +60,11 @@ fn push_with_parents(files: impl IntoIterator<Item = String>) -> Vec<TreeEntry> 
     }
     entries
         .into_iter()
-        .map(|(path, kind)| TreeEntry { path, kind })
+        .map(|(path, kind)| TreeEntry {
+            path,
+            kind,
+            diff_ignored: false,
+        })
         .collect()
 }
 
@@ -101,10 +106,18 @@ pub fn list_tree(repo: &Path) -> Result<Vec<TreeEntry>> {
     if !repo.is_dir() {
         return Err(AppError::not_found(format!("{} is not a directory", repo.display())));
     }
-    if git::is_git_repo(repo) {
-        return git_tree(repo);
+    let mut entries = if git::is_git_repo(repo) {
+        git_tree(repo)?
+    } else {
+        walk_tree(repo)
+    };
+    let rules = DiffIgnore::load(repo)?;
+    if !rules.is_empty() {
+        for entry in &mut entries {
+            entry.diff_ignored = rules.is_ignored(&entry.path, entry.kind == TreeEntryKind::Dir);
+        }
     }
-    Ok(walk_tree(repo))
+    Ok(entries)
 }
 
 pub fn read_file(repo: &Path, path: &str) -> Result<FileContent> {

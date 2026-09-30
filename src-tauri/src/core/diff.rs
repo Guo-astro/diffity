@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use sha2::{Digest, Sha256};
 
+use crate::core::diffignore::DiffIgnore;
 use crate::core::error::{AppError, Result};
 use crate::core::git::{self, EMPTY_TREE_SHA};
 use crate::core::tree::{is_binary, resolve_in_repo};
@@ -28,6 +29,8 @@ pub struct DiffPlan {
     pub include_untracked: bool,
     pub old: Source,
     pub new: Source,
+    /// Trailing pathspecs (`.diffityignore` exclusions), after `--`.
+    pub pathspec: Vec<String>,
 }
 
 fn split_range<'a>(r: &'a str, sep: &str) -> Option<(&'a str, &'a str)> {
@@ -72,6 +75,7 @@ fn root_commit_plan(r: &str, sha: String) -> DiffPlan {
         include_untracked: false,
         old: Source::EmptyTree,
         new: Source::Commit(sha),
+        pathspec: Vec::new(),
     }
 }
 
@@ -100,6 +104,7 @@ fn range_plan(repo: &Path, r: &str, left: &str, right: &str) -> Result<DiffPlan>
         include_untracked: false,
         old: Source::Commit(base),
         new: Source::Commit(right_sha),
+        pathspec: Vec::new(),
     })
 }
 
@@ -132,6 +137,7 @@ pub fn plan(repo: &Path, r: &str) -> Result<DiffPlan> {
         include_untracked: untracked,
         old,
         new,
+        pathspec: Vec::new(),
     };
     match r {
         "work" | "." => {
@@ -180,6 +186,7 @@ pub fn plan(repo: &Path, r: &str) -> Result<DiffPlan> {
         include_untracked: true,
         old: Source::Commit(base),
         new: Source::WorkTree,
+        pathspec: Vec::new(),
     })
 }
 
@@ -203,6 +210,10 @@ fn diff_args<'a>(plan: &'a DiffPlan, extra: &[&'a str], ignore_whitespace: bool)
     }
     args.extend_from_slice(extra);
     args.extend(plan.args.iter().map(String::as_str));
+    if !plan.pathspec.is_empty() {
+        args.push("--");
+        args.extend(plan.pathspec.iter().map(String::as_str));
+    }
     args
 }
 
@@ -444,7 +455,7 @@ fn file_summaries(repo: &Path, plan: &DiffPlan, ignore_whitespace: bool) -> Resu
     Ok(files)
 }
 
-fn fingerprint_with(repo: &Path, plan: &DiffPlan, untracked: &[String]) -> Result<String> {
+fn fingerprint_with(repo: &Path, plan: &DiffPlan, untracked: &[String], rules_hash: &str) -> Result<String> {
     let (stat, names) = std::thread::scope(|scope| {
         let names = scope.spawn(|| {
             if plan.new != Source::WorkTree {
@@ -463,6 +474,8 @@ fn fingerprint_with(repo: &Path, plan: &DiffPlan, untracked: &[String]) -> Resul
         hasher.update(f.as_bytes());
         hasher.update([0u8]);
     }
+    hasher.update(rules_hash.as_bytes());
+    hasher.update([0u8]);
     hasher.update(git::head_sha(repo)?.unwrap_or_default().as_bytes());
     if plan.new == Source::WorkTree {
         let mut paths = git::split_nul(&names);
@@ -483,17 +496,114 @@ fn fingerprint_with(repo: &Path, plan: &DiffPlan, untracked: &[String]) -> Resul
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-/// Cheap change detector: sha256 of `git diff --stat`, the untracked list, HEAD and working-tree file stats.
+/// Above this many bytes of exclusion pathspecs, ignored files are dropped from the patch afterwards instead.
+const MAX_PATHSPEC_BYTES: usize = 256 * 1024;
+
+#[derive(Default)]
+struct Hidden {
+    paths: Vec<String>,
+    /// Set when the exclusions were too many for the command line: filter these out of git's output instead.
+    drop_after: Option<HashSet<String>>,
+}
+
+/// Applies the `.diffityignore` rules: drops ignored untracked files and excludes ignored tracked files from every
+/// later `git diff` of `plan` with pathspecs, so their patches are never generated.
+fn apply_ignore(repo: &Path, plan: &mut DiffPlan, untracked: &mut Vec<String>, rules: &DiffIgnore) -> Result<Hidden> {
+    if rules.is_empty() {
+        return Ok(Hidden::default());
+    }
+    let names = git::run_bytes(repo, &diff_args(plan, &["--name-status", "-z"], false))?;
+    let mut hidden = Vec::new();
+    let mut specs = BTreeSet::new();
+    for (_, old_path, path) in parse_name_status(&names) {
+        if !rules.is_ignored(&path, false) {
+            continue;
+        }
+        specs.insert(rules.exclusion_for(&path));
+        if let Some(old) = old_path {
+            specs.insert(old);
+        }
+        hidden.push(path);
+    }
+    untracked.retain(|f| {
+        if !rules.is_ignored(f, false) {
+            return true;
+        }
+        hidden.push(f.clone());
+        false
+    });
+    let bytes: usize = specs.iter().map(|s| s.len() + 24).sum();
+    if bytes > MAX_PATHSPEC_BYTES {
+        let drop = hidden.iter().cloned().collect();
+        return Ok(Hidden {
+            paths: hidden,
+            drop_after: Some(drop),
+        });
+    }
+    plan.pathspec = specs
+        .into_iter()
+        .map(|s| format!(":(top,exclude,literal){s}"))
+        .collect();
+    Ok(Hidden {
+        paths: hidden,
+        drop_after: None,
+    })
+}
+
+/// Removes the sections of `patch` that belong to `drop`.
+fn drop_sections(patch: String, drop: &HashSet<String>) -> String {
+    let starts = section_starts(&patch);
+    if starts.is_empty() {
+        return patch;
+    }
+    let index: HashMap<&str, usize> = drop.iter().map(|p| (p.as_str(), 0)).collect();
+    let mut out = String::with_capacity(patch.len());
+    out.push_str(&patch[..starts[0]]);
+    for (n, start) in starts.iter().enumerate() {
+        let end = starts.get(n + 1).copied().unwrap_or(patch.len());
+        let section = &patch[*start..end];
+        let header = section.lines().next().unwrap_or("");
+        if section_owner(header, &index).is_some() {
+            continue;
+        }
+        out.push_str(section);
+    }
+    out
+}
+
+/// Cheap change detector: sha256 of `git diff --stat`, the untracked list, HEAD, working-tree file stats and the
+/// ignore rules. Files hidden by `.diffityignore` do not count.
 pub fn diff_fingerprint(repo: &Path, r: &str) -> Result<String> {
-    let plan = plan(repo, r)?;
-    let untracked = untracked_for(repo, &plan)?;
-    fingerprint_with(repo, &plan, &untracked)
+    let mut plan = plan(repo, r)?;
+    let mut untracked = untracked_for(repo, &plan)?;
+    let rules = DiffIgnore::load(repo)?;
+    apply_ignore(repo, &mut plan, &mut untracked, &rules)?;
+    fingerprint_with(repo, &plan, &untracked, rules.rules_hash())
+}
+
+pub struct DiffOptions {
+    pub ignore_whitespace: bool,
+    /// Include files `.diffityignore` hides.
+    pub show_ignored: bool,
+    /// Per-file patch size above which the patch is withheld (see `LARGE_FILE_PATCH_BYTES`).
+    pub limit: usize,
+}
+
+impl DiffOptions {
+    pub fn new(ignore_whitespace: bool) -> DiffOptions {
+        DiffOptions {
+            ignore_whitespace,
+            show_ignored: false,
+            limit: LARGE_FILE_PATCH_BYTES,
+        }
+    }
 }
 
 /// Full diff for a ref: unified patch (untracked files appended), per-file summaries and fingerprint. The git calls
-/// run in parallel; sections over `LARGE_FILE_PATCH_BYTES` are withheld (see `get_file_patch`).
+/// run in parallel; sections over `LARGE_FILE_PATCH_BYTES` are withheld (see `get_file_patch`) and files hidden by
+/// `.diffityignore` are left out.
 pub fn get_diff(repo: &Path, r: &str, ignore_whitespace: bool) -> Result<DiffResult> {
-    get_diff_with_limit(repo, r, ignore_whitespace, LARGE_FILE_PATCH_BYTES)
+    get_diff_with(repo, r, &DiffOptions::new(ignore_whitespace))
 }
 
 fn joined<T>(handle: std::thread::ScopedJoinHandle<'_, Result<T>>) -> Result<T> {
@@ -501,19 +611,44 @@ fn joined<T>(handle: std::thread::ScopedJoinHandle<'_, Result<T>>) -> Result<T> 
 }
 
 pub fn get_diff_with_limit(repo: &Path, r: &str, ignore_whitespace: bool, limit: usize) -> Result<DiffResult> {
-    let plan = plan(repo, r)?;
-    let untracked = untracked_for(repo, &plan)?;
+    get_diff_with(
+        repo,
+        r,
+        &DiffOptions {
+            limit,
+            ..DiffOptions::new(ignore_whitespace)
+        },
+    )
+}
+
+pub fn get_diff_with(repo: &Path, r: &str, opts: &DiffOptions) -> Result<DiffResult> {
+    let ignore_whitespace = opts.ignore_whitespace;
+    let limit = opts.limit;
+    let mut plan = plan(repo, r)?;
+    let mut untracked = untracked_for(repo, &plan)?;
+    let rules = if opts.show_ignored {
+        DiffIgnore::none()
+    } else {
+        DiffIgnore::load(repo)?
+    };
+    let hidden = apply_ignore(repo, &mut plan, &mut untracked, &rules)?;
     let (tracked_patch, files, fingerprint, untracked_entries) = std::thread::scope(|scope| {
         let patch = scope.spawn(|| git::run(repo, &diff_args(&plan, &[], ignore_whitespace)));
-        let fingerprint = scope.spawn(|| fingerprint_with(repo, &plan, &untracked));
+        let fingerprint = scope.spawn(|| fingerprint_with(repo, &plan, &untracked, rules.rules_hash()));
         let entries = scope.spawn(|| Ok(untracked.iter().map(|f| untracked_entry(repo, f)).collect::<Vec<_>>()));
         let files = file_summaries(repo, &plan, ignore_whitespace).and_then(|mut files| {
+            if let Some(drop) = &hidden.drop_after {
+                files.retain(|f| !drop.contains(&f.path));
+            }
             fill_old_line_counts(repo, &plan, &mut files)?;
             Ok(files)
         });
         (joined(patch), files, joined(fingerprint), joined(entries))
     });
-    let tracked_patch = tracked_patch?;
+    let mut tracked_patch = tracked_patch?;
+    if let Some(drop) = &hidden.drop_after {
+        tracked_patch = drop_sections(tracked_patch, drop);
+    }
     let mut files = files?;
     let fingerprint = fingerprint?;
     let untracked_entries: Vec<(DiffFileSummary, String)> = untracked_entries?;
@@ -550,6 +685,7 @@ pub fn get_diff_with_limit(repo: &Path, r: &str, ignore_whitespace: bool, limit:
         files,
         patch,
         fingerprint,
+        hidden_files: hidden.paths,
     })
 }
 

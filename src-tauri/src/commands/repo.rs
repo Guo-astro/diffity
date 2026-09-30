@@ -3,6 +3,7 @@ use std::sync::{Arc, LazyLock};
 
 use crate::core::types::{Branch, Commit, GitStatus, OverviewFile, RecentRepo, RepoInfo};
 use crate::core::watch::WatcherRegistry;
+use crate::core::diffignore::DiffIgnore;
 use crate::core::{editor, git, AppError};
 use tauri::{AppHandle, Emitter, State};
 
@@ -75,7 +76,14 @@ pub async fn git_status(repo_path: String) -> Result<GitStatus, AppError> {
 
 #[tauri::command]
 pub async fn repo_overview(repo_path: String) -> Result<Vec<OverviewFile>, AppError> {
-    blocking(move || git::overview(Path::new(&repo_path))).await
+    blocking(move || {
+        let repo = Path::new(&repo_path);
+        let mut files = git::overview(repo)?;
+        let rules = DiffIgnore::load(repo)?;
+        files.retain(|f| !rules.is_ignored(&f.path, false));
+        Ok(files)
+    })
+    .await
 }
 
 #[tauri::command]

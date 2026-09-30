@@ -264,10 +264,18 @@ struct HeadCommit {
     index: ViewIndex,
 }
 
+/// Threads anchor against every changed file, including ones `.diffityignore` hides from the diff view.
+fn all_files() -> diff::DiffOptions {
+    diff::DiffOptions {
+        show_ignored: true,
+        ..diff::DiffOptions::new(false)
+    }
+}
+
 fn head_commit(repo: &Path) -> Option<HeadCommit> {
     let sha = git::head_sha(repo).ok()??;
     let r = commit_ref(&sha);
-    let result = diff::get_diff(repo, &r, false).ok()?;
+    let result = diff::get_diff_with(repo, &r, &all_files()).ok()?;
     Some(HeadCommit {
         pointer: CommitPointer {
             subject: commit_subject(repo, &sha).unwrap_or_default(),
@@ -317,7 +325,7 @@ fn load_view(repo: &Path, session: &ReviewSession) -> (String, View) {
     if session.r#ref == TREE_REF {
         return (label, View::Tree);
     }
-    match diff::get_diff(repo, &session.r#ref, false) {
+    match diff::get_diff_with(repo, &session.r#ref, &all_files()) {
         Ok(result) => (label, View::Diff(ViewIndex::from_diff(&result))),
         Err(_) => (label, View::Unknown),
     }

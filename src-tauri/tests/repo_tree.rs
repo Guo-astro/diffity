@@ -119,6 +119,22 @@ fn tree_listing_git() {
 }
 
 #[test]
+fn tree_listing_marks_diff_ignored_files() {
+    let repo = Repo::with_commit();
+    repo.write(".diffityignore", "generated/\n*.snap\n");
+    repo.write("generated/api/client.ts", "x");
+    repo.write("tests/a.snap", "x");
+    repo.commit("more");
+    let entries = tree::list_tree(&repo.path).unwrap();
+    let ignored = |p: &str| entries.iter().find(|e| e.path == p).map(|e| e.diff_ignored);
+    assert_eq!(ignored("generated"), Some(true));
+    assert_eq!(ignored("generated/api/client.ts"), Some(true));
+    assert_eq!(ignored("tests/a.snap"), Some(true));
+    assert_eq!(ignored("tests"), Some(false));
+    assert_eq!(ignored("src/lib.rs"), Some(false));
+}
+
+#[test]
 fn tree_listing_plain_folder() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();

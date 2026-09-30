@@ -1,7 +1,7 @@
 mod common;
 
 use common::Repo;
-use diffity_desktop_lib::core::diff;
+use diffity_desktop_lib::core::{diff, diffignore};
 use diffity_desktop_lib::core::types::{FileStatus, Side};
 
 fn file<'a>(res: &'a diffity_desktop_lib::core::types::DiffResult, path: &str) -> &'a diffity_desktop_lib::core::types::DiffFileSummary {
@@ -357,4 +357,85 @@ fn large_file_patches_are_withheld_and_fetched_per_file() {
     assert!(untracked.contains("+new 199"));
     let full_res = diff::get_diff(&repo.path, "work", false).unwrap();
     assert!(full_res.files.iter().all(|f| !f.patch_omitted));
+}
+
+#[test]
+fn diffityignore_hides_files_before_patching() {
+    let repo = Repo::with_commit();
+    repo.write("dist/bundle.js", "a\n");
+    repo.write("src/app.ts", "a\n");
+    repo.write("schema.gen.ts", "a\n");
+    repo.commit("base");
+    repo.write(".diffityignore", "# generated\ndist/\n*.gen.ts\n!keep.gen.ts\n");
+    repo.write("dist/bundle.js", "b\n");
+    repo.write("dist/new.js", "new\n");
+    repo.write("src/app.ts", "b\n");
+    repo.write("schema.gen.ts", "b\n");
+    repo.write("keep.gen.ts", "kept\n");
+
+    let res = diff::get_diff(&repo.path, "work", false).unwrap();
+    assert!(has(&res, "src/app.ts"));
+    assert!(has(&res, ".diffityignore"));
+    assert!(has(&res, "keep.gen.ts"));
+    for hidden in ["dist/bundle.js", "dist/new.js", "schema.gen.ts"] {
+        assert!(!has(&res, hidden), "{hidden} should be hidden");
+        assert!(!res.patch.contains(hidden), "{hidden} leaked into the patch");
+        assert!(res.hidden_files.iter().any(|f| f == hidden), "{hidden} not reported");
+    }
+    assert_eq!(res.hidden_files.len(), 3);
+
+    let all = diff::get_diff_with(
+        &repo.path,
+        "work",
+        &diff::DiffOptions {
+            show_ignored: true,
+            ..diff::DiffOptions::new(false)
+        },
+    )
+    .unwrap();
+    assert!(has(&all, "dist/bundle.js") && has(&all, "dist/new.js") && has(&all, "schema.gen.ts"));
+    assert!(all.hidden_files.is_empty());
+
+    let before = diff::diff_fingerprint(&repo.path, "work").unwrap();
+    repo.write("dist/bundle.js", "c\nd\n");
+    assert_eq!(diff::diff_fingerprint(&repo.path, "work").unwrap(), before);
+    repo.write("src/app.ts", "c\n");
+    assert_ne!(diff::diff_fingerprint(&repo.path, "work").unwrap(), before);
+}
+
+#[test]
+fn local_ignore_list_applies_to_commit_ranges() {
+    let repo = Repo::with_commit();
+    let base = repo.git(&["rev-parse", "HEAD"]).trim().to_string();
+    repo.write("gen/api.ts", "a\n");
+    repo.write("pnpm-lock.yaml", "lock\n");
+    repo.write("src/main.ts", "main\n");
+    let head = repo.commit("add");
+    diffignore::write_local_rules(&repo.path, "gen/\npnpm-lock.yaml").unwrap();
+    assert_eq!(diffignore::read_local_rules(&repo.path).unwrap(), "gen/\npnpm-lock.yaml\n");
+    assert!(repo.path.join(".git/info/diffityignore").is_file());
+
+    let res = diff::get_diff(&repo.path, &format!("{base}..{head}"), false).unwrap();
+    assert!(has(&res, "src/main.ts"));
+    assert!(!has(&res, "gen/api.ts") && !has(&res, "pnpm-lock.yaml"));
+    assert_eq!(res.hidden_files.len(), 2);
+    assert!(!res.patch.contains("gen/api.ts"));
+
+    diffignore::write_local_rules(&repo.path, "  \n").unwrap();
+    assert!(!repo.path.join(".git/info/diffityignore").exists());
+    assert!(has(&diff::get_diff(&repo.path, &format!("{base}..{head}"), false).unwrap(), "gen/api.ts"));
+}
+
+#[test]
+fn renames_into_an_ignored_folder_are_hidden_whole() {
+    let repo = Repo::with_commit();
+    repo.write("src/old.js", &(0..20).map(|i| format!("line {i}\n")).collect::<String>());
+    repo.commit("base");
+    repo.write(".diffityignore", "dist/\n");
+    repo.commit("ignore");
+    std::fs::create_dir_all(repo.path.join("dist")).unwrap();
+    repo.git(&["mv", "src/old.js", "dist/old.js"]);
+    let res = diff::get_diff(&repo.path, "staged", false).unwrap();
+    assert!(res.files.is_empty(), "{:?}", res.files);
+    assert_eq!(res.hidden_files, vec!["dist/old.js".to_string()]);
 }

@@ -116,6 +116,9 @@ pub struct DiffResult {
     pub files: Vec<DiffFileSummary>,
     pub patch: String,
     pub fingerprint: String,
+    /// Changed files left out because `.diffityignore` (or the repo's local list) hides them.
+    #[serde(default)]
+    pub hidden_files: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -177,6 +180,9 @@ pub enum TreeEntryKind {
 pub struct TreeEntry {
     pub path: String,
     pub kind: TreeEntryKind,
+    /// Hidden from diffs by `.diffityignore` (still browsable).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub diff_ignored: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

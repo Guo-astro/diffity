@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::core::diff;
+use crate::core::{diff, diffignore};
 use crate::core::types::{DiffResult, FileVersions, ResolvedRef};
 use crate::core::AppError;
 
@@ -12,8 +12,28 @@ pub async fn resolve_ref(repo_path: String, r#ref: String) -> Result<ResolvedRef
 }
 
 #[tauri::command]
-pub async fn get_diff(repo_path: String, r#ref: String, ignore_whitespace: bool) -> Result<DiffResult, AppError> {
-    blocking(move || diff::get_diff(Path::new(&repo_path), &r#ref, ignore_whitespace)).await
+pub async fn get_diff(
+    repo_path: String,
+    r#ref: String,
+    ignore_whitespace: bool,
+    show_ignored: Option<bool>,
+) -> Result<DiffResult, AppError> {
+    let opts = diff::DiffOptions {
+        show_ignored: show_ignored.unwrap_or(false),
+        ..diff::DiffOptions::new(ignore_whitespace)
+    };
+    blocking(move || diff::get_diff_with(Path::new(&repo_path), &r#ref, &opts)).await
+}
+
+/// The repo's local "hide from diffs" list (gitignore syntax), kept in the git dir.
+#[tauri::command]
+pub async fn get_diff_ignore_rules(repo_path: String) -> Result<String, AppError> {
+    blocking(move || diffignore::read_local_rules(Path::new(&repo_path))).await
+}
+
+#[tauri::command]
+pub async fn set_diff_ignore_rules(repo_path: String, rules: String) -> Result<(), AppError> {
+    blocking(move || diffignore::write_local_rules(Path::new(&repo_path), &rules)).await
 }
 
 #[tauri::command]
