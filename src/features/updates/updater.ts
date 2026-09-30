@@ -129,12 +129,27 @@ export async function installUpdate() {
     return;
   }
   setStatus({ kind: 'installing', version: update.version });
-  toast.loading(`Updating to Diffity ${update.version}…`, { id: TOAST_ID, duration: Infinity });
+  toast.loading(`Updating to Diffity ${update.version}…`, {
+    id: TOAST_ID,
+    duration: Infinity,
+    description: 'Diffity will restart when it’s ready',
+    action: undefined,
+    cancel: undefined,
+    onDismiss: undefined,
+    dismissible: false,
+  });
   try {
     await update.downloadAndInstall();
     await relaunch();
   } catch (error) {
     setStatus({ kind: 'available', version: update.version });
-    toast.error('Could not install the update', { id: TOAST_ID, description: errorMessage(error), duration: 10_000 });
+    toast.error('Could not install the update', {
+      id: TOAST_ID,
+      description: errorMessage(error),
+      duration: 10_000,
+      dismissible: true,
+      action: { label: 'Try again', onClick: () => void installUpdate() },
+      cancel: undefined,
+    });
   }
 }
