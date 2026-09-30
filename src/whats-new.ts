@@ -13,6 +13,15 @@ export interface WhatsNewRelease {
 
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
+    version: '0.0.6',
+    date: '2026-09-30',
+    items: [
+      'Send Claude’s review comments back to Claude to fix, alongside your own',
+      'Claude can work on several projects at once',
+      'Fixed a Claude run in one project showing in every other project',
+    ],
+  },
+  {
     version: '0.0.5',
     date: '2026-09-30',
     items: [
