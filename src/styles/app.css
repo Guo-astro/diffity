@@ -667,8 +667,16 @@ dialog {
   margin: 0;
 }
 
-[data-sonner-toast][data-styled='true'] [data-content] + [data-button] {
-  margin-left: auto;
+[data-sonner-toast][data-styled='true'] [data-action] {
+  order: 1;
+}
+
+[data-sonner-toast][data-styled='true'] [data-cancel] {
+  order: 2;
+}
+
+[data-sonner-toast][data-styled='true'] [data-icon] ~ [data-action] {
+  margin-left: 24px;
 }
 
 [data-find-paint='a'] [data-find-line] {
