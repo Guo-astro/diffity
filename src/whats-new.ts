@@ -24,6 +24,15 @@ export interface WhatsNewRelease {
 
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
+    version: '0.0.4',
+    date: '2026-09-30',
+    items: [
+      { text: 'See what changed in each update from What’s New in the Help menu or ⌘K' },
+      { text: 'Fixed Claude Code not being found when Diffity is opened from Finder or the Dock' },
+      { text: 'Clearer message when Node.js is missing for the Claude features' },
+    ],
+  },
+  {
     version: '0.0.3',
     date: '2026-09-30',
     items: [

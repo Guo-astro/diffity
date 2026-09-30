@@ -99,7 +99,7 @@ macOS 13.3 or later, Apple Silicon and Intel. The AI features need [Claude Code]
   *.generated.ts
   !dist/keep-me.js
   ```
-- **Colour-blind friendly colours.** Settings → Appearance switches the diff to blue and orange, in light and dark.
+- **Colour-blind friendly colours.** Settings → General → Appearance switches the diff to blue and orange, in light and dark.
 - **Split or unified, light or dark.** Toggle the diff layout anytime; the theme follows your Mac unless you pick one in Settings.
 - **Updates itself.** New versions install in place, and What's New in the Help menu shows what changed.
 
