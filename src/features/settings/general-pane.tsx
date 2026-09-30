@@ -3,6 +3,7 @@ import { cn } from '../../lib/cn';
 import { useTheme, type ThemePreference } from '../../hooks/use-theme';
 import { setDiffPalette, useDiffPalette, type DiffPalette } from '../../lib/diff-palette';
 import { PreferencesGroup, PreferencesPane, PreferencesRow, SegmentedControl } from './preferences';
+import { DiffIgnoreRow } from './diff-ignore-row';
 
 const PALETTES = {
   light: { bg: '#ffffff', panel: '#f6f8fa', line: '#d0d7de', text: '#8b949e', add: '#abf2bc', del: '#ffc1bf', accent: '#0969da' },
@@ -210,6 +211,7 @@ export function GeneralPane() {
       </PreferencesGroup>
       <PreferencesGroup label="Diffs">
         <DiffLayoutRow />
+        <DiffIgnoreRow />
       </PreferencesGroup>
     </PreferencesPane>
   );

@@ -38,6 +38,7 @@ const ORDER = GROUPS.flatMap((group) => group.sections);
 const INDEX: { label: string; section: SettingsSection; keywords?: string }[] = [
   { label: 'Theme', section: 'general', keywords: 'appearance dark light system mode colour color' },
   { label: 'Diff layout', section: 'general', keywords: 'split unified view' },
+  { label: 'Hide files from diffs', section: 'general', keywords: 'diffityignore ignore generated hidden exclude' },
   { label: 'Open files with', section: 'editor', keywords: 'vs code cursor zed editor' },
   { label: 'Custom editor command', section: 'editor', keywords: 'subl idea cli' },
   { label: 'Keyboard shortcuts', section: 'shortcuts', keywords: 'keys hotkeys' },

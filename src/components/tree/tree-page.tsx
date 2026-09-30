@@ -185,6 +185,7 @@ export function TreePage() {
   }, [threads]);
 
   const paths = treeData?.paths ?? [];
+  const diffIgnored = useMemo(() => new Set(treeData?.diffIgnored ?? []), [treeData]);
 
   const handleFileClick = useCallback(
     (path: string) => {
@@ -428,6 +429,7 @@ export function TreePage() {
         <TreeSidebar
           ref={searchInputRef}
           paths={paths}
+          diffIgnored={diffIgnored}
           activeFile={isFileMode ? navPath : null}
           commentCountsByFile={commentCountsByFile}
           onFileClick={handleFileClick}

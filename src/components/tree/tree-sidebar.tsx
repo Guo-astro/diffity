@@ -15,6 +15,8 @@ import { useRestoredScroll, useViewState } from '../../lib/view-state';
 
 interface TreeSidebarProps {
   paths: string[];
+  /** Files `.diffityignore` hides from diffs, shown dimmed. */
+  diffIgnored?: Set<string>;
   activeFile: string | null;
   commentCountsByFile: Map<string, number>;
   onFileClick: (path: string) => void;
@@ -24,6 +26,7 @@ interface TreeSidebarProps {
 export const TreeSidebar = forwardRef<HTMLInputElement, TreeSidebarProps>(function TreeSidebar(props, ref) {
   const {
     paths,
+    diffIgnored,
     activeFile,
     commentCountsByFile,
     onFileClick,
@@ -175,6 +178,7 @@ export const TreeSidebar = forwardRef<HTMLInputElement, TreeSidebarProps>(functi
               depth={0}
               activeFile={activeFile}
               reviewedFiles={emptyReviewedFiles}
+              dimmedFiles={diffIgnored}
               commentCountsByFile={commentCountsByFile}
               expandedDirs={effectiveExpanded}
               onToggleDir={handleExpandDir}
