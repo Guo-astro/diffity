@@ -26,29 +26,43 @@ macOS 13.3 or later, Apple Silicon and Intel. The AI features need [Claude Code]
 
 ### Comment on your diff
 
+> Drag across line numbers or click the `+` in the gutter, write a comment, then hit **Send to Claude** to have it fix them.
+
 <img src="./.github/screenshots/comment.gif" alt="Selecting lines in a diff and leaving a comment" />
 
 ### Ask @claude
+
+> Type `@claude` in any comment or reply and Claude answers in the same thread.
 
 <img src="./.github/screenshots/claude-reply.gif" alt="Mentioning @claude in a comment and Claude replying in the thread" />
 
 ### Get a Claude review
 
+> Click **Ask Claude to review**, optionally add what to focus on, and its comments land on the diff as it works.
+
 <img src="./.github/screenshots/claude-review.gif" alt="Asking Claude to review and its comments appearing on the diff" />
 
 ### Review any commit or range
+
+> Open the picker next to the project name to switch between uncommitted changes, a commit, a range or a branch.
 
 <img src="./.github/screenshots/refs.gif" alt="Searching commits in the ref picker and opening one" />
 
 ### Review pull requests
 
+> Pick a PR from the branch switcher to check it out, comment as you read, then **Submit review** to post it to GitHub.
+
 <img src="./.github/screenshots/pull-request.gif" alt="Checking out a pull request from the branch switcher and opening the review panel" />
 
 ### Jump anywhere
 
+> Press `⌘P` to open any file, or `⌘K` to search commits, comments, PRs and every action.
+
 <img src="./.github/screenshots/palette.gif" alt="Opening a file with ⌘P and switching to dark theme with ⌘K" />
 
 ### Switch projects
+
+> Open a repo with `⌘O`; it stays in the left rail, so `⌘1`–`⌘9` takes you back to it.
 
 <img src="./.github/screenshots/projects.gif" alt="Switching between projects in the rail" />
 
