@@ -12,7 +12,7 @@ import { DiffContextHeader } from '../layout/diff-context-bar';
 import { GeneralComments } from '../comments/general-comments';
 import { OutsideThreads } from '../comments/outside-threads';
 import { GENERAL_THREAD_FILE_PATH } from '../comments/types';
-import { useHighlighter } from '../../hooks/use-highlighter';
+import { useHighlighter, type CodeHighlighter } from '../../hooks/use-highlighter';
 import { type ViewMode, getFilePath } from '../../lib/diff-utils';
 import type { DiffFile } from '@/lib/diff-parser';
 import type { CommentThread, LineSelection } from '../comments/types';
@@ -121,7 +121,7 @@ export function DiffView(props: DiffViewProps) {
   } = props;
   const measurements = useViewStateSlot<VirtualItem[]>(`${memoryKey}:measurements`);
   const [initialMeasurements] = useState(() => measurements.read([]));
-  const { highlight } = useHighlighter();
+  const { tokenize, ready: highlighterReady } = useHighlighter();
   const scrollElementRef = useRef<HTMLElement>(null);
 
   const outsideThreads = useMemo(() => {
@@ -130,13 +130,16 @@ export function DiffView(props: DiffViewProps) {
   }, [diff.files, threads]);
 
   const highlighters = useMemo(() => {
-    const map = new Map<string, (code: string) => ReturnType<typeof highlight>>();
+    const map = new Map<string, CodeHighlighter>();
+    if (!highlighterReady) {
+      return map;
+    }
     for (const file of diff.files) {
       const filePath = getFilePath(file);
-      map.set(filePath, (code: string) => highlight(code, filePath, theme));
+      map.set(filePath, (code, state) => tokenize(code, filePath, theme, state));
     }
     return map;
-  }, [diff, highlight, theme]);
+  }, [diff, tokenize, theme, highlighterReady]);
 
   const heldBackPaths = useMemo(() => {
     const threadPaths = new Set(threads.map((thread) => thread.filePath));
@@ -411,7 +414,7 @@ export function DiffView(props: DiffViewProps) {
                 onToggleCollapse={onToggleCollapse}
                 reviewed={reviewedFiles.has(filePath)}
                 onReviewedChange={onReviewedChange}
-                highlightLine={highlighters.get(filePath)}
+                highlightCode={highlighters.get(filePath)}
                 baseRef={baseRef}
                 canRevert={canRevert}
                 onRevert={onRevert}

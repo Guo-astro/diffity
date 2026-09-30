@@ -3,10 +3,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DiffHunk } from '@/lib/diff-parser';
 import type { DiffFile, DiffLine as DiffLineType } from '@/lib/diff-parser';
 import type { SyntaxToken } from '../../lib/syntax-token';
-import type { HighlightedTokens } from '../../hooks/use-highlighter';
+import type { CodeHighlighter } from '../../hooks/use-highlighter';
 import type { CommentAuthor, CommentSide, LineSelection, SubmitOptions } from '../comments/types';
-import { type ViewMode, getFilePath, buildChangeGroupPatch, extractLinesFromDiff, extractLinesFromExpandedLines, deferReason, getRowCount, sliceHunk, sliceRowCount, LONG_LINE_LENGTH, SLICE_ROW_THRESHOLD } from '../../lib/diff-utils';
-import { revertHunk as apiRevertHunk, revertFile as apiRevertFile, openInEditor, errorMessage, fetchFilePatch } from '../../lib/api';
+import { type ViewMode, getFilePath, buildChangeGroupPatch, extractLinesFromDiff, extractLinesFromExpandedLines, deferReason, getRowCount, sliceHunk, sliceRowCount, SLICE_ROW_THRESHOLD } from '../../lib/diff-utils';
+import { revertHunk as apiRevertHunk, revertFile as apiRevertFile, openInEditor, errorMessage, fetchFileVersions } from '../../lib/api';
+import { filePatchOptions } from '../../queries/diff';
+import { buildSyntaxMap, planSyntaxSources, tokenizeSources, type SideTokens } from '../../lib/syntax-lines';
 import { loadHeldBackFile, useHeldBackLoaded } from '../../lib/large-diff';
 import { LazySlice } from './lazy-slice';
 import { Spinner } from '../icons/spinner';
@@ -53,7 +55,7 @@ interface FileBlockProps {
   onToggleCollapse: (path: string) => void;
   reviewed: boolean;
   onReviewedChange: (path: string, reviewed: boolean) => void;
-  highlightLine?: (code: string) => HighlightedTokens[] | null;
+  highlightCode?: CodeHighlighter;
   baseRef?: string;
   canRevert?: boolean;
   onRevert?: () => void;
@@ -82,12 +84,12 @@ interface GapExpansion {
 
 const syntaxCache = new Map<string, Map<string, SyntaxToken[]>>();
 
-function syntaxCacheKey(file: DiffFile, theme: string): string {
+function diffShapeKey(file: DiffFile): string {
   let length = 0;
   for (const hunk of file.hunks) {
     length += hunk.lines.length;
   }
-  return `${getFilePath(file)}:${theme}:${length}:${file.additions}:${file.deletions}:${file.hunks[0]?.lines[0]?.content ?? ''}`;
+  return `${getFilePath(file)}:${length}:${file.additions}:${file.deletions}:${file.hunks[0]?.lines[0]?.content ?? ''}`;
 }
 
 function rememberSyntax(key: string, map: Map<string, SyntaxToken[]>) {
@@ -171,10 +173,8 @@ export const FileBlock = memo(function FileBlock(props: FileBlockProps) {
   const hasThreads = useMemo(() => threads.some((thread) => thread.filePath === filePath), [threads, filePath]);
   const heldBack = !!reason && !loaded && !hasThreads;
   const patch = useQuery({
-    queryKey: ['diff', 'file-patch', baseRef ?? 'work', hideWhitespace, filePath, file.additions, file.deletions],
-    queryFn: () => fetchFilePatch(file, hideWhitespace, baseRef),
+    ...filePatchOptions(file, hideWhitespace, baseRef),
     enabled: !!file.patchOmitted && !heldBack && !collapsed,
-    staleTime: Infinity,
   });
   const effectiveFile = file.patchOmitted && patch.data ? patch.data : file;
 
@@ -190,7 +190,7 @@ export const FileBlock = memo(function FileBlock(props: FileBlockProps) {
 
 function FileCard(props: FileCardProps) {
   const {
-    file, viewMode, collapsed, onToggleCollapse, reviewed, onReviewedChange, highlightLine, baseRef, canRevert, onRevert,
+    file, viewMode, collapsed, onToggleCollapse, reviewed, onReviewedChange, highlightCode, baseRef, canRevert, onRevert,
     threads: allThreads, commentsEnabled, commentActions, onAddThread: rawAddThread, pendingSelection, onPendingSelectionChange,
     highlighted, onHighlightEnd, heldBack, loadingPatch,
   } = props;
@@ -360,11 +360,22 @@ function FileCard(props: FileCardProps) {
 
 
   const resolvedTheme = useThemeStore((state) => state.theme);
-  const cacheKey = useMemo(() => syntaxCacheKey(file, resolvedTheme), [file, highlightLine, resolvedTheme]);
-  const [syntaxMap, setSyntaxMap] = useState<Map<string, SyntaxToken[]> | undefined>(() => (highlightLine ? syntaxCache.get(cacheKey) : undefined));
+  const shapeKey = useMemo(() => diffShapeKey(file), [file]);
+  const cacheKey = `${shapeKey}:${resolvedTheme}`;
+  const [syntaxMap, setSyntaxMap] = useState<Map<string, SyntaxToken[]> | undefined>(() => (highlightCode ? syntaxCache.get(cacheKey) : undefined));
+
+  const versionsWanted = !!highlightCode && rendersLines && file.status !== 'added' && file.status !== 'deleted'
+    && (file.oldFileLineCount ?? 0) <= HIGHLIGHT_MAX_ROWS && !syntaxCache.has(cacheKey);
+  const versions = useQuery({
+    queryKey: ['file-versions', filePath, file.oldPath, baseRef ?? null, 'syntax', shapeKey],
+    queryFn: () => fetchFileVersions(filePath, file.oldPath, baseRef),
+    enabled: versionsWanted,
+    staleTime: Infinity,
+  });
+  const versionsSettled = !versionsWanted || versions.isSuccess || versions.isError;
 
   useEffect(() => {
-    if (!highlightLine || !rendersLines) {
+    if (!highlightCode || !rendersLines) {
       return;
     }
     const cached = syntaxCache.get(cacheKey);
@@ -372,25 +383,16 @@ function FileCard(props: FileCardProps) {
       setSyntaxMap(cached);
       return;
     }
-
-    const allLines: { content: string; type: string; num: number | null }[] = [];
-    for (const hunk of file.hunks) {
-      for (const line of hunk.lines) {
-        if (line.content.length > LONG_LINE_LENGTH) {
-          continue;
-        }
-        const num = line.type === 'delete' ? line.oldLineNumber : line.newLineNumber;
-        allLines.push({ content: line.content, type: line.type, num });
-      }
-    }
-    if (allLines.length > HIGHLIGHT_MAX_ROWS) {
+    if (!versionsSettled || getRowCount(file) > HIGHLIGHT_MAX_ROWS) {
       return;
     }
 
+    const plan = planSyntaxSources(file.hunks, versions.data ?? null, HIGHLIGHT_MAX_ROWS);
+    const tokens: SideTokens = { old: new Map(), new: new Map() };
+    const work = tokenizeSources(plan.sources, highlightCode, tokens);
+    const commit = () => setSyntaxMap(buildSyntaxMap(file.hunks, tokens, plan.fullNew));
     let cancelled = false;
     let timer = 0;
-    const map = new Map<string, SyntaxToken[]>();
-    let index = 0;
     let lastCommit = performance.now();
 
     const step = () => {
@@ -398,22 +400,17 @@ function FileCard(props: FileCardProps) {
         return;
       }
       const deadline = performance.now() + HIGHLIGHT_BUDGET_MS;
-      while (index < allLines.length && performance.now() < deadline) {
-        const line = allLines[index];
-        const highlighted = highlightLine(line.content);
-        if (highlighted && highlighted.length > 0) {
-          map.set(`${line.type}-${line.num}`, highlighted[0].tokens);
+      while (performance.now() < deadline) {
+        if (work.next().done) {
+          const map = buildSyntaxMap(file.hunks, tokens, plan.fullNew);
+          rememberSyntax(cacheKey, map);
+          setSyntaxMap(map);
+          return;
         }
-        index++;
-      }
-      if (index >= allLines.length) {
-        rememberSyntax(cacheKey, map);
-        setSyntaxMap(new Map(map));
-        return;
       }
       if (performance.now() - lastCommit > 400) {
         lastCommit = performance.now();
-        setSyntaxMap(new Map(map));
+        commit();
       }
       timer = window.setTimeout(step, 0);
     };
@@ -424,7 +421,7 @@ function FileCard(props: FileCardProps) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [file, highlightLine, cacheKey, rendersLines]);
+  }, [file, highlightCode, cacheKey, rendersLines, versionsSettled, versions.data]);
 
   const gaps = useMemo(() => {
     if (isNewFile) {
@@ -710,7 +707,7 @@ function FileCard(props: FileCardProps) {
                     topExpansionLines={unit.first && i === 0 ? [...(topExpansion?.linesFromTop ?? []), ...(topExpansion?.linesFromBottom ?? [])] : undefined}
                     gapExpansion={betweenExpansion}
                     gapId={betweenGap?.id}
-                    highlightLine={highlightLine}
+                    highlightCode={highlightCode}
                     threads={fileThreads}
                     pendingSelection={filePendingSelection}
                     currentAuthor={DEFAULT_AUTHOR}
@@ -746,7 +743,7 @@ function FileCard(props: FileCardProps) {
                   ...(bottomExpansion?.linesFromTop ?? []),
                   ...(bottomExpansion?.linesFromBottom ?? []),
                 ];
-                const bottomSyntaxMap = buildExpansionSyntaxMap(bottomLines, highlightLine);
+                const bottomSyntaxMap = buildExpansionSyntaxMap(bottomLines, syntaxMap, highlightCode);
                 const bottomCommentProps = {
                   isLineSelected, onLineMouseDown: handleLineMouseDown, onLineMouseEnter: handleLineMouseEnter,
                   onCommentClick: handleCommentClick, threads: fileThreads, pendingSelection: filePendingSelection,
