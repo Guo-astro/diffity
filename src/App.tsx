@@ -115,7 +115,6 @@ export function App() {
         position="bottom-right"
         offset={{ bottom: 40, right: 16 }}
         gap={8}
-        closeButton
         swipeDirections={['right']}
         toastOptions={{
           style: {
@@ -126,13 +125,12 @@ export function App() {
             boxShadow: 'none',
             fontSize: '13px',
             fontFamily: 'var(--font-sans)',
-            padding: '10px 36px 10px 12px',
+            padding: '10px 12px',
           },
           classNames: {
             description: '!text-text-secondary !text-xs',
             actionButton: '!bg-raised !text-text !border !border-control-border hover:!bg-control-hover !h-6 !px-2 !rounded-md !text-xs !font-medium',
             cancelButton: '!bg-transparent !text-text-secondary !border !border-transparent hover:!bg-control-hover !h-6 !px-2 !rounded-md !text-xs !font-medium',
-            closeButton: '!bg-transparent !border-0 !text-text-muted hover:!text-text hover:!bg-control-hover',
           },
         }}
       />
