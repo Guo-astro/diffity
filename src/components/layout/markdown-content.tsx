@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import type { Components } from 'react-markdown';
 import { useHighlighter } from '../../hooks/use-highlighter';
 import { getTheme } from '../../hooks/use-theme';
@@ -31,6 +33,9 @@ export function MarkdownContent(props: MarkdownContentProps) {
           {children}
         </a>
       );
+    },
+    img({ src, alt, width, height }) {
+      return <img src={typeof src === 'string' ? src : undefined} alt={alt} width={width} height={height} className="inline max-w-full h-auto rounded" />;
     },
     ul({ children }) {
       return <ul className="list-disc pl-4 mb-1.5 last:mb-0">{children}</ul>;
@@ -142,7 +147,7 @@ export function MarkdownContent(props: MarkdownContentProps) {
 
   return (
     <div className="markdown-body">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeMentions]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw, rehypeSanitize, rehypeMentions]} components={components}>
         {content}
       </ReactMarkdown>
     </div>
