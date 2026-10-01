@@ -16,6 +16,7 @@ export const WHATS_NEW: WhatsNewRelease[] = [
     version: '0.0.7',
     date: '2026-10-01',
     items: [
+      'Comment on a whole file from its header in the diff',
       'See GitHub avatars in the commit history',
       'Images and HTML in pull request descriptions now show',
       'The title bar fits smaller windows, with buttons shrinking to icons instead of overlapping',
@@ -25,6 +26,7 @@ export const WHATS_NEW: WhatsNewRelease[] = [
       'Clearer messages when Claude fails, with the full output one click away',
       'Confirm before deleting a thread with replies or discarding draft comments',
       'Notification buttons sit below the text',
+      'Fixed the diff sometimes missing changes until you refreshed',
       'Fixed Stop not working while Claude is starting',
       'Fixed your general comments being skipped when sent to Claude',
       'Fixed the Send to Claude count not matching what gets sent',
