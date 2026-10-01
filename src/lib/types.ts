@@ -72,6 +72,7 @@ export interface Commit {
   shortSha: string;
   subject: string;
   author: string;
+  authorEmail: string;
   date: string;
   filesChanged: number;
   additions: number;
@@ -270,7 +271,7 @@ export type AgentEvent =
   | { type: 'plan'; entries: PlanEntry[] }
   | { type: 'permissionRequest'; requestId: string; title: string; options: PermissionOption[]; diff?: PermissionDiff }
   | { type: 'done'; stopReason: string }
-  | { type: 'error'; message: string };
+  | { type: 'error'; code?: string; message: string };
 
 export interface UserMessageContent {
   text: string;

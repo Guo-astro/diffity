@@ -216,7 +216,7 @@ pub fn repo_info(path: &Path) -> Result<RepoInfo> {
     })
 }
 
-const LOG_FORMAT: &str = "--format=%x1e%H%x1f%h%x1f%s%x1f%an%x1f%aI";
+const LOG_FORMAT: &str = "--format=%x1e%H%x1f%h%x1f%s%x1f%an%x1f%ae%x1f%aI";
 
 fn parse_shortstat(line: &str) -> (u32, u32, u32) {
     let mut stats = (0, 0, 0);
@@ -252,6 +252,7 @@ fn parse_log(out: &str) -> Vec<Commit> {
                 short_sha: parts.next()?.to_string(),
                 subject: parts.next()?.to_string(),
                 author: parts.next()?.to_string(),
+                author_email: parts.next()?.to_string(),
                 date: parts.next()?.to_string(),
                 files_changed,
                 additions,

@@ -274,6 +274,7 @@ const commits: Commit[] = Array.from({ length: 40 }, (_, i) => ({
     'Document CLI flags in README',
   ][i % 5],
   author: i % 3 === 0 ? 'Kamran Ahmed' : 'Jane Doe',
+  authorEmail: i % 3 === 0 ? 'kamranahmed.se@gmail.com' : 'jane@example.com',
   date: new Date(Date.now() - i * 3600_000 * 7).toISOString(),
   filesChanged: (i % 4) + 1,
   additions: (i * 13) % 90 + 2,

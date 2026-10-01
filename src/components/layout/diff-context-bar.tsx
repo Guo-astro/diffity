@@ -41,7 +41,7 @@ function CommitHeader(props: { sha: string }) {
       <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-secondary">
         {commit && (
           <>
-            <AuthorAvatar name={commit.author} />
+            <AuthorAvatar name={commit.author} email={commit.authorEmail} />
             <span>{commit.author}</span>
             <span className="text-text-muted">·</span>
             <span title={dayjs(commit.date).format('YYYY-MM-DD HH:mm')}>{commit.relativeDate}</span>

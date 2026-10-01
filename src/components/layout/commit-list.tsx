@@ -7,6 +7,8 @@ import { GitCommitIcon, GitCompareIcon } from '../ui/icon';
 import { ListRow, ListRowSkeleton, StatCell } from '../ui/list-row';
 import { Skeleton, useRevealClass } from '../ui/skeleton';
 import { DiffStatBar } from '../ui/diff-stat-bar';
+import { useHasGitHubRemote } from '../../hooks/use-repo-state';
+import { cn } from '../../lib/cn';
 
 interface CommitListProps {
   search: string;
@@ -45,8 +47,46 @@ function dayLabel(date: string) {
   return day.format('MMM D, YYYY');
 }
 
-export function AuthorAvatar(props: { name: string }) {
-  const { name } = props;
+const NOREPLY_EMAIL = /^(?:(\d+)\+)?([^@]+)@users\.noreply\.github\.com$/i;
+
+function githubAvatarUrl(email: string, hasGitHubRemote: boolean): string | null {
+  const noreply = NOREPLY_EMAIL.exec(email);
+  if (noreply) {
+    return noreply[1] ? `https://avatars.githubusercontent.com/u/${noreply[1]}?s=40` : `https://github.com/${noreply[2]}.png?size=40`;
+  }
+  if (!hasGitHubRemote || !email.includes('@')) {
+    return null;
+  }
+  return `https://avatars.githubusercontent.com/u/e?email=${encodeURIComponent(email)}&s=40`;
+}
+
+export function AuthorAvatar(props: { name: string; email?: string }) {
+  const { name, email } = props;
+  const hasGitHubRemote = useHasGitHubRemote();
+  const avatarUrl = email ? githubAvatarUrl(email, hasGitHubRemote) : null;
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+
+  if (avatarUrl && failedUrl !== avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        aria-hidden
+        className={cn('w-5 h-5 rounded-full shrink-0 bg-fill', loadedUrl !== avatarUrl && 'opacity-0')}
+        onError={() => setFailedUrl(avatarUrl)}
+        onLoad={(event) => {
+          // GitHub answers unknown emails with a full-size identicon, ignoring the size param
+          if (event.currentTarget.naturalWidth > 100) {
+            setFailedUrl(avatarUrl);
+            return;
+          }
+          setLoadedUrl(avatarUrl);
+        }}
+      />
+    );
+  }
+
   const initial = name.trim().charAt(0).toUpperCase() || '?';
   let hash = 0;
   for (const char of name) {
@@ -75,7 +115,7 @@ function CommitRow(props: { commit: Commit; onOpen: () => void; onCompareFrom: (
       tooltip={`${commit.message}\nView this commit`}
       meta={
         <>
-          <AuthorAvatar name={commit.author} />
+          <AuthorAvatar name={commit.author} email={commit.authorEmail} />
           <span className="truncate text-text-secondary">{commit.author}</span>
           <span aria-hidden>·</span>
           <code className="shrink-0 font-mono text-[11px]">{commit.shortHash}</code>

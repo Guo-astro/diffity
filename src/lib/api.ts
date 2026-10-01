@@ -70,6 +70,7 @@ export interface Commit {
   shortHash: string;
   message: string;
   author: string;
+  authorEmail: string;
   date: string;
   relativeDate: string;
   filesChanged: number;
@@ -238,6 +239,7 @@ function toCommit(commit: tauri.CommitRecord): Commit {
     shortHash: commit.shortSha,
     message: commit.subject,
     author: commit.author,
+    authorEmail: commit.authorEmail ?? '',
     date: commit.date,
     relativeDate: dayjs(commit.date).fromNow(),
     filesChanged: commit.filesChanged ?? 0,

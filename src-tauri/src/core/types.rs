@@ -135,6 +135,8 @@ pub struct Commit {
     pub short_sha: String,
     pub subject: String,
     pub author: String,
+    #[serde(default)]
+    pub author_email: String,
     pub date: String,
     #[serde(default)]
     pub files_changed: u32,
