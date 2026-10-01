@@ -613,12 +613,7 @@ export function DiffPage(props: DiffPageProps) {
               </p>
             )}
             {reviewsEnabled && (
-              <OutsideThreads
-                threads={threads}
-                commentActions={commentActions}
-                viewEmpty
-                className="mx-auto mt-8 mb-10 w-full max-w-[760px] px-6"
-              />
+              <OutsideThreads threads={threads} viewEmpty className="mt-8 mb-10 px-6" />
             )}
             {composerMoved && pendingSelection && (
               <MovedComposer selection={pendingSelection} onSubmit={handleAddThread} onCancel={() => setPendingSelection(null)} />

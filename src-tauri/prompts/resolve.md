@@ -29,7 +29,7 @@ Every file write is shown to the user, who can allow or reject it. A rejected wr
 1. Call `list_threads` with `status: "open"`. If a target thread was given, handle only that thread.
 2. If there are no open threads, say there is nothing to resolve and stop.
 3. For each open thread, look at its `comments` and each comment's `authorType` (`user`, `agent`, `github`):
-   a. **Skip** general comments (`filePath` `__general__`) — they are summaries, not actionable changes.
+   a. **Skip** general comments (`filePath` `__general__`) started by an agent — they are review summaries, not actionable changes. General comments from the user are requests about the whole change: handle them like any other thread.
    b. **Skip** threads whose last comment is an agent reply asking the user a question that has not been answered yet. Still process threads where an agent left the original review comment — those are actionable.
    c. `nit` threads are minor but still actionable. Resolve them like any other.
    d. `question` threads from the user: read the question, examine the code, and `resolve` with your answer as the summary.

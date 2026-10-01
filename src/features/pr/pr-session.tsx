@@ -370,7 +370,7 @@ export function OwnPrAction(props: { diffRef: string | null }) {
         title={`${uncommitted} uncommitted file${uncommitted === 1 ? '' : 's'} on the branch of your PR #${pr.number}`}
       >
         <PushIcon size="md" />
-        Commit & push
+        <span className="@max-3xl/titlebar:hidden">Commit & push</span>
       </button>
     );
   }
@@ -393,7 +393,7 @@ export function OwnPrAction(props: { diffRef: string | null }) {
   return (
     <button onClick={() => void pushNow()} className={cn(buttonPrimary, 'px-2.5')} title={`Push your local commits so PR #${pr.number} updates`}>
       <PushIcon size="md" />
-      Push {status.ahead} commit{status.ahead === 1 ? '' : 's'}
+      <span className="@max-3xl/titlebar:hidden">Push {status.ahead} commit{status.ahead === 1 ? '' : 's'}</span>
     </button>
   );
 }

@@ -68,7 +68,7 @@ export function TitleBar(props: TitleBarProps) {
     <div
       data-tauri-drag-region
       className={cn(
-        'flex items-center gap-2 h-11 shrink-0 pr-2.5 bg-frame font-sans text-[13px] select-none',
+        '@container/titlebar flex items-center gap-2 h-11 shrink-0 min-w-0 pr-2.5 bg-frame font-sans text-[13px] select-none',
         hasOverlayTitleBar && !insideRail && 'pl-[86px]',
         insideRail && (hasOverlayTitleBar ? (sidebarToggle ? 'pl-[26px]' : 'pl-[34px]') : 'pl-2'),
         !hasOverlayTitleBar && !insideRail && 'pl-3',
@@ -106,7 +106,7 @@ function RepoCrumb(props: { name: string; path?: string }) {
   };
 
   return (
-    <div className={cn('group/crumb flex items-center shrink-0 max-w-[220px] rounded-md hover:bg-hover transition-colors', menu.open && 'bg-hover')}>
+    <div className={cn('group/crumb flex items-center min-w-12 max-w-[220px] rounded-md hover:bg-hover transition-colors', menu.open && 'bg-hover')}>
       <button
         onClick={nav.toOverview}
         className="flex items-center gap-1.5 h-7 min-w-0 pl-1.5 pr-1 rounded-l-md font-semibold text-text text-[13px] cursor-pointer"

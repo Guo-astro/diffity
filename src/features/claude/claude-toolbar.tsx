@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getRepoPath } from '../../lib/api';
 import { TREE_REF } from '../../lib/types';
-import type { CommentThread } from '../../components/comments/types';
-import { enqueueClaude, openRunResult, runLabel, runViewLabel, stopClaude, useActiveRun, useQueuedCount } from './claude-runner';
+import { openRunResult, runLabel, runViewLabel, stopClaude, useActiveRun, useQueuedCount } from './claude-runner';
 import { useCurrentViewRef } from '../../hooks/use-current-view';
 import { useRepoPath } from '../../hooks/use-repo';
 import { buttonClaude } from '../../components/ui/button-styles';
 import { AskClaudePopover, useAskClaudeRequest } from './ask-claude-review';
 import { cn } from '../../lib/cn';
+import { toast } from 'sonner';
 import { useReviewState } from '../review/review-state';
 import { SparkleIcon, StopIcon } from '../../components/ui/icon';
 import { Spinner } from '../../components/icons/spinner';
@@ -15,7 +14,6 @@ import { Spinner } from '../../components/icons/spinner';
 interface ClaudeToolbarProps {
   diffRef: string | null;
   sessionId: string | null;
-  threads: CommentThread[];
   hasChanges?: boolean;
   focusedFile?: string | null;
 }
@@ -59,41 +57,41 @@ export function ClaudeStatus() {
   return (
     <div className="flex items-stretch h-7 rounded-md border border-control-border bg-raised overflow-hidden text-xs min-w-0">
       <span
-        className="flex items-center gap-2 pl-2.5 pr-2 text-text whitespace-nowrap min-w-0"
+        className="flex items-center gap-2 pl-2.5 pr-2 text-text whitespace-nowrap min-w-0 overflow-hidden"
         title={where ? `Working on ${where}` : undefined}
       >
         <Spinner className="text-claude" />
-        <span className="font-medium">{runLabel(run.action)}</span>
+        <span className="font-medium truncate @max-3xl/titlebar:hidden">{runLabel(run.action)}</span>
         {(run.skipsPrompts || run.editsApproved) && (
           <span
-            className="text-text-secondary"
+            className="text-text-secondary @max-5xl/titlebar:hidden"
             title={run.skipsPrompts ? 'Claude edits files and runs commands without asking. Change in Settings → Claude Code.' : 'You allowed edits for this run'}
           >
             · {run.skipsPrompts ? 'no permission prompts' : 'auto-approving edits'}
           </span>
         )}
         {elsewhere && where && (
-          <span className="text-text-secondary truncate max-w-[180px]">on {where}</span>
+          <span className="text-text-secondary truncate max-w-[180px] @max-4xl/titlebar:hidden">on {where}</span>
         )}
         {showCount && (
           canOpen ? (
             <button
               onClick={() => openRunResult(run)}
-              className="text-text-secondary underline decoration-text-muted/50 underline-offset-2 hover:text-text cursor-pointer"
+              className="text-text-secondary @max-2xl/titlebar:hidden underline decoration-text-muted/50 underline-offset-2 hover:text-text cursor-pointer"
               title={where ? `Show Claude's comments on ${where}` : "Show Claude's comments"}
             >
               {countLabel}
             </button>
           ) : (
-            <span className="text-text-secondary">{countLabel}</span>
+            <span className="text-text-secondary @max-2xl/titlebar:hidden">{countLabel}</span>
           )
         )}
         {run.startedAt && <span className="text-text-muted tabular-nums">{formatElapsed(now - run.startedAt)}</span>}
-        {queued > 0 && <span className="text-text-muted">+{queued} queued</span>}
+        {queued > 0 && <span className="text-text-muted @max-3xl/titlebar:hidden">+{queued} queued</span>}
       </span>
       <button
         onClick={() => void stopClaude(repoPath)}
-        className="flex items-center gap-1 px-2 border-l border-control-border text-text-secondary hover:text-text hover:bg-control-hover transition-colors cursor-pointer"
+        className="flex items-center gap-1 px-2 shrink-0 border-l border-control-border text-text-secondary hover:text-text hover:bg-control-hover transition-colors cursor-pointer"
         title="Stop Claude"
       >
         <StopIcon size="xs" />
@@ -104,7 +102,7 @@ export function ClaudeStatus() {
 }
 
 export function ClaudeToolbar(props: ClaudeToolbarProps) {
-  const { diffRef, sessionId, threads, hasChanges = true, focusedFile } = props;
+  const { diffRef, sessionId, hasChanges = true, focusedFile } = props;
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
@@ -112,7 +110,6 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
   const { prMode } = useReviewState();
   const requested = useAskClaudeRequest((state) => state.ref);
 
-  const openThreads = threads.filter((thread) => thread.status === 'open' && !thread.pending);
   const reviewRef = diffRef && diffRef !== TREE_REF && hasChanges ? diffRef : null;
 
   useEffect(() => {
@@ -120,31 +117,18 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
       return;
     }
     useAskClaudeRequest.setState({ ref: null });
+    if (run) {
+      toast.info('Claude is already working. Wait for it to finish or stop it first.');
+      return;
+    }
     setOpen(true);
-  }, [requested, reviewRef]);
-
-  const resolveAll = () => {
-    enqueueClaude({ kind: 'resolve' }, { repoPath: getRepoPath(), sessionId });
-  };
+  }, [requested, reviewRef, run]);
 
   if (run) {
     return <ClaudeStatus />;
   }
-  if (!reviewRef && !prMode) {
-    return null;
-  }
   if (!reviewRef) {
-    return (
-      <button
-        onClick={resolveAll}
-        disabled={openThreads.length === 0}
-        className={buttonClaude}
-        title={openThreads.length === 0 ? 'No open comments to resolve' : 'Claude works through the open comments and asks before each edit'}
-      >
-        <SparkleIcon size="md" />
-        Resolve with Claude
-      </button>
-    );
+    return null;
   }
 
   return (
@@ -157,7 +141,8 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
         aria-expanded={open}
       >
         <SparkleIcon size="md" />
-        Ask Claude<span className="hidden min-[1360px]:inline -ml-[3px]">to review</span>
+        <span className="@max-3xl/titlebar:hidden">Ask Claude</span>
+        <span className="hidden @min-[1100px]/titlebar:inline -ml-[3px]">to review</span>
       </button>
       <AskClaudePopover open={open} onClose={close} anchorRef={anchorRef} diffRef={reviewRef} sessionId={sessionId} focusedFile={focusedFile} />
     </>

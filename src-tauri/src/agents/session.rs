@@ -854,6 +854,7 @@ impl AgentSession {
                 stop_reason: stop.clone(),
             },
             Err(e) => AgentEvent::Error {
+                code: e.code.clone(),
                 message: e.message.clone(),
             },
         };

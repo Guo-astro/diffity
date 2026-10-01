@@ -399,11 +399,7 @@ export function DiffView(props: DiffViewProps) {
             threads={threads}
             commentActions={commentActions}
           />
-          <OutsideThreads
-            threads={outsideThreads}
-            commentActions={commentActions}
-            className="rounded-lg border border-border"
-          />
+          <OutsideThreads threads={outsideThreads} className="py-1" />
         </>
       )}
       </div>

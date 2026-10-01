@@ -24,9 +24,7 @@ import type { GitHubDetails } from '../../lib/api';
 import { openSettingsAt } from '../../lib/ui-store';
 import { getRepoPath } from '../../lib/api';
 import { mentionsAgent } from '../../lib/mentions';
-import { enqueueClaude, useBusyThreadIds } from '../claude/claude-runner';
-import { TREE_REF } from '../../lib/types';
-import { parseCommitRef } from '../../lib/api';
+import { canSendToClaude, enqueueClaude, useBusyThreadIds } from '../claude/claude-runner';
 import { GENERAL_THREAD_FILE_PATH, type CommentThread } from '../../components/comments/types';
 import { toast } from 'sonner';
 import { MentionTextarea } from '../../components/comments/mention-textarea';
@@ -72,24 +70,6 @@ export function unaddressedThreads(threads: CommentThread[]): CommentThread[] {
     const last = thread.comments[thread.comments.length - 1];
     return !!last && last.author.type === 'user';
   });
-}
-
-/** Where "Send to Claude" makes sense: Claude edits the working tree, so not on an old commit or a range away from HEAD. */
-export function canSendToClaude(diffRef: string | null | undefined): boolean {
-  if (!diffRef) {
-    return true;
-  }
-  if (diffRef === 'work' || diffRef === 'staged' || diffRef === 'unstaged' || diffRef === TREE_REF) {
-    return true;
-  }
-  if (parseCommitRef(diffRef)) {
-    return false;
-  }
-  if (diffRef.includes('..')) {
-    const head = diffRef.split(/\.{2,3}/)[1];
-    return !head || head === 'HEAD';
-  }
-  return true;
 }
 
 export function FinishReview(props: FinishReviewProps) {
@@ -178,6 +158,7 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
   const selectedClaude = fromClaude.filter((thread) => pickedClaude.has(thread.id));
   const selected = [...candidates.filter((thread) => !excluded.has(thread.id)), ...selectedClaude];
   const count = candidates.length + fromClaude.length + pendingCount;
+  const sendCount = selected.length + pendingCount;
   const claudeProblem = useClaudeProblem(count > 0);
 
   const groups = useMemo(() => threadsByFile(local), [local]);
@@ -243,11 +224,12 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
         onClick={() => setOpen(!open)}
         disabled={submit.isPending}
         className={buttonClaudeSolid}
-        title={`Claude answers questions and makes the requested changes for ${plural(count, 'open comment')}, asking before each edit`}
+        title={`Claude answers questions and makes the requested changes for ${plural(sendCount || count, 'open comment')}`}
         aria-expanded={open}
       >
         <SendIcon size="md" />
-        Send {count} to Claude
+        <span className="@max-3xl/titlebar:hidden">{sendCount > 0 ? `Send ${sendCount} to Claude` : 'Send to Claude'}</span>
+        {sendCount > 0 && <span className="hidden @max-3xl/titlebar:inline tabular-nums">{sendCount}</span>}
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} align="end" width={420} className="p-0">
         <form
@@ -265,7 +247,7 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
         >
           <div className="px-4 pt-3.5 pb-2">
             <div className="text-[13px] font-semibold text-text">Send comments to Claude</div>
-            <p className="mt-0.5 text-xs text-text-secondary">Claude edits your working tree to address them, asks before each edit, and replies on each thread.</p>
+            <p className="mt-0.5 text-xs text-text-secondary">Claude edits your working tree to address them and replies on each thread.</p>
           </div>
           <div className="max-h-[300px] overflow-y-auto px-2">
             {local.length > 0 && fromClaude.length > 0 && <div className="px-2 pt-2 pb-0.5 text-[11px] font-medium text-text-muted">Your comments</div>}
@@ -552,6 +534,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
   const repoPath = getRepoPath();
   const { sessionId, pendingReview } = useReviewState();
   const { submit, post, discard } = useReviewActions(sessionId);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [open, setOpen] = useState(false);
   const [body, setBody] = useState('');
   const [verdict, setVerdict] = useState<ReviewVerdict>('comment');
@@ -712,7 +695,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
         title={badgeCount > 0 ? `${plural(badgeCount, 'comment')} ready to post to #${pr.prNumber}` : `Submit your review of pull request #${pr.prNumber}`}
       >
         <GitPullRequestIcon size="md" className={badgeCount > 0 ? 'text-white' : 'text-added'} />
-        Submit review #{pr.prNumber}
+        <span className="@max-3xl/titlebar:hidden">Submit review</span> #{pr.prNumber}
         {badgeCount > 0 && (
           <span className="inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-white/25 text-[10px] font-semibold tabular-nums">
             {badgeCount}
@@ -793,7 +776,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
             checked={sendClaude}
             onToggle={() => setSendClaude(!sendClaude)}
             title={<><SparkleIcon size="sm" className="text-claude" />Send to Claude</>}
-            hint="Claude edits your local checkout of this PR branch and asks before each edit."
+            hint="Claude edits your local checkout of this PR branch."
           >
             <div role="radiogroup" aria-label="What Claude gets">
               <RadioRow
@@ -842,12 +825,19 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
           <div className="flex items-center gap-2 px-4 py-3 border-t border-overlay-border">
             {pendingReview && pendingCount > 0 && (
               <button
-                onClick={() => discard.mutate(undefined, { onSuccess: close })}
+                onClick={() => {
+                  if (!confirmDiscard) {
+                    setConfirmDiscard(true);
+                    return;
+                  }
+                  discard.mutate(undefined, { onSuccess: close });
+                }}
+                onBlur={() => setConfirmDiscard(false)}
                 disabled={discard.isPending}
-                className={cn(buttonGhost, 'px-2 text-deleted hover:text-deleted')}
+                className={cn(buttonGhost, 'px-2 text-deleted hover:text-deleted', confirmDiscard && 'bg-deleted/10')}
                 title="Delete all draft comments"
               >
-                Discard drafts
+                {confirmDiscard ? `Discard ${plural(pendingCount, 'draft')}?` : 'Discard drafts'}
               </button>
             )}
             <div className="flex-1" />

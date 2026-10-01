@@ -352,7 +352,7 @@ export function createAgentMockHandlers(deps: AgentMockDeps): Record<string, (ar
         createdAt: deps.now(),
       });
       if (text.toLowerCase().includes('fail')) {
-        emit({ type: 'error', message: 'Authentication required: run `claude` in a terminal to log in.' });
+        emit({ type: 'error', code: 'agent_auth_required', message: 'Authentication required: run `claude` in a terminal to log in.' });
         record(chatId, { id: deps.newId(), chatId, role: 'agent', content: events, createdAt: deps.now() });
         return null;
       }

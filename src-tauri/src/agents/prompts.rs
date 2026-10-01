@@ -1,3 +1,4 @@
+use crate::agents::policy;
 use crate::agents::types::{AgentAction, AgentMode, ContextChip};
 use crate::core::types::{ReviewVerdict, Side};
 
@@ -92,10 +93,15 @@ fn action_template(
     review: Option<&ReviewBrief>,
 ) -> Option<String> {
     match action {
-        AgentAction::Thread { thread_id } => Some(render(
-            THREAD,
-            &[("ref", session_ref), ("threadId", thread_id)],
-        )),
+        AgentAction::Thread { thread_id } => {
+            let mut rendered = render(THREAD, &[("ref", session_ref), ("threadId", thread_id)]);
+            if !policy::can_write_files(mode) {
+                rendered.push_str(
+                    "\n\n## Read-only\n\nThis diff is a past commit, so you cannot edit files. If the comment asks for a change, `reply` describing the change you would make instead of editing, and leave the thread open.\n",
+                );
+            }
+            Some(rendered)
+        }
         AgentAction::ReviewFeedback { .. } => {
             let fallback = ReviewBrief::default();
             Some(render_review_feedback(session_ref, review.unwrap_or(&fallback)))

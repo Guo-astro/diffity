@@ -68,7 +68,7 @@ export function triggerClaude(review: Review, scope: ClaudeScope): string | null
   }
   if (scope === 'all') {
     enqueueClaude({ kind: 'reviewFeedback', reviewId: review.id }, context);
-    return 'Claude is working through it (see the status in the toolbar)';
+    return 'Claude is working through it';
   }
   for (const threadId of review.mentionedThreadIds) {
     enqueueClaude({ kind: 'thread', threadId }, context);

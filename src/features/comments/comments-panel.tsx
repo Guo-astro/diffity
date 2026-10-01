@@ -14,7 +14,13 @@ import { SegmentedToggle } from '../../components/ui/segmented-toggle';
 import { formatRelativeTime } from '../../components/comments/comment-bubble';
 import { GENERAL_THREAD_FILE_PATH } from '../../components/comments/types';
 import { InlineMarkdown } from '../../components/comments/inline-markdown';
-import { ChevronIcon, CommentIcon, FileIcon, GitCommitIcon, GitCompareIcon, PencilIcon, SparkleIcon, XIcon } from '../../components/ui/icon';
+import { CheckIcon, ChevronIcon, CommentIcon, FileIcon, GitCommitIcon, GitCompareIcon, PencilIcon, SparkleIcon, UndoIcon, XIcon } from '../../components/ui/icon';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { errorMessage, updateThreadStatus } from '../../lib/api';
+import { enqueueClaude, useThreadActivity } from '../claude/claude-runner';
+import { useReviewThreads } from '../../hooks/use-review-threads';
+import { MarkdownContent } from '../../components/layout/markdown-content';
 
 type StatusFilter = 'open' | 'resolved' | 'all';
 type AuthorFilter = 'all' | 'agent' | 'user';
@@ -123,6 +129,39 @@ const severityLabels: Record<string, string> = {
   question: 'Question',
 };
 
+/** Full conversation of a thread whose code is no longer in its view, so it can't be read in the diff. */
+function OutdatedThreadBody(props: { thread: RepoThread }) {
+  const { thread } = props;
+  const { data, isLoading } = useReviewThreads(thread.sessionId);
+  const full = data?.find((item) => item.id === thread.id);
+
+  if (isLoading) {
+    return <div className="mt-2 text-xs text-text-muted">Loading…</div>;
+  }
+  if (!full) {
+    return null;
+  }
+  return (
+    <div className="mt-2 rounded-md border border-border-muted bg-bg-secondary/50 overflow-hidden cursor-auto" onClick={(event) => event.stopPropagation()}>
+      {full.anchorContent && (
+        <pre className="px-2.5 py-1.5 text-[11px] font-mono text-text-muted border-b border-border-muted overflow-x-auto whitespace-pre max-h-24 overflow-y-auto">{full.anchorContent}</pre>
+      )}
+      {full.comments.map((comment) => (
+        <div key={comment.id} className="px-2.5 py-2 border-t border-border-muted first:border-t-0">
+          <div className="flex items-center gap-1.5 text-xs">
+            {comment.author.type === 'agent' && <SparkleIcon className="w-3 h-3 text-claude" />}
+            <span className="font-medium text-text">{comment.author.name}</span>
+            <span className="text-text-muted">{formatRelativeTime(comment.createdAt)}</span>
+          </div>
+          <div className="mt-0.5 text-[13px] leading-5 text-text-secondary select-text">
+            <MarkdownContent content={comment.body} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 interface ThreadRowProps {
   thread: RepoThread;
   onOpen: (thread: RepoThread) => void;
@@ -131,10 +170,33 @@ interface ThreadRowProps {
 
 function ThreadRow(props: ThreadRowProps) {
   const { thread, onOpen, onOpenCommit } = props;
+  const queryClient = useQueryClient();
   const line = lineLabel(thread);
   const note = anchorNote(thread);
-  const openable = thread.anchor !== 'unknown';
+  const outdated = thread.anchor !== 'current' && thread.anchor !== 'unknown';
+  const openable = thread.anchor === 'current' || outdated;
+  const [expanded, setExpanded] = useState(false);
   const isAgent = thread.authorType === 'agent';
+  const isOpen = thread.status === 'open';
+  const activity = useThreadActivity(thread.id);
+  const repoPath = useRepoPath();
+  const canAskClaude = isOpen && !thread.pending && thread.anchor !== 'current' && thread.anchor !== 'unknown' && activity === 'idle';
+  const open = () => {
+    if (thread.anchor === 'current') {
+      onOpen(thread);
+      return;
+    }
+    setExpanded(!expanded);
+  };
+  const toggleStatus = () => {
+    updateThreadStatus(thread.id, isOpen ? 'resolved' : 'open').then(
+      () => {
+        queryClient.invalidateQueries({ queryKey: ['repo-threads'] });
+        queryClient.invalidateQueries({ queryKey: ['threads'] });
+      },
+      (error) => toast.error(errorMessage(error)),
+    );
+  };
 
   return (
     <div
@@ -142,19 +204,19 @@ function ThreadRow(props: ThreadRowProps) {
       tabIndex={openable ? 0 : -1}
       onClick={() => {
         if (openable) {
-          onOpen(thread);
+          open();
         }
       }}
       onKeyDown={(event) => {
         if (event.key === 'Enter' && openable) {
-          onOpen(thread);
+          open();
         }
       }}
       className={cn(
         'group flex gap-2.5 px-3 py-2.5 rounded-lg bg-bg border border-border transition-colors outline-none focus-visible:border-focus',
-        openable ? 'hover:border-control-border hover:bg-bg-secondary cursor-pointer' : 'opacity-70',
+        openable ? 'hover:border-control-border hover:bg-bg-secondary cursor-pointer' : 'cursor-default',
       )}
-      title={openable ? 'Open this comment' : undefined}
+      title={openable ? (thread.anchor === 'current' ? 'Open this comment' : expanded ? 'Hide the conversation' : 'Show the whole conversation') : undefined}
     >
       <span
         className={cn(
@@ -176,12 +238,45 @@ function ThreadRow(props: ThreadRowProps) {
           {thread.pending && <ThreadBadge variant="pending" />}
           {thread.status !== 'open' && <ThreadBadge variant={thread.status} />}
           {thread.anchor !== 'current' && <ThreadBadge variant="outdated" />}
-          <span className="ml-auto text-xs text-text-muted shrink-0">{formatRelativeTime(thread.updatedAt)}</span>
+          <span className="ml-auto text-xs text-text-muted shrink-0 group-hover:hidden group-focus-within:hidden">{formatRelativeTime(thread.updatedAt)}</span>
+          {canAskClaude && (
+            <button
+              onClick={(event) => {
+                event.stopPropagation();
+                enqueueClaude({ kind: 'thread', threadId: thread.id }, { repoPath, sessionId: thread.sessionId, ref: thread.ref });
+              }}
+              className="ml-auto hidden group-hover:inline-flex group-focus-within:inline-flex items-center gap-1 h-5 -my-0.5 px-1.5 rounded text-xs text-text-secondary hover:text-text hover:bg-hover cursor-pointer shrink-0"
+              title="Claude answers or makes the change for this comment"
+            >
+              <SparkleIcon className="w-3 h-3 text-claude" />
+              Ask Claude
+            </button>
+          )}
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleStatus();
+            }}
+            className={cn(
+              'hidden group-hover:inline-flex group-focus-within:inline-flex items-center gap-1 h-5 -my-0.5 px-1.5 rounded text-xs text-text-secondary hover:text-text hover:bg-hover cursor-pointer shrink-0',
+              !canAskClaude && 'ml-auto',
+            )}
+          >
+            {isOpen ? <CheckIcon size="xs" /> : <UndoIcon size="xs" />}
+            {isOpen ? 'Resolve' : 'Reopen'}
+          </button>
         </div>
-        <InlineMarkdown text={thread.excerpt || 'Comment'} className="text-[13px] leading-5 text-text line-clamp-2 mt-0.5" />
+        {!expanded && <InlineMarkdown text={thread.excerpt || 'Comment'} className="text-[13px] leading-5 text-text line-clamp-2 mt-0.5" />}
+        {expanded && <OutdatedThreadBody thread={thread} />}
+        {activity !== 'idle' && (
+          <div className="flex items-center gap-1.5 mt-1 text-xs text-text-muted">
+            <SparkleIcon className="w-3 h-3 text-claude" />
+            {activity === 'working' ? 'Claude is working…' : 'Queued for Claude'}
+          </div>
+        )}
         {(thread.replyCount > 0 || note) && (
           <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1 text-xs text-text-secondary">
-            {thread.replyCount > 0 && (
+            {thread.replyCount > 0 && !expanded && (
               <span>{thread.replyCount} repl{thread.replyCount === 1 ? 'y' : 'ies'}</span>
             )}
             {note && <span className="text-text-secondary">{note}</span>}

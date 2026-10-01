@@ -2,9 +2,10 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import * as tauri from '../../lib/tauri';
 import { queryClient } from '../../lib/query-client';
-import { openSettingsAt } from '../../lib/ui-store';
+import { openComments, openSettingsAt } from '../../lib/ui-store';
 import type { AgentAction, AgentInfo, AgentMode, PermissionDiff, PermissionOption, RepoThread } from '../../lib/types';
-import { refForSession } from '../../lib/api';
+import { parseCommitRef, refForSession } from '../../lib/api';
+import { TREE_REF } from '../../lib/types';
 import { goToThread, viewLabel } from '../../lib/thread-location';
 import type { CommentThread } from '../../components/comments/types';
 import { getPermissionSetting, runSkipsPrompts, showBypassNotice } from './permission-setting';
@@ -38,6 +39,8 @@ export interface ClaudeRun {
   newThreadIds: string[];
   /** The run edits without any permission prompts (Settings → Claude Code → Permissions). */
   skipsPrompts: boolean;
+  /** Stop was pressed before the chat started. */
+  stopRequested?: boolean;
   /** The user chose "Allow for this run": later edits in this run are approved automatically. */
   editsApproved: boolean;
 }
@@ -66,8 +69,29 @@ const pumping = new Set<string>();
 
 const AGENT_ID = 'claude';
 
-function modeFor(action: ClaudeAction): AgentMode {
-  return action.kind === 'review' ? 'review' : 'resolve';
+/** Where Claude may edit files: Claude edits the working tree, so not on an old commit or a range away from HEAD. */
+export function canSendToClaude(diffRef: string | null | undefined): boolean {
+  if (!diffRef) {
+    return true;
+  }
+  if (diffRef === 'work' || diffRef === 'staged' || diffRef === 'unstaged' || diffRef === TREE_REF) {
+    return true;
+  }
+  if (parseCommitRef(diffRef)) {
+    return false;
+  }
+  if (diffRef.includes('..')) {
+    const head = diffRef.split(/\.{2,3}/)[1];
+    return !head || head === 'HEAD';
+  }
+  return true;
+}
+
+function modeFor(action: ClaudeAction, ref: string | null): AgentMode {
+  if (action.kind === 'review' || (ref && !canSendToClaude(ref))) {
+    return 'review';
+  }
+  return 'resolve';
 }
 
 export function runLabel(action: ClaudeAction): string {
@@ -78,11 +102,11 @@ export function runLabel(action: ClaudeAction): string {
       if (action.threadIds && action.threadIds.length > 0) {
         return `Claude is working on ${action.threadIds.length} comment${action.threadIds.length === 1 ? '' : 's'}`;
       }
-      return action.threadId ? 'Claude is on a thread' : 'Claude is resolving';
+      return action.threadId ? 'Claude is working on a comment' : 'Claude is resolving';
     case 'thread':
       return 'Claude is replying';
     case 'reviewFeedback':
-      return 'Claude is on your review';
+      return 'Claude is working through your review';
   }
 }
 
@@ -167,7 +191,11 @@ export async function stopClaude(repoPath: string) {
   useClaude.setState((state) => ({
     runs: state.runs.filter((run) => run.context.repoPath !== repoPath || run.state === 'running'),
   }));
-  if (!running?.chatId) {
+  if (!running) {
+    return;
+  }
+  if (!running.chatId) {
+    patchRun(running.id, { stopRequested: true });
     return;
   }
   const waiting = permissions.filter((permission) => permission.runId === running.id);
@@ -223,17 +251,51 @@ async function resolveSession(run: ClaudeRun): Promise<string> {
     }
   }
   if (!context.sessionId) {
-    throw new Error('No review session');
+    throw new Error('There are no changes here for Claude to work on. Open a diff and try again.');
   }
   return context.sessionId;
 }
 
-function friendlyError(message: string): string {
-  const lower = message.toLowerCase();
-  if (lower.includes('auth') || lower.includes('login') || lower.includes('log in') || lower.includes('api key')) {
-    return `${message} — Claude Code is not logged in. Run \`claude\` in a terminal to log in.`;
+interface ClaudeFailure {
+  code: string;
+  message: string;
+}
+
+function toFailure(error: unknown): ClaudeFailure {
+  if (tauri.isAppError(error)) {
+    return { code: error.code, message: error.message };
   }
-  return message;
+  return { code: '', message: tauri.errorMessage(error) };
+}
+
+function summarize(message: string): string {
+  const first = message.trim().split('\n')[0] ?? '';
+  return first.length > 160 ? `${first.slice(0, 157)}…` : first;
+}
+
+/** Plain message for known failures; raw output stays behind "Copy details". */
+function showFailure(title: string, failure: ClaudeFailure) {
+  if (failure.code === 'agent_auth_required') {
+    toast.error(title, {
+      description: 'Claude Code is not logged in. Run `claude` in a terminal to log in.',
+      action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') },
+    });
+    return;
+  }
+  if (failure.code === 'agent_not_installed') {
+    toast.error(title, {
+      description: 'Claude Code is not installed. Install the `claude` CLI and try again.',
+      action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') },
+    });
+    return;
+  }
+  const multiline = failure.message.trim().includes('\n');
+  toast.error(title, {
+    description: summarize(failure.message) || undefined,
+    action: multiline
+      ? { label: 'Copy details', onClick: () => void navigator.clipboard.writeText(failure.message).catch(() => undefined) }
+      : undefined,
+  });
 }
 
 function cachedRepoThreads(repoPath: string): RepoThread[] {
@@ -259,6 +321,11 @@ export function openRunResult(run: Pick<ClaudeRun, 'context' | 'ref' | 'newThrea
     return;
   }
   const threadId = run.newThreadIds[0] ?? run.threadIds[0] ?? null;
+  const anchor = threadId ? cachedRepoThreads(run.context.repoPath).find((thread) => thread.id === threadId)?.anchor : undefined;
+  if (anchor && anchor !== 'current') {
+    openComments();
+    return;
+  }
   goToThread(run.context.repoPath, { ref: run.ref, threadId });
 }
 
@@ -311,7 +378,7 @@ async function batchOutcome(sessionId: string, threadIds: string[]): Promise<{ t
   const untouched = worked.length - resolved - replied;
   const plural = (count: number) => `${count} comment${count === 1 ? '' : 's'}`;
   if (resolved + replied === 0) {
-    return worked.length > 0 ? { title: `Claude left ${plural(worked.length)} untouched`, detail: null } : null;
+    return worked.length > 0 ? { title: `Claude skipped ${plural(worked.length)}`, detail: null } : null;
   }
   if (untouched === 0 && resolved === 0) {
     return { title: `Claude replied to ${plural(replied)}`, detail: null };
@@ -322,7 +389,7 @@ async function batchOutcome(sessionId: string, threadIds: string[]): Promise<{ t
   const parts = [
     resolved > 0 ? `${resolved} resolved` : null,
     replied > 0 ? `${replied} replied` : null,
-    untouched > 0 ? `${untouched} untouched` : null,
+    untouched > 0 ? `${untouched} skipped` : null,
   ].filter(Boolean);
   return { title: `Claude handled ${resolved + replied} of ${plural(worked.length)}`, detail: parts.join(' · ') };
 }
@@ -344,12 +411,16 @@ async function execute(run: ClaudeRun) {
   const chat = await tauri.startChat({
     repoPath: run.context.repoPath,
     agentId: agent.id,
-    mode: modeFor(run.action),
+    mode: modeFor(run.action, ref),
     sessionId,
     title: chatTitle(run.action),
   });
-  const skipsPrompts = runSkipsPrompts(modeFor(run.action), run.action, await getPermissionSetting());
+  const skipsPrompts = runSkipsPrompts(modeFor(run.action, ref), run.action, await getPermissionSetting());
   patchRun(run.id, { chatId: chat.id, sessionId, startedAt: Date.now(), ref, skipsPrompts });
+  if (useClaude.getState().runs.find((item) => item.id === run.id)?.stopRequested) {
+    toast.info('Claude was stopped');
+    return;
+  }
   if (skipsPrompts) {
     showBypassNotice(() => openSettingsAt('claude'));
   }
@@ -375,7 +446,7 @@ async function execute(run: ClaudeRun) {
     })
     .catch(() => null);
 
-  let failed: string | null = null;
+  let failed: ClaudeFailure | null = null;
   let cancelled = false;
   try {
     await tauri.sendPrompt(chat.id, '', [], run.action, (event) => {
@@ -392,7 +463,7 @@ async function execute(run: ClaudeRun) {
         return;
       }
       if (event.type === 'error') {
-        failed = event.message;
+        failed = { code: event.code ?? '', message: event.message };
         return;
       }
       if (event.type === 'done' && event.stopReason === 'cancelled') {
@@ -400,14 +471,14 @@ async function execute(run: ClaudeRun) {
       }
     });
   } catch (error) {
-    failed = tauri.errorMessage(error);
+    failed = toFailure(error);
   } finally {
     unlisten?.();
     queryClient.invalidateQueries({ queryKey: ['threads', sessionId] });
     queryClient.invalidateQueries({ queryKey: ['reviews'] });
   }
   if (failed) {
-    toast.error('Claude stopped with an error', { description: friendlyError(failed) });
+    showFailure('Claude stopped with an error', failed);
     return;
   }
   if (cancelled) {
@@ -420,11 +491,11 @@ async function execute(run: ClaudeRun) {
   const batch = run.action.kind === 'resolve' ? await batchOutcome(sessionId, finished.threadIds) : null;
   const posted = await postRepliesToGitHub(sessionId, run.context.postRepliesToGitHub ?? []);
   const postedNote = posted > 0 ? `Posted ${posted} repl${posted === 1 ? 'y' : 'ies'} to GitHub` : null;
-  const description = batch ? [batch.detail, 'Edits are in your working tree', postedNote].filter(Boolean).join(' · ') : postedNote ?? undefined;
+  const description = batch ? [batch.detail, postedNote].filter(Boolean).join(' · ') : postedNote ?? undefined;
   toast.success(batch?.title ?? finishedMessage(finished, added), {
     description,
     duration: hasTarget ? 12_000 : undefined,
-    action: hasTarget ? { label: batch ? 'View changes' : added > 0 ? 'Show comments' : 'Show thread', onClick: () => openRunResult(finished) } : undefined,
+    action: hasTarget ? { label: batch || added > 0 ? 'Show comments' : 'Show thread', onClick: () => openRunResult(finished) } : undefined,
   });
 }
 
@@ -452,10 +523,7 @@ async function pump(repoPath: string) {
       try {
         await execute(next);
       } catch (error) {
-        toast.error('Could not start Claude', {
-          description: friendlyError(tauri.errorMessage(error)),
-          action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') },
-        });
+        showFailure('Could not start Claude', toFailure(error));
       } finally {
         removeRun(next.id);
       }

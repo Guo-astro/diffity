@@ -191,7 +191,7 @@ export function RefMenu(props: RefMenuProps) {
               setOpen(!open);
             }
           }}
-          className={cn(buttonOutline, 'max-w-[460px] min-w-0 pl-2.5 gap-1.5', isDefault ? 'pr-2' : 'pr-1', open && 'bg-control-hover')}
+          className={cn(buttonOutline, 'shrink max-w-[460px] min-w-0 pl-2.5 gap-1.5', isDefault ? 'pr-2' : 'pr-1', open && 'bg-control-hover')}
           title="Choose what to review"
         >
           <span className="shrink-0 text-text-secondary">{target.icon}</span>

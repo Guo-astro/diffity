@@ -14,6 +14,7 @@ import { LazySlice } from './lazy-slice';
 import { Spinner } from '../icons/spinner';
 import { buttonOutline } from '../ui/button-styles';
 import { cn } from '../../lib/cn';
+import { openComments } from '../../lib/ui-store';
 import { toast } from 'sonner';
 import { isRenderableFile } from '../../lib/file-types';
 import { RichDiffViewer } from './rich-diff-viewer';
@@ -31,7 +32,6 @@ import { IconButton } from '../ui/icon-button';
 import { StatusBadge } from '../ui/status-badge';
 import { PathLabel } from '../ui/path-label';
 import { HunkWithGap } from './hunk-with-gap';
-import { OrphanedThreads } from '../comments/orphaned-threads';
 import { ThreadBadge } from '../ui/thread-badge';
 import { buildExpansionSyntaxMap, renderExpansionRows } from './render-expansion-rows';
 import { ExpandRow } from './expand-row';
@@ -629,16 +629,22 @@ function FileCard(props: FileCardProps) {
               {richView ? 'Source' : 'Preview'}
             </button>
           )}
-          {(fileThreads.length + orphanedThreads.length) > 0 && (
+          {fileThreads.length > 0 && (
             <span className="text-xs text-text-secondary flex items-center gap-1">
               <CommentIcon className="w-3.5 h-3.5" />
-              {fileThreads.length + orphanedThreads.length}
-              {orphanedThreads.length > 0 && (
-                <ThreadBadge variant="outdated" size="sm">
-                  {orphanedThreads.length} outdated
-                </ThreadBadge>
-              )}
+              {fileThreads.length}
             </span>
+          )}
+          {orphanedThreads.length > 0 && (
+            <button
+              onClick={openComments}
+              className="cursor-pointer"
+              title="Comments on lines that are no longer in this diff. Open them in the Comments panel."
+            >
+              <ThreadBadge variant="outdated" size="sm">
+                {orphanedThreads.length} outdated
+              </ThreadBadge>
+            </button>
           )}
           <div className="flex items-center gap-1.5">
             <DiffStats additions={file.additions} deletions={file.deletions} />
@@ -700,12 +706,6 @@ function FileCard(props: FileCardProps) {
             </div>
           ) : (
             <>
-            <OrphanedThreads
-              threads={orphanedThreads}
-              onEditComment={editComment}
-              onDeleteComment={deleteComment}
-              onDeleteThread={deleteThread}
-            />
             <table className="w-full border-collapse table-fixed">
               {viewMode === 'split' ? (
                 <colgroup>

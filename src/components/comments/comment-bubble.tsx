@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { Comment } from './types';
 import { MarkdownContent } from '../layout/markdown-content';
 import { ThreadBadge } from '../ui/thread-badge';
-import { PencilIcon, TrashIcon } from '../ui/icon';
+import { PencilIcon, SparkleIcon, TrashIcon } from '../ui/icon';
 
 interface CommentBubbleProps {
   comment: Comment;
@@ -44,11 +44,18 @@ function AuthorAvatar(props: { name: string; avatarUrl?: string; type: 'user' | 
     );
   }
 
-  const tone = type === 'agent' ? 'bg-claude/12 text-claude' : 'bg-fill text-text-secondary';
+  if (type === 'agent') {
+    return (
+      <div className="w-5 h-5 rounded-full bg-claude/12 text-claude flex items-center justify-center">
+        <SparkleIcon className="w-3 h-3" />
+      </div>
+    );
+  }
+
   const initial = name.charAt(0).toUpperCase();
 
   return (
-    <div className={`w-5 h-5 rounded-full ${tone} flex items-center justify-center text-[10px] font-semibold`}>
+    <div className={`w-5 h-5 rounded-full bg-fill text-text-secondary flex items-center justify-center text-[10px] font-semibold`}>
       {initial}
     </div>
   );
@@ -101,9 +108,6 @@ export function CommentBubble(props: CommentBubbleProps) {
         <div className="flex items-center gap-2 mb-1">
           <AuthorAvatar name={comment.author.name} avatarUrl={comment.author.avatarUrl} type={comment.author.type} />
           <span className="text-[13px] font-semibold text-text">{comment.author.name}</span>
-          {comment.author.type === 'agent' && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-fill text-text-secondary font-medium">bot</span>
-          )}
           <span className="text-xs text-text-muted">{formatRelativeTime(comment.createdAt)}</span>
           {comment.pending && <ThreadBadge variant="pending" />}
           {!isEditing && (

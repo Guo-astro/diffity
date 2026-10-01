@@ -129,7 +129,7 @@ export function Toolbar(props: ToolbarProps) {
         <OwnPrAction diffRef={diffRef ?? null} />
         {(hasChanges || threads.length > 0) && (
           <>
-            <ClaudeToolbar diffRef={diffRef ?? null} sessionId={sessionId ?? null} threads={threads} hasChanges={hasChanges} focusedFile={props.focusedFile ?? null} />
+            <ClaudeToolbar diffRef={diffRef ?? null} sessionId={sessionId ?? null} hasChanges={hasChanges} focusedFile={props.focusedFile ?? null} />
             <FinishReview githubDetails={props.githubDetails ?? null} threads={threads} diffRef={diffRef ?? null} />
           </>
         )}

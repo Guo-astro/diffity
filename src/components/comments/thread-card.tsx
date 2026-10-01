@@ -15,6 +15,8 @@ import { DEFAULT_AUTHOR } from './types';
 import { hasDraft } from './comment-form';
 import { useViewState } from '../../lib/view-state';
 import { Spinner } from '../icons/spinner';
+import { ConfirmDialog } from '../ui/confirm-dialog';
+import { useState } from 'react';
 
 interface ThreadCardProps {
   thread: CommentThreadType;
@@ -123,6 +125,14 @@ export function ThreadCard(props: ThreadCardProps) {
   const canAskClaude = review.enabled && !resolved && !thread.pending && activity === 'idle' && !!onReply;
   const lastByClaude = thread.comments[thread.comments.length - 1]?.author.type === 'agent';
   const showAskClaude = canAskClaude && !lastByClaude;
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const requestDelete = () => {
+    if (thread.comments.length > 1) {
+      setConfirmDelete(true);
+      return;
+    }
+    onDeleteThread();
+  };
 
   const { details } = useGitHubPr();
   const queryClient = useQueryClient();
@@ -145,7 +155,7 @@ export function ThreadCard(props: ThreadCardProps) {
         anchorContent: thread.anchorContent ?? undefined,
         options: { pending: true },
       });
-      await api.updateThreadStatus(thread.id, 'resolved', 'Added to the GitHub review as a draft');
+      await api.updateThreadStatus(thread.id, 'resolved');
       queryClient.invalidateQueries({ queryKey: ['threads', review.sessionId] });
       queryClient.invalidateQueries({ queryKey: ['reviews', review.sessionId] });
       toast.success(`Added to your review on PR #${details.prNumber}`, { description: 'It is a draft until you submit the review. Edit it first if you like.' });
@@ -154,8 +164,8 @@ export function ThreadCard(props: ThreadCardProps) {
     }
   };
 
-  const resolveWithClaude = () => {
-    enqueueClaude({ kind: 'resolve', threadId: thread.id }, { repoPath: api.getRepoPath(), sessionId: thread.sessionId ?? null });
+  const askClaude = () => {
+    enqueueClaude({ kind: 'thread', threadId: thread.id }, { repoPath: api.getRepoPath(), sessionId: thread.sessionId ?? null });
   };
 
   return (
@@ -179,9 +189,9 @@ export function ThreadCard(props: ThreadCardProps) {
           )}
           {!compact && showAskClaude && !canPromote && (
             <button
-              onClick={resolveWithClaude}
+              onClick={askClaude}
               className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
-              title="Ask Claude Code to address this thread"
+              title="Claude answers or makes the change for this comment"
             >
               <SparkleIcon className="w-3 h-3 text-claude" />
               Ask Claude
@@ -198,15 +208,27 @@ export function ThreadCard(props: ThreadCardProps) {
           <ThreadMenu
             items={[
               ...menuItems,
-              ...(compact && onResolve && onUnresolve && !resolved ? [{ label: 'Mark as addressed', onSelect: onResolve }] : []),
+              ...(compact && onResolve && onUnresolve && !resolved ? [{ label: 'Resolve', onSelect: onResolve }] : []),
               ...(compact && onUnresolve && resolved ? [{ label: 'Reopen', onSelect: onUnresolve }] : []),
-              ...(canAskClaude && (compact || !showAskClaude || canPromote) ? [{ label: 'Ask Claude about it', onSelect: resolveWithClaude }] : []),
+              ...(canAskClaude && (compact || !showAskClaude || canPromote) ? [{ label: 'Ask Claude', onSelect: askClaude }] : []),
               ...(compact && canPromote ? [{ label: 'Add to my review', onSelect: () => void promote() }] : []),
-              { label: 'Delete thread', onSelect: onDeleteThread, danger: true },
+              { label: 'Delete thread', onSelect: requestDelete, danger: true },
             ]}
           />
         </div>
       </div>
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete thread"
+          message={`Delete this thread and its ${thread.comments.length} comments? This cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={() => {
+            setConfirmDelete(false);
+            onDeleteThread();
+          }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
       {children}
       <div>
         {thread.comments.map((comment) => (
@@ -227,7 +249,7 @@ export function ThreadCard(props: ThreadCardProps) {
               <SparkleIcon className="w-3 h-3 text-claude" />
             )}
           </span>
-          {activity === 'working' ? 'Claude Code is working…' : 'Queued for Claude Code'}
+          {activity === 'working' ? 'Claude is working…' : 'Queued for Claude'}
         </div>
       )}
       {onReply && (

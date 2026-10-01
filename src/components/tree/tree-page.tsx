@@ -418,7 +418,7 @@ export function TreePage() {
           />
           {threads.length > 0 && (
             <>
-              <ClaudeToolbar diffRef={null} sessionId={sessionId} threads={threads} />
+              <ClaudeToolbar diffRef={null} sessionId={sessionId} />
               <FinishReview githubDetails={null} threads={threads} />
             </>
           )}

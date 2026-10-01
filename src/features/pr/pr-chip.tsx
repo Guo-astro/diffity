@@ -76,7 +76,7 @@ export function PrRefChip(props: PrRefChipProps) {
   const leaveTitle = back ? back.title.replace(/^Check out/, 'Back to') : 'Back to uncommitted changes';
 
   return (
-    <div className={cn(buttonGroup, 'min-w-0 max-w-[460px]')}>
+    <div className={cn(buttonGroup, 'shrink min-w-0 max-w-[460px]')}>
       <button
         ref={labelRef}
         onClick={() => {

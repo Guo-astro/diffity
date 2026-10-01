@@ -179,6 +179,8 @@ pub enum AgentEvent {
         stop_reason: String,
     },
     Error {
+        #[serde(default)]
+        code: String,
         message: String,
     },
 }
