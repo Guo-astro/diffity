@@ -27,7 +27,7 @@ Every file write is shown to the user, who can allow or reject it. A rejected wr
 
 1. Call `list_threads` and find thread `{{threadId}}`. If it does not exist, say so and stop. Work on this thread only.
 2. Read every comment in order; the latest user comment (especially one that mentions `@claude`) is what you are responding to. Earlier comments are context.
-3. Read the file at `filePath` around `startLine`–`endLine` (`side: "old"` means removed code, visible only in the diff). `filePath` `__general__` is a comment about the whole change; use `get_diff` for context.
+3. Read the file at `filePath` around `startLine`–`endLine` (`side: "old"` means removed code, visible only in the diff). `startLine` 0 means the comment is about the whole file. `filePath` `__general__` is a comment about the whole change; use `get_diff` for context.
 4. Decide what the comment asks for:
    a. **A question or discussion** ("why…?", "is this safe?", "what does this do?"): answer it with `reply`, grounded in code you actually read (cite `path:line`). Do not edit files and do not resolve the thread — the user decides when it is done.
    b. **A change** ("rename…", "fix…", "can we add…?", "should handle X"): make the minimal change with your file editing tools (every write is shown to the user for approval), then `resolve` the thread with a short summary like "Fixed: <what changed>".

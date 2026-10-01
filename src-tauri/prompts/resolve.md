@@ -35,7 +35,7 @@ Every file write is shown to the user, who can allow or reject it. A rejected wr
    d. `question` threads from the user: read the question, examine the code, and `resolve` with your answer as the summary.
    e. Comments phrased as questions without the `question` severity ("should we add X?", "can we rename this?") are requests — make the change.
    f. Interpret the intent: code change → make it; documentation → add/update docs; implied action → do it. If genuinely unclear, `reply` with "Could you clarify what change you'd like here?" instead of silently skipping.
-   g. Read the relevant file for full context around the commented lines, then make the change with your file editing tools. Keep changes minimal and focused on the comment.
+   g. Read the relevant file for full context around the commented lines (`startLine` 0 means the comment is about the whole file), then make the change with your file editing tools. Keep changes minimal and focused on the comment.
    h. Only after the change was actually written, `resolve` the thread with a summary like "Fixed: <brief description>".
    i. If the write was rejected, follow **Rejected edits** below: `reply`, do not `resolve`.
 4. Call `list_threads` again to confirm the final status.

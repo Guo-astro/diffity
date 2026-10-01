@@ -36,6 +36,9 @@ import { ThreadBadge } from '../ui/thread-badge';
 import { buildExpansionSyntaxMap, renderExpansionRows } from './render-expansion-rows';
 import { ExpandRow } from './expand-row';
 import { useViewState } from '../../lib/view-state';
+import { FileComments, fileDraftKey } from '../comments/file-comments';
+import { hasDraft } from '../comments/comment-form';
+import { useReviewState } from '../../features/review/review-state';
 import { ChevronIcon, CodeIcon, CommentIcon, CopyIcon, EditorIcon, EllipsisIcon, FileIcon, FileTextIcon, GitCompareIcon, UndoIcon } from '../ui/icon';
 import { MenuItem, MenuSeparator, Popover, useMenu } from '../ui/popover';
 import { contentsLabel, copyAbsolutePath, copyFileContents, copyFileDiff, copyRelativePath } from '../../lib/file-copy';
@@ -280,9 +283,15 @@ function FileCard(props: FileCardProps) {
     rawAddThread(fp, side, startLine, endLine, body, author, anchorContent || undefined, options);
   }, [rawAddThread, file.hunks, allExpandedLines]);
 
-  const allFileThreads = useMemo(() => {
-    return allThreads.filter(t => t.filePath === filePath && t.filePath !== GENERAL_THREAD_FILE_PATH);
+  const { allFileThreads, wholeFileThreads } = useMemo(() => {
+    const threads = allThreads.filter(t => t.filePath === filePath && t.filePath !== GENERAL_THREAD_FILE_PATH);
+    return {
+      allFileThreads: threads.filter(t => t.startLine !== 0),
+      wholeFileThreads: threads.filter(t => t.startLine === 0),
+    };
   }, [allThreads, filePath]);
+  const { sessionId: reviewSessionId } = useReviewState();
+  const [showFileForm, setShowFileForm] = useViewState(`diff:${baseRef ?? 'work'}:file-form:${filePath}`, () => hasDraft(reviewSessionId, fileDraftKey(filePath)));
 
   const { anchoredThreads: fileThreads, orphanedThreads } = useMemo(() => {
     const diffLineNumbers = new Set<string>();
@@ -629,11 +638,24 @@ function FileCard(props: FileCardProps) {
               {richView ? 'Source' : 'Preview'}
             </button>
           )}
-          {fileThreads.length > 0 && (
-            <span className="text-xs text-text-secondary flex items-center gap-1">
+          {commentsEnabled && (
+            <button
+              onClick={() => {
+                setShowFileForm(true);
+                if (collapsed) {
+                  onToggleCollapse(filePath);
+                }
+              }}
+              className={cn(
+                'inline-flex items-center gap-1 h-6 px-1.5 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer',
+                fileThreads.length + wholeFileThreads.length === 0 && 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+              )}
+              title="Comment on this file"
+              aria-label="Comment on this file"
+            >
               <CommentIcon className="w-3.5 h-3.5" />
-              {fileThreads.length}
-            </span>
+              {fileThreads.length + wholeFileThreads.length > 0 && fileThreads.length + wholeFileThreads.length}
+            </button>
           )}
           {orphanedThreads.length > 0 && (
             <button
@@ -673,6 +695,16 @@ function FileCard(props: FileCardProps) {
       </div>
       {!collapsed && (
         <div>
+          {commentsEnabled && (
+            <FileComments
+              filePath={filePath}
+              threads={wholeFileThreads}
+              commentActions={commentActions}
+              showForm={showFileForm}
+              onAdd={(body, options) => rawAddThread(filePath, 'new', 0, 0, body, DEFAULT_AUTHOR, undefined, options)}
+              onCloseForm={() => setShowFileForm(false)}
+            />
+          )}
           {sinceViewed?.canDiff && showSinceViewed && (
             <SinceViewedDiff
               sessionId={sinceViewed.sessionId}
