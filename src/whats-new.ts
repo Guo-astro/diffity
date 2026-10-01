@@ -13,6 +13,24 @@ export interface WhatsNewRelease {
 
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
+    version: '0.0.7',
+    date: '2026-10-01',
+    items: [
+      'See GitHub avatars in the commit history',
+      'Images and HTML in pull request descriptions now show',
+      'The title bar fits smaller windows, with buttons shrinking to icons instead of overlapping',
+      'Outdated comments move out of the diff into the Comments panel, where you can read the whole thread, resolve it or ask Claude about it',
+      'Ask Claude on a comment answers questions in the thread instead of resolving them',
+      'On past commits, Claude replies with the change it would make instead of editing your files',
+      'Clearer messages when Claude fails, with the full output one click away',
+      'Confirm before deleting a thread with replies or discarding draft comments',
+      'Notification buttons sit below the text',
+      'Fixed Stop not working while Claude is starting',
+      'Fixed your general comments being skipped when sent to Claude',
+      'Fixed the Send to Claude count not matching what gets sent',
+    ],
+  },
+  {
     version: '0.0.6',
     date: '2026-09-30',
     items: [
