@@ -137,7 +137,7 @@ export const viewedChanges = (sessionId: string, filePath: string) => invoke<str
 // agents
 export const listAgents = (refresh?: boolean) => invoke<AgentInfo[]>('list_agents', { refresh: refresh ?? null });
 export const startChat = (input: StartChat) => invoke<Chat>('start_chat', { input });
-export const listChats = (repoPath: string) => invoke<Chat[]>('list_chats', { repoPath });
+export const listChats = (repoPath: string, ref?: string) => invoke<Chat[]>('list_chats', { repoPath, ref: ref ?? null });
 export const getChatMessages = (chatId: string) => invoke<ChatMessage[]>('get_chat_messages', { chatId });
 export function sendPrompt(
   chatId: string,

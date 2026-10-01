@@ -159,9 +159,9 @@ impl AgentManager {
         .await
     }
 
-    pub async fn list_chats(&self, repo_path: &str) -> Result<Vec<Chat>> {
+    pub async fn list_chats(&self, repo_path: &str, r#ref: Option<String>) -> Result<Vec<Chat>> {
         let (store, repo) = (self.store.clone(), repo_path.to_string());
-        blocking(move || chats::list(&store, &repo)).await
+        blocking(move || chats::list(&store, &repo, r#ref.as_deref())).await
     }
 
     pub async fn get_chat_messages(&self, chat_id: &str) -> Result<Vec<ChatMessage>> {

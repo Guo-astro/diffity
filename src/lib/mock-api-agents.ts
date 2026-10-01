@@ -316,6 +316,7 @@ export function createAgentMockHandlers(deps: AgentMockDeps): Record<string, (ar
     list_chats: (args) =>
       [...chats.values()]
         .filter((chat) => chat.repoPath === args.repoPath)
+        .filter((chat) => !args.ref || chat.sessionId === deps.sessionFor(String(args.repoPath), String(args.ref)).id)
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
     start_chat: (args) => {
       const input = args.input as { repoPath: string; agentId: string; mode: Chat['mode']; sessionId: string; title?: string };

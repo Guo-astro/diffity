@@ -24,8 +24,9 @@ pub async fn start_chat(state: State<'_, AppState>, input: StartChat) -> Result<
 pub async fn list_chats(
     state: State<'_, AppState>,
     repo_path: String,
+    r#ref: Option<String>,
 ) -> Result<Vec<Chat>, AppError> {
-    state.agents.list_chats(&repo_path).await
+    state.agents.list_chats(&repo_path, r#ref).await
 }
 
 #[tauri::command]

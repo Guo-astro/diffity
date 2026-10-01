@@ -108,12 +108,15 @@ pub fn get(store: &Store, chat_id: &str) -> Result<ChatRecord> {
     .ok_or_else(|| AppError::not_found(format!("chat {chat_id} not found")))
 }
 
-pub fn list(store: &Store, repo_path: &str) -> Result<Vec<Chat>> {
+/// Chats of a repo, newest first. With `ref`, only the chats bound to that ref's review session.
+pub fn list(store: &Store, repo_path: &str, r#ref: Option<&str>) -> Result<Vec<Chat>> {
     let conn = store.conn()?;
     let mut stmt = conn.prepare(&format!(
-        "{SELECT} WHERE c.repo_path = ?1 ORDER BY c.updated_at DESC"
+        "{SELECT} WHERE c.repo_path = ?1
+           AND (?2 IS NULL OR s.session_id IN (SELECT id FROM review_sessions WHERE repo_path = ?1 AND ref = ?2))
+         ORDER BY c.updated_at DESC"
     ))?;
-    let rows = stmt.query_map(params![repo_path], chat_from_row)?;
+    let rows = stmt.query_map(params![repo_path, r#ref], chat_from_row)?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?.chat);
@@ -224,6 +227,22 @@ mod tests {
     use crate::agents::types::{AgentEvent, UserMessageContent};
 
     #[test]
+    fn lists_chats_per_ref() {
+        let store = Store::open_in_memory().unwrap();
+        init(&store).unwrap();
+        let a = store.get_or_create_session("/r", "work").unwrap();
+        let b = store.get_or_create_session("/r", "main..feature").unwrap();
+        let on_a = insert(&store, "/r", "claude", AgentMode::Resolve, "A", &a.id).unwrap();
+        let on_b = insert(&store, "/r", "claude", AgentMode::Resolve, "B", &b.id).unwrap();
+
+        let ids = |chats: Vec<Chat>| chats.into_iter().map(|c| c.id).collect::<Vec<_>>();
+        assert_eq!(ids(list(&store, "/r", Some("work")).unwrap()), vec![on_a.id.clone()]);
+        assert_eq!(ids(list(&store, "/r", Some("main..feature")).unwrap()), vec![on_b.id.clone()]);
+        assert_eq!(list(&store, "/r", None).unwrap().len(), 2);
+        assert!(list(&store, "/other", None).unwrap().is_empty());
+    }
+
+    #[test]
     fn chat_crud_and_messages() {
         let store = Store::open_in_memory().unwrap();
         init(&store).unwrap();
@@ -261,7 +280,7 @@ mod tests {
         assert!(matches!(msgs[0].content, ChatMessageContent::User(_)));
         assert!(matches!(msgs[1].content, ChatMessageContent::Agent(_)));
 
-        assert_eq!(list(&store, "/r").unwrap().len(), 1);
+        assert_eq!(list(&store, "/r", None).unwrap().len(), 1);
         delete(&store, &chat.id).unwrap();
         assert!(get(&store, &chat.id).is_err());
     }
