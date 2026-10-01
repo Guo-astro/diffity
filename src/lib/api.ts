@@ -151,6 +151,7 @@ export async function fetchDiff(hideWhitespace: boolean, ref?: string, showIgnor
   const result = await tauri.getDiff(getRepoPath(), ref || 'work', hideWhitespace, showIgnored);
   const diff = parseDiff(result.patch);
   diff.hiddenFiles = result.hiddenFiles ?? [];
+  diff.fingerprint = result.fingerprint;
   const summaries = new Map<string, DiffFileSummary>();
   for (const file of result.files) {
     summaries.set(file.path, file);
@@ -190,8 +191,8 @@ export async function fetchFilePatch(file: DiffFile, hideWhitespace: boolean, re
   return { ...parsed, oldFileLineCount: file.oldFileLineCount, patchOmitted: false };
 }
 
-export function fetchDiffFingerprint(ref?: string): Promise<string> {
-  return tauri.diffFingerprint(getRepoPath(), ref || 'work');
+export function fetchDiffFingerprint(ref?: string, showIgnored = false): Promise<string> {
+  return tauri.diffFingerprint(getRepoPath(), ref || 'work', showIgnored);
 }
 
 export async function fetchRepoInfo(ref?: string): Promise<RepoInfo> {

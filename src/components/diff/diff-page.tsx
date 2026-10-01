@@ -130,7 +130,7 @@ export function DiffPage(props: DiffPageProps) {
   const initializedDiffRef = useRef<typeof diff>(diff);
   const commentedSeenRef = useRef(filesWithComments);
   const canRevert = !!info?.capabilities?.revert;
-  const { isStale, resetStaleness } = useDiffStaleness(refParam, !!info?.capabilities?.staleness);
+  const { isStale, resetStaleness } = useDiffStaleness(rawDiff?.fingerprint, refParam, showIgnored, !!info?.capabilities?.staleness);
   const { details: githubDetails } = useGitHubPr();
   const ownPr = useOwnPr();
   const { reviewedFiles, changedFiles, hashes, setReviewed, loading: viewedLoading } = useViewedFiles(sessionId, diff);

@@ -573,10 +573,15 @@ fn drop_sections(patch: String, drop: &HashSet<String>) -> String {
 
 /// Cheap change detector: sha256 of `git diff --stat`, the untracked list, HEAD, working-tree file stats and the
 /// ignore rules. Files hidden by `.diffityignore` do not count.
-pub fn diff_fingerprint(repo: &Path, r: &str) -> Result<String> {
+/// Matches the `fingerprint` of `get_diff_with` for the same ref and `show_ignored`.
+pub fn diff_fingerprint(repo: &Path, r: &str, show_ignored: bool) -> Result<String> {
     let mut plan = plan(repo, r)?;
     let mut untracked = untracked_for(repo, &plan)?;
-    let rules = DiffIgnore::load(repo)?;
+    let rules = if show_ignored {
+        DiffIgnore::none()
+    } else {
+        DiffIgnore::load(repo)?
+    };
     apply_ignore(repo, &mut plan, &mut untracked, &rules)?;
     fingerprint_with(repo, &plan, &untracked, rules.rules_hash())
 }
@@ -632,9 +637,11 @@ pub fn get_diff_with(repo: &Path, r: &str, opts: &DiffOptions) -> Result<DiffRes
         DiffIgnore::load(repo)?
     };
     let hidden = apply_ignore(repo, &mut plan, &mut untracked, &rules)?;
-    let (tracked_patch, files, fingerprint, untracked_entries) = std::thread::scope(|scope| {
+    // Taken before the patch: an edit landing in between then shows as stale (one extra refresh)
+    // instead of being missed.
+    let fingerprint = fingerprint_with(repo, &plan, &untracked, rules.rules_hash())?;
+    let (tracked_patch, files, untracked_entries) = std::thread::scope(|scope| {
         let patch = scope.spawn(|| git::run(repo, &diff_args(&plan, &[], ignore_whitespace)));
-        let fingerprint = scope.spawn(|| fingerprint_with(repo, &plan, &untracked, rules.rules_hash()));
         let entries = scope.spawn(|| Ok(untracked.iter().map(|f| untracked_entry(repo, f)).collect::<Vec<_>>()));
         let files = file_summaries(repo, &plan, ignore_whitespace).and_then(|mut files| {
             if let Some(drop) = &hidden.drop_after {
@@ -643,14 +650,13 @@ pub fn get_diff_with(repo: &Path, r: &str, opts: &DiffOptions) -> Result<DiffRes
             fill_old_line_counts(repo, &plan, &mut files)?;
             Ok(files)
         });
-        (joined(patch), files, joined(fingerprint), joined(entries))
+        (joined(patch), files, joined(entries))
     });
     let mut tracked_patch = tracked_patch?;
     if let Some(drop) = &hidden.drop_after {
         tracked_patch = drop_sections(tracked_patch, drop);
     }
     let mut files = files?;
-    let fingerprint = fingerprint?;
     let untracked_entries: Vec<(DiffFileSummary, String)> = untracked_entries?;
 
     let tracked_count = files.len();

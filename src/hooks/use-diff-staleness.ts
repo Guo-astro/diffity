@@ -1,52 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchDiffFingerprint } from '../lib/api';
 import { useRepoChange } from './use-repo';
 
-export function useDiffStaleness(ref?: string, enabled = true) {
-  const [isStale, setIsStale] = useState(false);
-  const [generation, setGeneration] = useState(0);
-  const baselineRef = useRef<string | null>(null);
+/**
+ * Whether the files changed since the diff on screen was read. `baseline` is that diff's own fingerprint,
+ * so a change can't slip in between reading the diff and taking a separate baseline.
+ */
+export function useDiffStaleness(baseline: string | undefined, ref?: string, showIgnored = false, enabled = true) {
+  const [staleFor, setStaleFor] = useState<string | null>(null);
   const tick = useRepoChange((state) => state.tick);
 
-  function resetStaleness() {
-    baselineRef.current = null;
-    setIsStale(false);
-    setGeneration((value) => value + 1);
-  }
+  const resetStaleness = useCallback(() => setStaleFor(null), []);
 
+  // Also re-runs when a new diff arrives, so a change that landed while it loaded is still caught.
   useEffect(() => {
-    if (!enabled) {
+    if (!enabled || !baseline || tick === 0) {
       return;
     }
     let cancelled = false;
-    baselineRef.current = null;
-    fetchDiffFingerprint(ref).then((fingerprint) => {
-      if (!cancelled && baselineRef.current === null) {
-        baselineRef.current = fingerprint;
+    fetchDiffFingerprint(ref, showIgnored).then((fingerprint) => {
+      if (!cancelled && fingerprint !== baseline) {
+        setStaleFor(baseline);
       }
     }, () => undefined);
     return () => {
       cancelled = true;
     };
-  }, [ref, enabled, generation]);
+  }, [tick, baseline, ref, showIgnored, enabled]);
 
-  useEffect(() => {
-    if (!enabled || tick === 0) {
-      return;
-    }
-    let cancelled = false;
-    fetchDiffFingerprint(ref).then((fingerprint) => {
-      if (cancelled || baselineRef.current === null) {
-        return;
-      }
-      if (fingerprint !== baselineRef.current) {
-        setIsStale(true);
-      }
-    }, () => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [tick, ref, enabled]);
-
-  return { isStale, resetStaleness };
+  return { isStale: !!baseline && staleFor === baseline, resetStaleness };
 }

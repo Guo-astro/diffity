@@ -58,8 +58,12 @@ pub async fn get_file_versions(
 }
 
 #[tauri::command]
-pub async fn diff_fingerprint(repo_path: String, r#ref: String) -> Result<String, AppError> {
-    blocking(move || diff::diff_fingerprint(Path::new(&repo_path), &r#ref)).await
+pub async fn diff_fingerprint(
+    repo_path: String,
+    r#ref: String,
+    show_ignored: Option<bool>,
+) -> Result<String, AppError> {
+    blocking(move || diff::diff_fingerprint(Path::new(&repo_path), &r#ref, show_ignored.unwrap_or(false))).await
 }
 
 #[tauri::command]

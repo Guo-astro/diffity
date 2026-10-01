@@ -48,6 +48,8 @@ export interface ParsedDiff {
   files: DiffFile[];
   /** Changed files the backend left out because `.diffityignore` hides them. */
   hiddenFiles?: string[];
+  /** The backend's fingerprint of the files this diff was read from; staleness compares against it. */
+  fingerprint?: string;
   stats: {
     totalAdditions: number;
     totalDeletions: number;

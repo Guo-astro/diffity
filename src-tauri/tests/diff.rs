@@ -211,14 +211,15 @@ fn ignore_whitespace() {
 fn fingerprint_tracks_changes() {
     let repo = Repo::with_commit();
     repo.write("README.md", "hello there\n");
-    let a = diff::diff_fingerprint(&repo.path, "work").unwrap();
-    assert_eq!(a, diff::diff_fingerprint(&repo.path, "work").unwrap());
+    let a = diff::diff_fingerprint(&repo.path, "work", false).unwrap();
+    assert_eq!(a, diff::diff_fingerprint(&repo.path, "work", false).unwrap());
+    assert_eq!(diff::get_diff(&repo.path, "work", false).unwrap().fingerprint, a, "the diff carries the same fingerprint");
     std::thread::sleep(std::time::Duration::from_millis(20));
     repo.write("README.md", "hello thar!\n");
-    let b = diff::diff_fingerprint(&repo.path, "work").unwrap();
+    let b = diff::diff_fingerprint(&repo.path, "work", false).unwrap();
     assert_ne!(a, b);
     repo.write("x.txt", "x\n");
-    assert_ne!(b, diff::diff_fingerprint(&repo.path, "work").unwrap());
+    assert_ne!(b, diff::diff_fingerprint(&repo.path, "work", false).unwrap());
 }
 
 fn file_patch(patch: &str, path: &str) -> String {
@@ -430,12 +431,13 @@ fn diffityignore_hides_files_before_patching() {
     .unwrap();
     assert!(has(&all, "dist/bundle.js") && has(&all, "dist/new.js") && has(&all, "schema.gen.ts"));
     assert!(all.hidden_files.is_empty());
+    assert_eq!(all.fingerprint, diff::diff_fingerprint(&repo.path, "work", true).unwrap());
 
-    let before = diff::diff_fingerprint(&repo.path, "work").unwrap();
+    let before = diff::diff_fingerprint(&repo.path, "work", false).unwrap();
     repo.write("dist/bundle.js", "c\nd\n");
-    assert_eq!(diff::diff_fingerprint(&repo.path, "work").unwrap(), before);
+    assert_eq!(diff::diff_fingerprint(&repo.path, "work", false).unwrap(), before);
     repo.write("src/app.ts", "c\n");
-    assert_ne!(diff::diff_fingerprint(&repo.path, "work").unwrap(), before);
+    assert_ne!(diff::diff_fingerprint(&repo.path, "work", false).unwrap(), before);
 }
 
 #[test]

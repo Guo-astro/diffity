@@ -218,6 +218,33 @@ fn watcher_emits_changes() {
     let got = rx.recv_timeout(std::time::Duration::from_secs(5)).expect("repo-changed");
     assert_eq!(got, key);
     registry.unwatch(&key).unwrap();
+    assert!(registry.is_watching(&key), "one watch is still held");
+    registry.unwatch(&key).unwrap();
+    assert!(!registry.is_watching(&key));
+}
+
+#[test]
+fn watcher_survives_out_of_order_unwatch() {
+    use std::sync::Arc;
+    let repo = Repo::with_commit();
+    let registry = diffity_desktop_lib::core::watch::WatcherRegistry::new();
+    let key = repo.path.to_string_lossy().into_owned();
+    let cb: diffity_desktop_lib::core::watch::ChangeCallback = Arc::new(|_: &str| {});
+    // A remount: the first unmount's unwatch lands after the second mount's watch.
+    registry.watch(&key, cb.clone()).unwrap();
+    registry.watch(&key, cb.clone()).unwrap();
+    registry.unwatch(&key).unwrap();
+    assert!(registry.is_watching(&key));
+    registry.unwatch(&key).unwrap();
+    assert!(!registry.is_watching(&key));
+
+    // The unwatch lands before the watch it pairs with.
+    registry.unwatch(&key).unwrap();
+    registry.watch(&key, cb.clone()).unwrap();
+    assert!(!registry.is_watching(&key));
+    registry.watch(&key, cb).unwrap();
+    assert!(registry.is_watching(&key));
+    registry.unwatch(&key).unwrap();
     assert!(!registry.is_watching(&key));
 }
 

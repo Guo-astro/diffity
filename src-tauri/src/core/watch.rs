@@ -45,10 +45,18 @@ struct Entry {
     debouncer: RepoDebouncer,
 }
 
-/// Registry of per-repo file watchers. `watch` is idempotent per path.
+#[derive(Default)]
+struct Watchers {
+    entries: HashMap<String, Entry>,
+    /// `watch` calls minus `unwatch` calls per path. The commands run on the blocking pool in any
+    /// order, so an `unwatch` can land before the `watch` it pairs with; the count may dip below zero.
+    counts: HashMap<String, i64>,
+}
+
+/// Registry of per-repo file watchers, reference-counted per path.
 #[derive(Default)]
 pub struct WatcherRegistry {
-    watchers: Mutex<HashMap<String, Entry>>,
+    watchers: Mutex<Watchers>,
 }
 
 impl WatcherRegistry {
@@ -59,7 +67,7 @@ impl WatcherRegistry {
     pub fn is_watching(&self, repo_path: &str) -> bool {
         self.watchers
             .lock()
-            .map(|w| w.contains_key(repo_path))
+            .map(|w| w.entries.contains_key(repo_path))
             .unwrap_or(false)
     }
 
@@ -68,11 +76,14 @@ impl WatcherRegistry {
             .watchers
             .lock()
             .map_err(|_| AppError::internal("watcher registry poisoned"))?;
-        if watchers.contains_key(repo_path) {
+        let count = watchers.counts.entry(repo_path.to_string()).or_insert(0);
+        *count += 1;
+        if *count <= 0 || watchers.entries.contains_key(repo_path) {
             return Ok(());
         }
         let root = PathBuf::from(repo_path);
         if !root.is_dir() {
+            release(&mut watchers, repo_path);
             return Err(AppError::not_found(format!("{repo_path} is not a directory")));
         }
         let canonical_root = root.canonicalize().unwrap_or_else(|_| root.clone());
@@ -104,25 +115,53 @@ impl WatcherRegistry {
                 on_change(&key);
             }
         };
-        let mut debouncer = new_debouncer(DEBOUNCE, None, handler)
-            .map_err(|e| AppError::io(format!("failed to create watcher: {e}")))?;
-        debouncer
-            .watch(&canonical_root, RecursiveMode::Recursive)
-            .map_err(|e| AppError::io(format!("failed to watch {repo_path}: {e}")))?;
-        watchers.insert(repo_path.to_string(), Entry { debouncer });
-        Ok(())
+        let started = new_debouncer(DEBOUNCE, None, handler)
+            .map_err(|e| AppError::io(format!("failed to create watcher: {e}")))
+            .and_then(|mut debouncer| {
+                debouncer
+                    .watch(&canonical_root, RecursiveMode::Recursive)
+                    .map_err(|e| AppError::io(format!("failed to watch {repo_path}: {e}")))?;
+                Ok(debouncer)
+            });
+        match started {
+            Ok(debouncer) => {
+                watchers.entries.insert(repo_path.to_string(), Entry { debouncer });
+                Ok(())
+            }
+            Err(e) => {
+                release(&mut watchers, repo_path);
+                Err(e)
+            }
+        }
     }
 
     pub fn unwatch(&self, repo_path: &str) -> Result<()> {
-        let entry = self
+        let mut watchers = self
             .watchers
             .lock()
-            .map_err(|_| AppError::internal("watcher registry poisoned"))?
-            .remove(repo_path);
-        if let Some(entry) = entry {
+            .map_err(|_| AppError::internal("watcher registry poisoned"))?;
+        let count = watchers.counts.entry(repo_path.to_string()).or_insert(0);
+        *count -= 1;
+        if *count > 0 {
+            return Ok(());
+        }
+        if *count == 0 {
+            watchers.counts.remove(repo_path);
+        }
+        if let Some(entry) = watchers.entries.remove(repo_path) {
             entry.debouncer.stop_nonblocking();
         }
         Ok(())
+    }
+}
+
+/// Undoes the count of a `watch` that failed.
+fn release(watchers: &mut Watchers, repo_path: &str) {
+    if let Some(count) = watchers.counts.get_mut(repo_path) {
+        *count -= 1;
+        if *count == 0 {
+            watchers.counts.remove(repo_path);
+        }
     }
 }
 
