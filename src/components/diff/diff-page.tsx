@@ -83,6 +83,19 @@ function collapsedFromToggles(files: DiffFile[], commented: Set<string>, toggled
   return collapsed;
 }
 
+/** Expands the paths in `current` that are not in `seen`. */
+function expandAdded(collapsed: Set<string>, seen: Set<string>, current: Set<string>) {
+  const added = [...current].filter((path) => !seen.has(path) && collapsed.has(path));
+  if (added.length === 0) {
+    return collapsed;
+  }
+  const next = new Set(collapsed);
+  for (const path of added) {
+    next.delete(path);
+  }
+  return next;
+}
+
 function togglesFromCollapsed(files: DiffFile[], commented: Set<string>, collapsed: Set<string>) {
   const byDefault = defaultCollapsed(files, commented);
   const toggled = new Set<string>();
@@ -154,6 +167,7 @@ export function DiffPage(props: DiffPageProps) {
     return map;
   }, [sessionId, refParam, changedFiles, hashes]);
   const changedSinceViewed = useMemo(() => new Set(changedFiles.keys()), [changedFiles]);
+  const changedSeenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     localStorage.setItem('diffity-view-mode', viewMode);
@@ -203,21 +217,14 @@ export function DiffPage(props: DiffPageProps) {
   useLayoutEffect(() => {
     const seen = commentedSeenRef.current;
     commentedSeenRef.current = filesWithComments;
-    const added = [...filesWithComments].filter((path) => !seen.has(path));
-    if (added.length === 0) {
-      return;
-    }
-    setCollapsedFiles((prev) => {
-      if (!added.some((path) => prev.has(path))) {
-        return prev;
-      }
-      const next = new Set(prev);
-      for (const path of added) {
-        next.delete(path);
-      }
-      return next;
-    });
+    setCollapsedFiles((prev) => expandAdded(prev, seen, filesWithComments));
   }, [filesWithComments]);
+
+  useLayoutEffect(() => {
+    const seen = changedSeenRef.current;
+    changedSeenRef.current = changedSinceViewed;
+    setCollapsedFiles((prev) => expandAdded(prev, seen, changedSinceViewed));
+  }, [changedSinceViewed]);
 
   useEffect(() => {
     if (!diff) {
