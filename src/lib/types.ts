@@ -420,3 +420,13 @@ export interface RepoThread {
 export interface ThreadsChangedPayload {
   sessionId: string;
 }
+
+/** A `diffity://open` link from the `diffity` command or an agent. */
+export interface OpenRequest {
+  path: string | null;
+  view: 'diff' | 'files' | null;
+  ref: string | null;
+  file: string | null;
+  pr: string | null;
+  newWindow: boolean;
+}

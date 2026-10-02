@@ -1,22 +1,25 @@
 use std::path::{Path, PathBuf};
 
-const PLACEHOLDER_MARKER: &str = "diffity-mcp placeholder";
+const PLACEHOLDER_MARKER: &str = "diffity sidecar placeholder";
 
-/// `tauri-build` requires the `externalBin` sidecar (`binaries/diffity-mcp-<triple>`) to exist.
-/// `scripts/prepare-mcp.mjs` (run by `beforeDevCommand`/`beforeBuildCommand`) produces it; for plain
-/// `cargo build`/`cargo test` we reuse an already built `diffity-mcp` or write a placeholder script.
-fn ensure_mcp_sidecar() {
+/// (binary, feature) for each `externalBin` sidecar.
+const SIDECARS: [(&str, &str); 2] = [("diffity-mcp", "mcp"), ("diffity-cli", "cli")];
+
+/// `tauri-build` requires each `externalBin` sidecar (`binaries/<name>-<triple>`) to exist.
+/// `scripts/prepare-mcp.mjs` (run by `beforeDevCommand`/`beforeBuildCommand`) produces them; for plain
+/// `cargo build`/`cargo test` we reuse an already built binary or write a placeholder script.
+fn ensure_sidecar(name: &str, feature: &str) {
     let triple = std::env::var("TARGET").unwrap_or_default();
     let ext = if triple.contains("windows") { ".exe" } else { "" };
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default());
     let sidecar = manifest
         .join("binaries")
-        .join(format!("diffity-mcp-{triple}{ext}"));
+        .join(format!("{name}-{triple}{ext}"));
     if sidecar.exists() && !is_placeholder(&sidecar) {
         return;
     }
     let _ = std::fs::create_dir_all(sidecar.parent().unwrap_or(Path::new(".")));
-    let built = profile_dir().map(|d| d.join(format!("diffity-mcp{ext}")));
+    let built = profile_dir().map(|d| d.join(format!("{name}{ext}")));
     if let Some(built) = built.filter(|p| p.exists() && !is_placeholder(p)) {
         if std::fs::copy(&built, &sidecar).is_ok() {
             return;
@@ -26,7 +29,7 @@ fn ensure_mcp_sidecar() {
         return;
     }
     let script = format!(
-        "#!/bin/sh\n# {PLACEHOLDER_MARKER}\necho 'diffity-mcp was not built; run `cargo build --features mcp --bin diffity-mcp`' >&2\nexit 1\n"
+        "#!/bin/sh\n# {PLACEHOLDER_MARKER}\necho '{name} was not built; run `cargo build --features {feature} --bin {name}`' >&2\nexit 1\n"
     );
     let _ = std::fs::write(&sidecar, script);
     #[cfg(unix)]
@@ -52,11 +55,13 @@ fn is_placeholder(path: &Path) -> bool {
 }
 
 fn main() {
-    // The sidecar-only build (`--no-default-features --features mcp`, see scripts/prepare-mcp.mjs) has no Tauri app.
+    // The sidecar-only build (`--no-default-features --features mcp,cli`, see scripts/prepare-mcp.mjs) has no Tauri app.
     if std::env::var_os("CARGO_FEATURE_APP").is_none() {
         return;
     }
-    ensure_mcp_sidecar();
+    for (name, feature) in SIDECARS {
+        ensure_sidecar(name, feature);
+    }
     #[cfg(feature = "app")]
     tauri_build::build()
 }

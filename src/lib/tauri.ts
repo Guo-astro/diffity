@@ -19,6 +19,7 @@ import type {
   GitStatus,
   GithubAuthStatus,
   NewThread,
+  OpenRequest,
   OverviewFile,
   PullRequest,
   PullResult,
@@ -61,6 +62,7 @@ export function errorMessage(error: unknown): string {
 
 // repo
 export const openRepo = (path: string) => invoke<RepoInfo>('open_repo', { path });
+export const repoRemoteUrl = (path: string) => invoke<string | null>('repo_remote_url', { path });
 export const recentRepos = () => invoke<RecentRepo[]>('recent_repos');
 export const watchRepo = (repoPath: string) => invoke<void>('watch_repo', { repoPath });
 export const unwatchRepo = (repoPath: string) => invoke<void>('unwatch_repo', { repoPath });
@@ -72,6 +74,7 @@ export const repoOverview = (repoPath: string) => invoke<OverviewFile[]>('repo_o
 export const openInEditor = (repoPath: string, path: string, line?: number | null, editor?: string | null) =>
   invoke<void>('open_in_editor', { repoPath, path, line: line ?? null, editor: editor ?? null });
 export const reportIssue = () => invoke<void>('report_issue');
+export const takeOpenRequests = () => invoke<OpenRequest[]>('take_open_requests');
 export const getSetting = (key: string) => invoke<string | null>('get_setting', { key });
 export const setSetting = (key: string, value: string) => invoke<void>('set_setting', { key, value });
 

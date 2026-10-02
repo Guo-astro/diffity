@@ -9,15 +9,20 @@ import { cn } from '../../lib/cn';
 import * as tauri from '../../lib/tauri';
 import { modKey } from '../../lib/platform';
 import { openRepoAt, shortPath, useRecentRepos } from '../welcome/recent-repos';
-import { parsePrUrl, pickFolder, remoteMatches } from '../welcome/open-repo';
+import { findLocalClone, parsePrUrl, pickFolder } from '../welcome/open-repo';
 import { Spinner } from '../../components/icons/spinner';
 import { CloneIcon, FolderOpenIcon, FolderSimpleIcon, GitBranchIcon, GitHubIcon, GitPullRequestIcon, SearchIcon } from '../../components/ui/icon';
 
-const useQuickOpen = create<{ open: boolean }>(() => ({ open: false }));
+const useQuickOpen = create<{ open: boolean; input: string; opens: number }>(() => ({ open: false, input: '', opens: 0 }));
 const CLONE_PARENT_KEY = 'diffity-clone-parent';
 
 export function openQuickOpen() {
-  useQuickOpen.setState({ open: true });
+  openQuickOpenWith('');
+}
+
+/** Opens with `input` already typed, e.g. a pull request URL from a `diffity` link. */
+export function openQuickOpenWith(input: string) {
+  useQuickOpen.setState((state) => ({ open: true, input, opens: state.opens + 1 }));
 }
 
 function closeQuickOpen() {
@@ -92,16 +97,17 @@ export function useQuickOpenShortcut() {
 
 export function QuickOpen() {
   const open = useQuickOpen((state) => state.open);
+  const opens = useQuickOpen((state) => state.opens);
 
   if (!open) {
     return null;
   }
-  return <QuickOpenBody />;
+  return <QuickOpenBody key={opens} />;
 }
 
 function QuickOpenBody() {
   const navigate = useNavigate();
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() => useQuickOpen.getState().input);
   const [active, setActive] = useState(0);
   const [clone, setClone] = useState<{ url: string; prNumber?: number } | null>(null);
   const [cloning, setCloning] = useState<string | null>(null);
@@ -156,13 +162,11 @@ function QuickOpenBody() {
     if (!pr) {
       return;
     }
-    for (const repo of recent.repos) {
-      const info = await tauri.openRepo(repo.path).catch(() => null);
-      if (info && remoteMatches(info.remoteUrl, pr.owner, pr.repo)) {
-        closeQuickOpen();
-        await openRepoAt(repo.path, navigate, { extra: { pr: url.trim() } });
-        return;
-      }
+    const local = await findLocalClone(recent.repos.map((repo) => repo.path), pr);
+    if (local) {
+      closeQuickOpen();
+      await openRepoAt(local, navigate, { extra: { pr: url.trim() } });
+      return;
     }
     setClone({ url: `https://github.com/${pr.owner}/${pr.repo}`, prNumber: pr.number });
     setInput(tildify(readCloneParent() ?? roots?.roots.find((root) => /\/(Code|code|lab|Projects)$/.test(root)) ?? home, home).replace(/\/?$/, '/'));

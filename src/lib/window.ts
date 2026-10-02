@@ -3,13 +3,15 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { hashString } from './hash';
 import { isTauri } from './platform';
 
-export function repoRoute(path: string, extra?: Record<string, string>) {
+export type RepoPage = 'diff' | 'tree';
+
+export function repoRoute(path: string, extra?: Record<string, string>, page: RepoPage = 'diff') {
   const params = new URLSearchParams(extra);
   const query = params.toString();
-  return `/r/${encodeURIComponent(path)}/diff${query ? `?${query}` : ''}`;
+  return `/r/${encodeURIComponent(path)}/${page}${query ? `?${query}` : ''}`;
 }
 
-export async function openRepoInNewWindow(path: string, extra?: Record<string, string>) {
+export async function openRepoInNewWindow(path: string, extra?: Record<string, string>, page: RepoPage = 'diff') {
   const label = `repo-${hashString(path).slice(0, 12)}`;
   const existing = await WebviewWindow.getByLabel(label).catch(() => null);
   if (existing) {
@@ -18,7 +20,7 @@ export async function openRepoInNewWindow(path: string, extra?: Record<string, s
   }
   const name = path.split('/').filter(Boolean).pop() ?? 'Diffity';
   new WebviewWindow(label, {
-    url: `index.html#${repoRoute(path, extra)}`,
+    url: `index.html#${repoRoute(path, extra, page)}`,
     title: name,
     width: 1400,
     height: 900,

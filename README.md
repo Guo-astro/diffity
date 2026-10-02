@@ -27,6 +27,7 @@ macOS 13.3 or later, Apple Silicon and Intel. The AI features need [Claude Code]
 | [Browse and comment on any file](#browse-and-comment-on-any-file) | Comment on code outside the diff from the Files tab |
 | [Jump anywhere](#jump-anywhere) | ⌘P for files, ⌘K for commits, comments, PRs and every action |
 | [Switch projects](#switch-projects) | Keep your repos in a rail and switch with ⌘1–9 |
+| [Open from the terminal or your agent](#open-from-the-terminal-or-your-agent) | `diffity` opens a repo, a diff or a pull request URL in the app |
 
 ### Comment on your diff
 
@@ -87,6 +88,30 @@ macOS 13.3 or later, Apple Silicon and Intel. The AI features need [Claude Code]
 > Open a repo with `⌘O`; it stays in the left rail, so `⌘1`–`⌘9` takes you back to it.
 
 <img src="./.github/screenshots/projects.gif" alt="Switching between projects in the rail" />
+
+### Open from the terminal or your agent
+
+> Run `diffity` in any repository to open it in the app, or pass a pull request URL to review it.
+
+Install the command once from the app menu: **Diffity → Install ‘diffity’ Command…**. It links the command into `/usr/local/bin` and asks for your password if that folder needs it.
+
+<img src="./.github/screenshots/install-command.png" width="320" alt="The Diffity menu with Install ‘diffity’ Command…" />
+
+```sh
+diffity                                        # uncommitted changes in the current repository
+diffity ~/code/app                             # another repository
+diffity --ref main                             # everything on this branch since it left main
+diffity --ref HEAD~1..HEAD                     # the last commit
+diffity https://github.com/owner/repo/pull/42  # check out and review a pull request
+diffity src/app.ts                             # a file in the Files tab
+diffity -n                                     # in a new window
+```
+
+`--ref` takes anything the ref picker does: `work`, `staged`, `unstaged`, a branch or commit, `<a>..<b>` or `<a>...<b>`. A pull request opens in the current repository if it is a clone of that repo, else in a clone Diffity already knows; with neither, Diffity offers to clone it. Run `diffity --help` for everything.
+
+Coding agents can run it too, so you can ask Claude Code to “open your changes in Diffity” before it opens a PR.
+
+If `diffity` still runs something else, like the `diffity` npm package, another `diffity` comes earlier in your `PATH`; the install step tells you which one.
 
 ### More
 

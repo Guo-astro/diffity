@@ -8,7 +8,7 @@ import * as tauri from '../lib/tauri';
 import { isTauri, modKey } from '../lib/platform';
 import { setRepoPath } from '../lib/api';
 import type { RecentRepo } from '../lib/types';
-import { parsePrUrl, pickFolder, remoteMatches } from '../features/welcome/open-repo';
+import { findLocalClone, parsePrUrl, pickFolder } from '../features/welcome/open-repo';
 import { openQuickOpen } from '../features/palette/quick-open';
 import { useOpening } from '../lib/opening';
 import { openRepoAt, parentPath, useRecentRepos } from '../features/welcome/recent-repos';
@@ -327,12 +327,10 @@ function PrUrlForm(props: { recent: RecentRepo[]; onOpen: (path: string, newWind
     }
     setBusy(true);
     try {
-      for (const repo of recent) {
-        const info = await tauri.openRepo(repo.path).catch(() => null);
-        if (info && remoteMatches(info.remoteUrl, pr.owner, pr.repo)) {
-          await onOpen(repo.path, false, { pr: url.trim() });
-          return;
-        }
+      const local = await findLocalClone(recent.map((repo) => repo.path), pr);
+      if (local) {
+        await onOpen(local, false, { pr: url.trim() });
+        return;
       }
       toast.info(`Select your local clone of ${pr.owner}/${pr.repo}`);
       const path = await pickFolder();

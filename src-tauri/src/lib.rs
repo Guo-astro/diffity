@@ -3,10 +3,13 @@
 #![cfg(feature = "app")]
 
 pub mod agents;
+#[cfg(target_os = "macos")]
+mod cli_install;
 mod commands;
 pub mod core;
 mod env_fix;
 pub mod github;
+mod open_link;
 mod state;
 #[cfg(target_os = "macos")]
 mod traffic_lights;
@@ -18,6 +21,7 @@ use crate::core::store::Store;
 use crate::github::GithubService;
 use tauri::menu::{Menu, MenuItem, HELP_SUBMENU_ID};
 use tauri::{AppHandle, Emitter, EventTarget, Manager, Runtime};
+use tauri_plugin_deep_link::DeepLinkExt;
 
 pub use state::AppState;
 
@@ -49,13 +53,20 @@ fn init_state(app: &tauri::App) -> anyhow::Result<AppState> {
 const REPORT_ISSUE_MENU_ID: &str = "report-issue";
 const WHATS_NEW_MENU_ID: &str = "whats-new";
 const CHECK_UPDATES_MENU_ID: &str = "check-for-updates";
+const INSTALL_CLI_MENU_ID: &str = "install-cli";
 
-/// Tauri's default menu plus Diffity → Check for Updates… and Help → What's New and Report an Issue….
+/// Tauri's default menu plus Diffity → Check for Updates… and Install 'diffity' Command, and Help → What's New
+/// and Report an Issue….
 fn app_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(handle)?;
     let check = MenuItem::with_id(handle, CHECK_UPDATES_MENU_ID, "Check for Updates…", true, None::<&str>)?;
     if let Some(app_submenu) = menu.items()?.first().and_then(|item| item.as_submenu().cloned()) {
         app_submenu.insert(&check, 1)?;
+        #[cfg(target_os = "macos")]
+        {
+            let install = MenuItem::with_id(handle, INSTALL_CLI_MENU_ID, "Install ‘diffity’ Command…", true, None::<&str>)?;
+            app_submenu.insert(&install, 2)?;
+        }
     }
     let whats_new = MenuItem::with_id(handle, WHATS_NEW_MENU_ID, "What’s New in Diffity", true, None::<&str>)?;
     let report = MenuItem::with_id(handle, REPORT_ISSUE_MENU_ID, "Report an Issue…", true, None::<&str>)?;
@@ -102,6 +113,7 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_deep_link::init())
         .menu(app_menu)
         .on_menu_event(|app, event| {
             if event.id() == WHATS_NEW_MENU_ID {
@@ -110,6 +122,11 @@ pub fn run() {
             }
             if event.id() == CHECK_UPDATES_MENU_ID {
                 emit_to_focused(app, "check-for-updates");
+                return;
+            }
+            #[cfg(target_os = "macos")]
+            if event.id() == INSTALL_CLI_MENU_ID {
+                cli_install::install_with_feedback(app);
                 return;
             }
             if event.id() != REPORT_ISSUE_MENU_ID {
@@ -122,6 +139,13 @@ pub fn run() {
         .setup(|app| {
             let state = init_state(app)?;
             app.manage(state);
+            app.manage(open_link::PendingOpens::default());
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| open_link::handle_urls(&handle, event.urls()));
+            // The link that launched the app can arrive before the listener above exists.
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                open_link::handle_urls(app.handle(), urls);
+            }
             #[cfg(target_os = "macos")]
             if let Some(window) = app.get_webview_window("main") {
                 traffic_lights::install(&window.as_ref().window());
@@ -152,6 +176,7 @@ pub fn run() {
             commands::repo::resolve_repo_root,
             commands::repo::clone_repo,
             commands::repo::recent_repos,
+            commands::repo::repo_remote_url,
             commands::repo::watch_repo,
             commands::repo::unwatch_repo,
             commands::repo::list_commits,
@@ -194,6 +219,7 @@ pub fn run() {
             commands::comments::discard_review,
             commands::dev::log_frontend,
             commands::dev::dev_launch_target,
+            open_link::take_open_requests,
             commands::feedback::report_issue,
             commands::agents::list_agents,
             commands::agents::start_chat,

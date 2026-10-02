@@ -19,6 +19,7 @@ import { useCheckForUpdatesMenu, useUpdateChecks } from './features/updates/use-
 import { FindHost } from './features/find/find-bar';
 import { WhatsNewDialog } from './features/whats-new/whats-new-dialog';
 import { useWhatsNew } from './features/whats-new/use-whats-new';
+import { useOpenLinks } from './features/open-links/use-open-links';
 
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -73,6 +74,12 @@ function useExternalLinks() {
   }, []);
 }
 
+function OpenLinksHost() {
+  useOpenLinks();
+
+  return null;
+}
+
 function QuickOpenHost() {
   useQuickOpenShortcut();
 
@@ -109,6 +116,7 @@ export function App() {
         <GlobalShortcutModal />
         <QuickOpenHost />
         <FindHost />
+        <OpenLinksHost />
       </HashRouter>
       <TopProgress />
       <Toaster

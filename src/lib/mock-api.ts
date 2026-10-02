@@ -337,6 +337,7 @@ const handlers: Record<string, (args: Args) => unknown> = {
     headSha: 'a1b2c3d4',
     remoteUrl: 'https://github.com/demo/tiny-serve.git',
   }),
+  repo_remote_url: () => 'https://github.com/demo/tiny-serve.git',
   recent_repos: () => [
     { path: REPO_PATH, name: 'tiny-serve', lastOpenedAt: now() },
     { path: '/Users/demo/code/diffity', name: 'diffity', lastOpenedAt: new Date(Date.now() - 86400_000).toISOString() },

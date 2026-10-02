@@ -46,7 +46,7 @@ jobs:
 
       # `tauri build` runs this again from beforeBuildCommand (a no-op once
       # built); doing it here first makes a sidecar failure its own red step.
-      - name: Build the diffity-mcp sidecar for both architectures
+      - name: Build the diffity-mcp and diffity-cli sidecars for both architectures
         run: node scripts/prepare-mcp.mjs --release
         env:
           TAURI_ENV_TARGET_TRIPLE: universal-apple-darwin

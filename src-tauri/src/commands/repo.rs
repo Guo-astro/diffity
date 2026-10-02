@@ -32,6 +32,18 @@ pub async fn open_repo(state: State<'_, AppState>, path: String) -> Result<RepoI
     Ok(info)
 }
 
+/// The `origin` URL of the repository containing `path`, without adding it to the recent list like `open_repo`.
+#[tauri::command]
+pub async fn repo_remote_url(path: String) -> Result<Option<String>, AppError> {
+    blocking(move || {
+        let Some(root) = git::find_repo_root(Path::new(&path))? else {
+            return Ok(None);
+        };
+        git::remote_url(&root)
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn recent_repos(state: State<'_, AppState>) -> Result<Vec<RecentRepo>, AppError> {
     let repos = state.store.recent_repos(30)?;

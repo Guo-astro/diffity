@@ -48,15 +48,15 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # build.rs writes a placeholder sidecar when diffity-mcp is not built,
+      # build.rs writes placeholder sidecars when diffity-mcp/diffity-cli are not built,
       # so plain cargo works without the pnpm/Tauri CLI toolchain.
-      # `mcp` (the diffity-mcp sidecar bin) is not a default feature.
+      # `mcp` and `cli` (the sidecar bins) are not default features.
       - run: cargo test --all-features
         working-directory: src-tauri
 
       - run: cargo clippy --all-features --all-targets -- -D warnings
         working-directory: src-tauri
 
-      # How scripts/prepare-mcp.mjs builds the sidecar: without the app.
-      - run: cargo clippy --no-default-features --features mcp --bin diffity-mcp -- -D warnings
+      # How scripts/prepare-mcp.mjs builds the sidecars: without the app.
+      - run: cargo clippy --no-default-features --features mcp,cli --bin diffity-mcp --bin diffity-cli -- -D warnings
         working-directory: src-tauri

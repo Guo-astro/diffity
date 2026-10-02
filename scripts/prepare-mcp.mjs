@@ -1,7 +1,8 @@
-// Builds the diffity-mcp binary (src-tauri/src/bin/diffity-mcp, with only the `mcp` feature
-// so it skips Tauri and the rest of the app) and copies it to src-tauri/binaries/diffity-mcp-<target-triple>
-// so Tauri can bundle it as an `externalBin` sidecar. `--target universal-apple-darwin` builds
-// both macOS architectures and lipos them into diffity-mcp-universal-apple-darwin.
+// Builds the diffity-mcp and diffity-cli binaries (src-tauri/src/bin, with only the `mcp` and `cli`
+// features so they skip Tauri and the rest of the app) and copies them to
+// src-tauri/binaries/<name>-<target-triple> so Tauri can bundle them as `externalBin` sidecars.
+// `--target universal-apple-darwin` builds both macOS architectures and lipos them into
+// <name>-universal-apple-darwin.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, chmodSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -30,9 +31,11 @@ const targetDir = process.env.CARGO_TARGET_DIR ? resolve(process.env.CARGO_TARGE
 const destDir = join(crateDir, 'binaries');
 mkdirSync(destDir, { recursive: true });
 
+const SIDECARS = ['diffity-mcp', 'diffity-cli'];
+
 function build(target) {
   const cross = target !== host;
-  const args = ['build', '--bin', 'diffity-mcp', '--no-default-features', '--features', 'mcp'];
+  const args = ['build', ...SIDECARS.flatMap((name) => ['--bin', name]), '--no-default-features', '--features', 'mcp,cli'];
   if (cross) {
     args.push('--target', target);
   }
@@ -41,26 +44,30 @@ function build(target) {
   }
   execFileSync('cargo', args, { cwd: crateDir, stdio: 'inherit' });
   const ext = target.includes('windows') ? '.exe' : '';
-  const built = join(targetDir, ...(cross ? [target] : []), release ? 'release' : 'debug', `diffity-mcp${ext}`);
-  const dest = join(destDir, `diffity-mcp-${target}${ext}`);
-  copyFileSync(built, dest);
-  chmodSync(dest, 0o755);
-  console.log(`diffity-mcp sidecar -> ${dest}`);
-  return dest;
+  return Object.fromEntries(SIDECARS.map((name) => {
+    const built = join(targetDir, ...(cross ? [target] : []), release ? 'release' : 'debug', `${name}${ext}`);
+    const dest = join(destDir, `${name}-${target}${ext}`);
+    copyFileSync(built, dest);
+    chmodSync(dest, 0o755);
+    console.log(`${name} sidecar -> ${dest}`);
+    return [name, dest];
+  }));
 }
 
 // A universal build compiles the app once per architecture (each needs its own sidecar for
-// tauri-build) and then bundles `diffity-mcp-universal-apple-darwin`, the lipo of both.
+// tauri-build) and then bundles `<name>-universal-apple-darwin`, the lipo of both.
 function main() {
   if (triple !== UNIVERSAL) {
     build(triple);
     return;
   }
   const parts = UNIVERSAL_PARTS.map(build);
-  const dest = join(destDir, `diffity-mcp-${UNIVERSAL}`);
-  execFileSync('lipo', ['-create', '-output', dest, ...parts], { stdio: 'inherit' });
-  chmodSync(dest, 0o755);
-  console.log(`diffity-mcp sidecar -> ${dest}`);
+  for (const name of SIDECARS) {
+    const dest = join(destDir, `${name}-${UNIVERSAL}`);
+    execFileSync('lipo', ['-create', '-output', dest, ...parts.map((built) => built[name])], { stdio: 'inherit' });
+    chmodSync(dest, 0o755);
+    console.log(`${name} sidecar -> ${dest}`);
+  }
 }
 
 main();
