@@ -83,7 +83,7 @@ fn load_comments(conn: &Connection, thread_id: &str) -> Result<Vec<Comment>> {
 }
 
 const THREAD_COLUMNS: &str = "id, session_id, file_path, side, start_line, end_line, status, severity, \
-     anchor_content, github_thread_id, created_at, updated_at, review_id";
+     anchor_content, github_thread_id, created_at, updated_at, review_id, view_ref";
 
 fn thread_from_row(conn: &Connection, r: &rusqlite::Row<'_>) -> Result<Thread> {
     let id: String = r.get(0)?;
@@ -108,6 +108,7 @@ fn thread_from_row(conn: &Connection, r: &rusqlite::Row<'_>) -> Result<Thread> {
         updated_at: r.get(11)?,
         pending,
         review_id: r.get(12)?,
+        view_ref: r.get(13)?,
     })
 }
 
@@ -232,8 +233,8 @@ pub fn insert_remote_thread(store: &Store, thread: &NewRemoteThread<'_>) -> Resu
     let id = uuid::Uuid::new_v4().to_string();
     conn.execute(
         "INSERT INTO threads(id, session_id, file_path, side, start_line, end_line, status, severity,
-                             anchor_content, github_thread_id, github_comment_id, created_at, updated_at)
-         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, ?8, ?9, ?10, ?11)",
+                             anchor_content, github_thread_id, github_comment_id, created_at, updated_at, view_ref)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, ?8, ?9, ?10, ?11, (SELECT ref FROM review_sessions WHERE id = ?2))",
         params![
             id,
             thread.session_id,

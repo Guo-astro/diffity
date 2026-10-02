@@ -11,6 +11,8 @@ import { HunkBlockSplit } from './hunk-block-split';
 
 export interface SinceViewedInfo {
   sessionId: string;
+  /** The view the file is shown in; the comparison is against its version there. */
+  viewRef: string;
   /** The viewed version was kept, so its changes can be shown. */
   canDiff: boolean;
   /** Changes whenever the file's diff does, to refetch the comparison. */
@@ -52,6 +54,7 @@ export function SinceViewedBadge(props: SinceViewedBadgeProps) {
 
 interface SinceViewedDiffProps {
   sessionId: string;
+  viewRef: string;
   filePath: string;
   version: string;
   viewMode: ViewMode;
@@ -60,10 +63,10 @@ interface SinceViewedDiffProps {
 
 /** What changed in a file between the version marked viewed and now, shown above its regular diff. */
 export function SinceViewedDiff(props: SinceViewedDiffProps) {
-  const { sessionId, filePath, version, viewMode, onClose } = props;
+  const { sessionId, viewRef, filePath, version, viewMode, onClose } = props;
   const query = useQuery({
-    queryKey: ['viewed-changes', sessionId, filePath, version],
-    queryFn: () => fetchViewedChanges(sessionId, filePath),
+    queryKey: ['viewed-changes', sessionId, viewRef, filePath, version],
+    queryFn: () => fetchViewedChanges(sessionId, filePath, viewRef),
     staleTime: Infinity,
   });
   const file = useMemo(() => (query.data ? parseDiff(query.data).files[0] ?? null : null), [query.data]);

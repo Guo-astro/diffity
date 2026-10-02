@@ -263,6 +263,7 @@ async fn add_comment(backend: &dyn ReviewBackend, b: &Binding, a: CommentArgs) -
             author_type: Some(AuthorType::Agent),
             author_name: Some(b.agent_name.clone()),
             pending: None,
+            view_ref: Some(b.r#ref.clone()),
         })
         .await?;
     Ok(json!({ "created": thread_json(&thread) }))
@@ -349,6 +350,7 @@ pub async fn call(
                     author_type: Some(AuthorType::Agent),
                     author_name: Some(b.agent_name.clone()),
                     pending: None,
+                    view_ref: Some(b.r#ref.clone()),
                 })
                 .await?;
             Ok(json!({ "created": thread_json(&thread) }))
@@ -478,6 +480,7 @@ mod tests {
             author_type: None,
             author_name: None,
             pending: Some(pending),
+            view_ref: None,
         }
     }
 

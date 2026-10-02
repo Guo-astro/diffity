@@ -126,32 +126,40 @@ pub async fn set_viewed(
     file_path: String,
     content_hash: String,
     viewed: bool,
+    r#ref: Option<String>,
 ) -> Result<(), AppError> {
     if !viewed {
         return state.store.set_viewed(&session_id, &file_path, &content_hash, None, false);
     }
     let session = state.store.get_session_by_id(&session_id)?;
+    let view_ref = r#ref.unwrap_or(session.r#ref);
     let path = file_path.clone();
     let blob = blocking(move || {
-        if session.r#ref == TREE_REF {
+        if view_ref == TREE_REF {
             return Ok(None);
         }
-        Ok(diff::snapshot_blob(Path::new(&session.repo_path), &session.r#ref, &path).unwrap_or(None))
+        Ok(diff::snapshot_blob(Path::new(&session.repo_path), &view_ref, &path).unwrap_or(None))
     })
     .await?;
     state.store.set_viewed(&session_id, &file_path, &content_hash, blob.as_deref(), true)
 }
 
-/// Patch from the version of `file_path` last marked viewed to its current contents (empty when unchanged).
+/// Patch from the version of `file_path` last marked viewed to its contents in the view `ref` (empty when unchanged).
 #[tauri::command]
-pub async fn viewed_changes(state: State<'_, AppState>, session_id: String, file_path: String) -> Result<String, AppError> {
+pub async fn viewed_changes(
+    state: State<'_, AppState>,
+    session_id: String,
+    file_path: String,
+    r#ref: Option<String>,
+) -> Result<String, AppError> {
     let session = state.store.get_session_by_id(&session_id)?;
+    let view_ref = r#ref.unwrap_or(session.r#ref);
     let blob = state
         .store
         .get_viewed(&session_id, &file_path)?
         .and_then(|v| v.blob_id)
         .ok_or_else(|| AppError::not_found("no viewed snapshot for this file"))?;
-    blocking(move || diff::changes_since_blob(Path::new(&session.repo_path), &session.r#ref, &file_path, &blob)).await
+    blocking(move || diff::changes_since_blob(Path::new(&session.repo_path), &view_ref, &file_path, &blob)).await
 }
 
 #[tauri::command]

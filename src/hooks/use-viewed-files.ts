@@ -7,7 +7,7 @@ import type { ViewedFile } from '../lib/types';
 import { getFilePath } from '../lib/diff-utils';
 import { computeViewedState, fileHash } from '../lib/viewed-state';
 
-export function useViewedFiles(sessionId: string | null, diff: ParsedDiff | undefined) {
+export function useViewedFiles(sessionId: string | null, diff: ParsedDiff | undefined, viewRef: string) {
   const queryClient = useQueryClient();
   const queryKey = ['viewed', sessionId];
   const { data: viewed, isPending, isError } = useQuery({
@@ -35,7 +35,7 @@ export function useViewedFiles(sessionId: string | null, diff: ParsedDiff | unde
       const rest = (prev ?? []).filter((entry) => entry.filePath !== path);
       return reviewed ? [...rest, { filePath: path, contentHash, blobId: null }] : rest;
     });
-    tauri.setViewed(sessionId, path, contentHash, reviewed).then(
+    tauri.setViewed(sessionId, path, contentHash, reviewed, viewRef).then(
       () => {
         if (reviewed) {
           queryClient.invalidateQueries({ queryKey: ['viewed', sessionId] });
@@ -46,7 +46,7 @@ export function useViewedFiles(sessionId: string | null, diff: ParsedDiff | unde
         queryClient.invalidateQueries({ queryKey: ['viewed', sessionId] });
       },
     );
-  }, [sessionId, hashes, queryClient]);
+  }, [sessionId, hashes, queryClient, viewRef]);
 
   return { reviewedFiles, changedFiles, hashes, setReviewed, loading: sessionId !== null && isPending && !isError };
 }

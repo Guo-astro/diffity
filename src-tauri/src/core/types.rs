@@ -260,6 +260,9 @@ pub struct Thread {
     /// Review the thread was started in, if any.
     #[serde(default)]
     pub review_id: Option<String>,
+    /// The view the thread was left in (`main`, `main...HEAD`, …); its line numbers belong to that view's diff.
+    #[serde(default)]
+    pub view_ref: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -282,6 +285,9 @@ pub struct NewThread {
     /// Adds the thread to the session's pending review (created on demand) instead of publishing it.
     #[serde(default)]
     pub pending: Option<bool>,
+    /// The view the thread is left in; defaults to the session's ref.
+    #[serde(default)]
+    pub view_ref: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

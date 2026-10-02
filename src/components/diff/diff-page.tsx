@@ -30,7 +30,9 @@ import { usePageActions, useViewFiles, type PaletteAction } from '../../features
 import { statusLetter } from '../tree/file-tree-item';
 import { requestAskClaude } from '../../features/claude/ask-claude-review';
 import { requestSendToClaude } from '../../features/review/finish-review';
-import { OutsideThreads } from '../comments/outside-threads';
+import { OtherViewThreads, OutsideThreads } from '../comments/outside-threads';
+import { splitThreadsByView } from '../../lib/thread-views';
+import { useUncommittedPaths } from '../layout/diff-context-bar';
 import type { CommentThread, LineSelection } from '../comments/types';
 import { DiffBar, hiddenFilesLabel } from './view-options';
 import { repoBase } from '../../hooks/use-repo';
@@ -44,7 +46,7 @@ import { ReviewStateProvider } from '../../features/review/review-state';
 import { useViewedFiles } from '../../hooks/use-viewed-files';
 import type { SinceViewedInfo } from './since-viewed';
 import { useGitHubPr, useOwnPr } from '../../hooks/use-repo-state';
-import { prDiffRef } from '../layout/ref-menu';
+import { prDiffRef, uncommittedTwin } from '../layout/ref-menu';
 import { openCommitDialog } from '../../features/pr/commit-dialog';
 import { ChevronDownIcon, ChevronUpIcon, CollapseAllIcon, CopyIcon, ExpandAllIcon, EyeOffIcon, GitHubIcon, GitPullRequestIcon, PushIcon, RefreshIcon, SendIcon, SparkleIcon, SplitViewIcon, UnifiedViewIcon } from '../ui/icon';
 import { shortcutHint } from '../../lib/shortcuts';
@@ -123,7 +125,14 @@ export function DiffPage(props: DiffPageProps) {
   const reviewsEnabled = !!info?.capabilities?.reviews;
   const sessionId = info?.sessionId ?? null;
   const { data: serverThreads, isFetched: threadsFetched } = useReviewThreads(reviewsEnabled ? sessionId : null);
-  const threads = reviewsEnabled && serverThreads ? serverThreads : NO_THREADS;
+  const allThreads = reviewsEnabled && serverThreads ? serverThreads : NO_THREADS;
+  const twin = uncommittedTwin(refParam);
+  const uncommittedPaths = useUncommittedPaths();
+  const diffPaths = useMemo(() => new Set(diff?.files.map(getFilePath) ?? []), [diff]);
+  const { here: threads, elsewhere: otherViewThreads } = useMemo(
+    () => (twin ? splitThreadsByView(allThreads, refParam, diffPaths, uncommittedPaths) : { here: allThreads, elsewhere: NO_THREADS }),
+    [twin, allThreads, refParam, diffPaths, uncommittedPaths],
+  );
   const commentCountsByFile = useMemo(() => buildThreadCountsByFile(threads), [threads]);
   const filesWithComments = useMemo(() => new Set(commentCountsByFile.keys()), [commentCountsByFile]);
   const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(() => collapsedFromToggles(diff?.files ?? [], filesWithComments, manuallyToggledRef.current));
@@ -133,17 +142,17 @@ export function DiffPage(props: DiffPageProps) {
   const { isStale, resetStaleness } = useDiffStaleness(rawDiff?.fingerprint, refParam, showIgnored, !!info?.capabilities?.staleness);
   const { details: githubDetails } = useGitHubPr();
   const ownPr = useOwnPr();
-  const { reviewedFiles, changedFiles, hashes, setReviewed, loading: viewedLoading } = useViewedFiles(sessionId, diff);
+  const { reviewedFiles, changedFiles, hashes, setReviewed, loading: viewedLoading } = useViewedFiles(sessionId, diff, refParam);
   const sinceViewedFiles = useMemo(() => {
     const map = new Map<string, SinceViewedInfo>();
     if (!sessionId) {
       return map;
     }
     for (const [path, changed] of changedFiles) {
-      map.set(path, { sessionId, canDiff: changed.canDiff, version: hashes.get(path) ?? '' });
+      map.set(path, { sessionId, viewRef: refParam, canDiff: changed.canDiff, version: hashes.get(path) ?? '' });
     }
     return map;
-  }, [sessionId, changedFiles, hashes]);
+  }, [sessionId, refParam, changedFiles, hashes]);
   const changedSinceViewed = useMemo(() => new Set(changedFiles.keys()), [changedFiles]);
 
   useEffect(() => {
@@ -170,7 +179,7 @@ export function DiffPage(props: DiffPageProps) {
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
   }, [location, diff, refParam, navigate]);
 
-  const rawCommentActions = useCommentActions(sessionId, reviewsEnabled);
+  const rawCommentActions = useCommentActions(sessionId, reviewsEnabled, refParam);
   const commentActions = useMemo(() => rawCommentActions, Object.values(rawCommentActions));
 
   const firstOpenThreadByFile = useMemo(() => {
@@ -576,7 +585,7 @@ export function DiffPage(props: DiffPageProps) {
         onShowHelp={openShortcuts}
         diff={diff || undefined}
         diffRef={refParam}
-        threads={threads}
+        threads={allThreads}
         repoName={info?.name || null}
         branch={info?.branch || null}
         githubDetails={githubDetails}
@@ -585,7 +594,7 @@ export function DiffPage(props: DiffPageProps) {
         focusedFile={activeFile}
       />
       <Workspace>
-      <PrSession diffRef={refParam} threads={threads} />
+      <PrSession diffRef={refParam} threads={allThreads} />
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <Sidebar
           files={diff.files}
@@ -613,7 +622,10 @@ export function DiffPage(props: DiffPageProps) {
               </p>
             )}
             {reviewsEnabled && (
-              <OutsideThreads threads={threads} viewEmpty className="mt-8 mb-10 px-6" />
+              <>
+                <OutsideThreads threads={threads} viewEmpty className="mt-8 mb-10 px-6" />
+                {twin && <OtherViewThreads threads={otherViewThreads} twin={twin} className="-mt-6 mb-10 px-6" />}
+              </>
             )}
             {composerMoved && pendingSelection && (
               <MovedComposer selection={pendingSelection} onSubmit={handleAddThread} onCancel={() => setPendingSelection(null)} />
@@ -669,6 +681,8 @@ export function DiffPage(props: DiffPageProps) {
                 mainRef.current = node;
               }}
               threads={threads}
+              otherViewThreads={otherViewThreads}
+              twin={twin}
               commentsEnabled={reviewsEnabled}
               commentActions={commentActions}
               onAddThread={handleAddThread}

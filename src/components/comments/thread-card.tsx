@@ -155,6 +155,7 @@ export function ThreadCard(props: ThreadCardProps) {
         author: DEFAULT_AUTHOR,
         anchorContent: thread.anchorContent ?? undefined,
         options: { pending: true },
+        viewRef: thread.viewRef,
       });
       await api.updateThreadStatus(thread.id, 'resolved');
       queryClient.invalidateQueries({ queryKey: ['threads', review.sessionId] });

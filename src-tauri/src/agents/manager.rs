@@ -262,21 +262,24 @@ impl AgentManager {
                         "the thread is still pending; submit the review first",
                     ));
                 }
-                Some(thread.session_id)
+                Some((thread.session_id, thread.view_ref))
             }
             AgentAction::ReviewFeedback { review_id } => {
                 let review = self.backend.get_review(review_id).await?;
                 if review.state != ReviewState::Submitted {
                     return Err(AppError::invalid("submit the review before sending it to the agent"));
                 }
-                Some(review.session_id)
+                Some((review.session_id, None))
             }
             _ => None,
         };
-        if let Some(sid) = target_session {
-            let session = self.backend.session(&sid).await?;
+        if let Some((sid, view_ref)) = target_session {
+            let mut session = self.backend.session(&sid).await?;
             if session.repo_path != rec.chat.repo_path {
                 return Err(AppError::invalid("the thread belongs to another repository"));
+            }
+            if let Some(view_ref) = view_ref {
+                session.r#ref = view_ref;
             }
             return self.bind_session(rec, session).await;
         }

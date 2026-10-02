@@ -11,7 +11,7 @@ import { deferReason, getRowCount } from '../../lib/diff-utils';
 import { loadAllHeldBackFiles, useLargeDiff } from '../../lib/large-diff';
 import { DiffContextHeader } from '../layout/diff-context-bar';
 import { GeneralComments } from '../comments/general-comments';
-import { OutsideThreads } from '../comments/outside-threads';
+import { OtherViewThreads, OutsideThreads } from '../comments/outside-threads';
 import { GENERAL_THREAD_FILE_PATH } from '../comments/types';
 import { useHighlighter, type CodeHighlighter } from '../../hooks/use-highlighter';
 import { type ViewMode, getFilePath } from '../../lib/diff-utils';
@@ -59,6 +59,9 @@ interface DiffViewProps {
   canRevert?: boolean;
   onRevert?: () => void;
   threads: CommentThread[];
+  /** Threads left in the other mode of a branch view (`twin`) that can't be placed in this one. */
+  otherViewThreads?: CommentThread[];
+  twin?: string | null;
   commentsEnabled: boolean;
   commentActions: CommentActions;
   onAddThread: CommentActions['addThread'];
@@ -120,7 +123,7 @@ export function DiffView(props: DiffViewProps) {
     diff, viewMode, theme, collapsedFiles, onToggleCollapse,
     reviewedFiles, onReviewedChange, sinceViewedFiles, onActiveFileChange, scrollRef,
     handle, baseRef, canRevert, onRevert,
-    threads, commentsEnabled, commentActions, onAddThread,
+    threads, otherViewThreads, twin, commentsEnabled, commentActions, onAddThread,
     pendingSelection, onPendingSelectionChange, initialScrollTop = 0, onScrollTopChange, hideWhitespace = false,
     memoryKey = 'diff',
   } = props;
@@ -400,6 +403,7 @@ export function DiffView(props: DiffViewProps) {
             commentActions={commentActions}
           />
           <OutsideThreads threads={outsideThreads} className="py-1" />
+          {twin && otherViewThreads && <OtherViewThreads threads={otherViewThreads} twin={twin} className="py-1" />}
         </>
       )}
       </div>

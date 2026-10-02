@@ -443,6 +443,9 @@ impl GithubService {
                 sessions.insert(session_id, session_ref);
             }
             let threads = db::list_repo_threads(&store, &repo)?;
+            add_view_anchors(&mut anchors, &sessions, &threads, |view| {
+                session_anchor(repo_dir, view, &pr_ref, &head_for_anchor, pr_base.as_deref())
+            });
             let mut lines = HashMap::new();
             let commented: HashSet<&str> = threads
                 .iter()
@@ -592,7 +595,7 @@ impl GithubService {
         let mut result = PushResult::default();
         let mut postable: Vec<&Thread> = Vec::new();
         for thread in &threads {
-            match review::postable_reason(thread, ctx.anchors.get(&thread.session_id), &ctx.diff) {
+            match review::postable_reason(thread, review::thread_anchor(&ctx.anchors, thread), &ctx.diff) {
                 None => postable.push(thread),
                 Some(reason) => {
                     result.skipped += 1;
@@ -788,11 +791,17 @@ impl GithubService {
                 .ok()
                 .and_then(|r| r.base_sha);
             let mut anchors = HashMap::new();
+            let mut sessions = HashMap::new();
             for (session_id, session_ref) in db::list_repo_sessions(&store, &repo)? {
                 let anchor = session_anchor(repo_dir, &session_ref, &pr_ref, &head, pr_base.as_deref());
-                anchors.insert(session_id, anchor);
+                anchors.insert(session_id.clone(), anchor);
+                sessions.insert(session_id, session_ref);
             }
-            Ok((db::list_repo_threads(&store, &repo)?, anchors))
+            let threads = db::list_repo_threads(&store, &repo)?;
+            add_view_anchors(&mut anchors, &sessions, &threads, |view| {
+                session_anchor(repo_dir, view, &pr_ref, &head, pr_base.as_deref())
+            });
+            Ok((threads, anchors))
         })
         .await
         .map_err(|e| AppError::internal(e.to_string()))??;
@@ -1065,6 +1074,26 @@ async fn linked_pr_number(repo_path: &str, branch: &str) -> Option<u64> {
         return configured;
     }
     branch.strip_prefix("pr-").and_then(|n| n.parse::<u64>().ok())
+}
+
+/// Anchors for threads left in another view of their session's review (`main` in the review of `main...HEAD`).
+fn add_view_anchors(
+    anchors: &mut HashMap<String, review::SessionAnchor>,
+    sessions: &HashMap<String, String>,
+    threads: &[Thread],
+    anchor_of: impl Fn(&str) -> review::SessionAnchor,
+) {
+    for thread in threads {
+        let Some(view) = thread.view_ref.as_deref() else {
+            continue;
+        };
+        if sessions.get(&thread.session_id).map(String::as_str) == Some(view) {
+            continue;
+        }
+        anchors
+            .entry(review::view_anchor_key(&thread.session_id, view))
+            .or_insert_with(|| anchor_of(view));
+    }
 }
 
 fn session_anchor(

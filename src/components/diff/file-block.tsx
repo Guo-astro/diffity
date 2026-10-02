@@ -708,6 +708,7 @@ function FileCard(props: FileCardProps) {
           {sinceViewed?.canDiff && showSinceViewed && (
             <SinceViewedDiff
               sessionId={sinceViewed.sessionId}
+              viewRef={sinceViewed.viewRef}
               filePath={filePath}
               version={sinceViewed.version}
               viewMode={viewMode}

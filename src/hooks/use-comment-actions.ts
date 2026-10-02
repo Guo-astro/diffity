@@ -18,7 +18,7 @@ function mentionFollowUp(thread: CommentThread, askClaude = false) {
   enqueueClaude({ kind: 'thread', threadId: thread.id }, { repoPath: api.getRepoPath(), sessionId: thread.sessionId ?? null });
 }
 
-export function useCommentActions(sessionId: string | null, enabled: boolean) {
+export function useCommentActions(sessionId: string | null, enabled: boolean, viewRef?: string) {
   const queryClient = useQueryClient();
 
   const invalidateThreads = useCallback(() => {
@@ -30,7 +30,7 @@ export function useCommentActions(sessionId: string | null, enabled: boolean) {
     if (!enabled || !sessionId) {
       return;
     }
-    api.createThread({ sessionId, filePath, side, startLine, endLine, body, author, anchorContent, options }).then((thread) => {
+    api.createThread({ sessionId, filePath, side, startLine, endLine, body, author, anchorContent, options, viewRef }).then((thread) => {
       invalidateThreads();
       mentionFollowUp(thread);
       const prNumber = options?.postToGitHub;

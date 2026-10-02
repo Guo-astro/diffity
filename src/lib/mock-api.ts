@@ -35,15 +35,22 @@ const reviews = new Map<string, Review>();
 const viewed = new Map<string, Map<string, string>>();
 const settings = new Map<string, string>([['theme', 'system']]);
 
+/** `main` and `main...HEAD` share one review, like the backend's `shared_session_ref`. */
+function sharedRef(ref: string): string {
+  const allChanges = !ref.includes('..') && !ref.startsWith('__') && !['work', '.', 'staged', 'unstaged'].includes(ref)
+    && !/^[0-9a-f]{7,40}$/i.test(ref) && !/\bHEAD\b/.test(ref);
+  return allChanges ? `${ref}...HEAD` : ref;
+}
+
 function sessionFor(repoPath: string, ref: string): ReviewSession {
-  const key = `${repoPath}::${ref}`;
+  const key = `${repoPath}::${sharedRef(ref)}`;
   const existing = sessions.get(key);
   if (existing) {
-    return existing;
+    return { ...existing, ref };
   }
-  const session = { id: `sess-${sessions.size + 1}`, repoPath, ref };
+  const session = { id: `sess-${sessions.size + 1}`, repoPath, ref: sharedRef(ref) };
   sessions.set(key, session);
-  return session;
+  return { ...session, ref };
 }
 
 function makeComment(
@@ -135,6 +142,7 @@ function insertThread(input: NewThread): Thread {
     updatedAt: now(),
     pending: reviewId !== null,
     reviewId,
+    viewRef: input.viewRef ?? [...sessions.values()].find((session) => session.id === input.sessionId)?.ref ?? null,
   };
   threads.set(id, thread);
   return thread;
@@ -388,7 +396,7 @@ const handlers: Record<string, (args: Args) => unknown> = {
       .filter((t) => bySession.get(t.sessionId)?.repoPath === args.repoPath)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .map((t) => {
-        const ref = bySession.get(t.sessionId)?.ref ?? 'work';
+        const ref = t.viewRef ?? bySession.get(t.sessionId)?.ref ?? 'work';
         const first = t.comments[0];
         return {
           id: t.id,

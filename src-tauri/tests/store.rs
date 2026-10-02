@@ -15,6 +15,7 @@ fn new_thread(session_id: &str, body: &str) -> NewThread {
         author_type: None,
         author_name: None,
         pending: None,
+        view_ref: None,
     }
 }
 
@@ -327,7 +328,7 @@ fn migrates_v1_database() {
         .unwrap()
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
     let t = store.get_thread("t1").unwrap();
     assert!(!t.pending);
     assert!(t.review_id.is_none());
@@ -380,7 +381,7 @@ fn v2_database_gains_viewed_snapshots() {
     }
     let store = Store::open(&path).unwrap();
     let version: i64 = store.conn().unwrap().pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
     let old = store.get_viewed("s1", "old.rs").unwrap().unwrap();
     assert_eq!((old.content_hash.as_str(), old.blob_id), ("h0", None));
 
@@ -404,6 +405,37 @@ fn branch_relative_refs() {
     }
     for r in ["work", "staged", "unstaged", ".", "__tree__", "abc1234", "abc1234~1..abc1234", "main..feature"] {
         assert!(!is_branch_relative(r), "{r}");
+    }
+}
+
+#[test]
+fn all_changes_and_committed_only_share_a_review() {
+    use diffity_desktop_lib::core::store::{is_all_changes_ref, shared_session_ref};
+    let repo = common::Repo::with_commit();
+    let path = repo.path.to_string_lossy().to_string();
+    let store = Store::open_in_memory().unwrap();
+
+    let all = store.get_or_create_session(&path, "main").unwrap();
+    let committed = store.get_or_create_session(&path, "main...HEAD").unwrap();
+    assert_eq!(all.id, committed.id);
+    assert_eq!(all.r#ref, "main", "the session keeps the view's own ref");
+    assert_eq!(committed.r#ref, "main...HEAD");
+    assert_eq!(store.get_session_by_id(&all.id).unwrap().r#ref, "main...HEAD");
+
+    let left = store.create_thread(&NewThread { view_ref: Some("main".into()), ..new_thread(&all.id, "in all changes") }).unwrap();
+    assert_eq!(left.view_ref.as_deref(), Some("main"));
+    let default = store.create_thread(&new_thread(&committed.id, "in committed only")).unwrap();
+    assert_eq!(default.view_ref.as_deref(), Some("main...HEAD"), "defaults to the session's ref");
+    assert_eq!(store.list_threads(&committed.id, None).unwrap().len(), 2);
+
+    store.set_viewed(&all.id, "src/lib.rs", "h", None, true).unwrap();
+    assert_eq!(store.list_viewed(&committed.id).unwrap().len(), 1);
+
+    assert_ne!(store.get_or_create_session(&path, "origin/main...HEAD").unwrap().id, all.id);
+    assert_eq!(shared_session_ref("origin/main"), "origin/main...HEAD");
+    for r in ["work", "__tree__", "HEAD~1", "main..feature", "main...HEAD", "abc1234", "abc1234~1..abc1234"] {
+        assert!(!is_all_changes_ref(r), "{r}");
+        assert_eq!(shared_session_ref(r), r);
     }
 }
 
@@ -434,7 +466,7 @@ fn unscoped_sessions_are_adopted_by_the_first_branch() {
     let repo = common::Repo::with_commit();
     let path = repo.path.to_string_lossy().to_string();
     let store = Store::open_in_memory().unwrap();
-    let legacy = store.get_or_create_scoped_session(&path, "main", "").unwrap();
+    let legacy = store.get_or_create_scoped_session(&path, "main...HEAD", "").unwrap();
     let adopted = store.get_or_create_session(&path, "main").unwrap();
     assert_eq!(adopted.id, legacy.id);
     assert_eq!(adopted.scope, "main");

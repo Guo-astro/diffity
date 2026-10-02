@@ -33,7 +33,7 @@ export function isPrShapedRef(diffRef: string): boolean {
 
 /**
  * A bare branch or tag (`main`): everything on HEAD since it split from it, plus uncommitted changes. Its
- * committed-only twin is `main...HEAD`; the two are separate views with their own comments.
+ * committed-only twin is `main...HEAD`; the two views share one review (comments and Viewed marks).
  */
 export function isAllChangesRef(diffRef: string): boolean {
   return diffRef !== HOME_REF && !diffRef.includes('..') && !isWorkingTreeRef(diffRef) && !parseCommitRef(diffRef);

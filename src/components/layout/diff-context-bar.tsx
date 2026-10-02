@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { Skeleton } from '../ui/skeleton';
@@ -5,6 +6,7 @@ import { SegmentedToggle } from '../ui/segmented-toggle';
 import { buttonGhost } from '../ui/button-styles';
 import { fetchCommit, fetchDiff, parseCommitRef } from '../../lib/api';
 import { cn } from '../../lib/cn';
+import { getFilePath } from '../../lib/diff-utils';
 import { useCopy } from '../../hooks/use-copy';
 import { useRepoNav } from '../../hooks/use-repo';
 import { useGitHubPr, useGitStatus } from '../../hooks/use-repo-state';
@@ -69,8 +71,10 @@ function plural(count: number, word: string) {
   return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
-/** Files with uncommitted changes (a file both staged and edited counts once); 0 when the tree is clean. */
-function useUncommittedFiles(): number {
+const NO_PATHS = new Set<string>();
+
+/** Paths with uncommitted changes: empty when the tree is clean, null while still unknown. */
+export function useUncommittedPaths(): Set<string> | null {
   const { data: status } = useGitStatus();
   const dirty = !!status && status.staged + status.unstaged + status.untracked > 0;
   const signature = status ? `${status.staged}/${status.unstaged}/${status.untracked}` : '';
@@ -80,10 +84,21 @@ function useUncommittedFiles(): number {
     enabled: dirty,
     placeholderData: (previous) => previous,
   });
-  if (!dirty || !status) {
+  const paths = useMemo(() => (data ? new Set(data.files.map(getFilePath)) : null), [data]);
+  if (!status) {
+    return null;
+  }
+  return dirty ? paths : NO_PATHS;
+}
+
+/** Files with uncommitted changes (a file both staged and edited counts once); 0 when the tree is clean. */
+function useUncommittedFiles(): number {
+  const { data: status } = useGitStatus();
+  const paths = useUncommittedPaths();
+  if (!status) {
     return 0;
   }
-  return data?.files.length ?? status.staged + status.unstaged + status.untracked;
+  return paths?.size ?? status.staged + status.unstaged + status.untracked;
 }
 
 /** The PR view shows commits only, since its comments must sit on lines GitHub has. */
@@ -112,23 +127,28 @@ function PrUncommittedNotice(props: { baseRef: string }) {
   );
 }
 
-/** Switches a branch comparison between all changes (`main`) and commits only (`main...HEAD`) while the tree is dirty. */
-function UncommittedSwitch(props: { diffRef: string; twin: string }) {
-  const { diffRef, twin } = props;
+/**
+ * Switches a branch view between all changes (`main`) and commits only (`main...HEAD`) while the tree is dirty.
+ * Both modes share one review, so comments and Viewed marks carry over. Lives in the title bar so it stays in sight.
+ */
+export function ChangesModeSwitch(props: { diffRef: string }) {
+  const { diffRef } = props;
   const nav = useRepoNav();
   const files = useUncommittedFiles();
+  const { details } = useGitHubPr();
+  const twin = uncommittedTwin(diffRef);
   const including = isAllChangesRef(diffRef);
 
-  if (files === 0) {
+  if (!twin || files === 0 || (details && diffRef === prDiffRef(details))) {
     return null;
   }
+  const count = plural(files, 'uncommitted file');
   return (
-    <>
-      <span className="inline-flex items-center gap-1.5 shrink-0">
+    <div className="flex items-center gap-2 shrink-0 text-xs text-text-secondary">
+      <span className="hidden @[880px]/titlebar:inline-flex items-center gap-1.5" title={`${count} ${including ? 'included' : 'not shown'}`}>
         <span className="w-1.5 h-1.5 rounded-full bg-modified" aria-hidden />
-        {plural(files, 'uncommitted file')} {including ? 'included' : 'not shown'}
+        {files} uncommitted
       </span>
-      <span className="flex-1" />
       <SegmentedToggle
         value={including ? 'all' : 'committed'}
         onChange={(value) => {
@@ -138,11 +158,11 @@ function UncommittedSwitch(props: { diffRef: string; twin: string }) {
         }}
         labelClassName="text-xs"
         options={[
-          { value: 'all', label: 'All changes', title: 'Commits on this branch plus uncommitted changes' },
-          { value: 'committed', label: 'Committed only', title: 'Only what is committed, like the pull request will see it' },
+          { value: 'all', label: 'All changes', title: `Commits on this branch plus ${count}` },
+          { value: 'committed', label: 'Committed only', title: 'Only what is committed, like the pull request will see it. Comments and Viewed marks are shared with All changes' },
         ]}
       />
-    </>
+    </div>
   );
 }
 
@@ -154,7 +174,6 @@ export function DiffContextHeader(props: { diffRef: string }) {
   const commitSha = parseCommitRef(diffRef);
   const isPr = details !== null && diffRef === prDiffRef(details);
   const mayBePr = prLoading && isPrShapedRef(diffRef);
-  const twin = uncommittedTwin(diffRef);
 
   if (commitSha) {
     return <CommitHeader sha={commitSha} />;
@@ -176,7 +195,6 @@ export function DiffContextHeader(props: { diffRef: string }) {
           ? <>Every change after <code className="font-mono text-text">{base}</code>, up to <code className="font-mono text-text">{head}</code></>
           : <>Changes on <code className="font-mono text-text">{head}</code> since it split from <code className="font-mono text-text">{base}</code></>}
       </span>
-      {twin && <UncommittedSwitch diffRef={diffRef} twin={twin} />}
     </div>
   );
 }

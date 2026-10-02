@@ -7,6 +7,7 @@ import { isThreadResolved } from '../comments/types';
 import { Breadcrumb, TitleBar } from './title-bar';
 import { CommentsButton } from '../../features/comments/comments-button';
 import { RefMenu } from './ref-menu';
+import { ChangesModeSwitch } from './diff-context-bar';
 import { ClaudeToolbar } from '../../features/claude/claude-toolbar';
 import { FinishReview } from '../../features/review/finish-review';
 import { useRepoMeta } from '../../hooks/use-repo-state';
@@ -122,6 +123,7 @@ export function Toolbar(props: ToolbarProps) {
         <Breadcrumb name={repoName} path={meta?.path}>
           {diffRef && <RefMenu diffRef={diffRef} branch={branch} />}
         </Breadcrumb>
+        {diffRef && <ChangesModeSwitch diffRef={diffRef} />}
       </div>
       <div data-tauri-drag-region className="flex-1 min-w-2 self-stretch" />
       <div className="flex items-center gap-2 shrink-0">

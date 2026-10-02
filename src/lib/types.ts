@@ -152,6 +152,8 @@ export interface Thread {
   pending: boolean;
   /** Review the thread was started in, if any. */
   reviewId: string | null;
+  /** The view the thread was left in (`main`, `main...HEAD`, …); its line numbers belong to that view's diff. */
+  viewRef: string | null;
 }
 
 export interface NewThread {
@@ -167,6 +169,8 @@ export interface NewThread {
   authorName?: string;
   /** Add to the session's pending review (created on demand) instead of publishing. */
   pending?: boolean;
+  /** The view the thread is left in; defaults to the session's ref. */
+  viewRef?: string | null;
 }
 
 export type ReviewState = 'pending' | 'submitted';

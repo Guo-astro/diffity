@@ -295,6 +295,21 @@ pub struct PrDiff {
     pub locally_changed: HashSet<String>,
 }
 
+/// Key of the anchor for threads of `session_id` left in another view (`view_ref`) of the same review, such as
+/// `main` in the review of `main...HEAD`.
+pub fn view_anchor_key(session_id: &str, view_ref: &str) -> String {
+    format!("{session_id}\n{view_ref}")
+}
+
+/// The anchor of the view `thread` was left in: its own view's when that has one, else its session's.
+pub fn thread_anchor<'a>(anchors: &'a HashMap<String, SessionAnchor>, thread: &Thread) -> Option<&'a SessionAnchor> {
+    thread
+        .view_ref
+        .as_deref()
+        .and_then(|view| anchors.get(&view_anchor_key(&thread.session_id, view)))
+        .or_else(|| anchors.get(&thread.session_id))
+}
+
 /// `None` when `thread` can be posted to the PR as-is, otherwise why not.
 pub fn postable_reason(thread: &Thread, anchor: Option<&SessionAnchor>, pr: &PrDiff) -> Option<&'static str> {
     let Some(anchor) = anchor else {
@@ -359,10 +374,10 @@ pub fn review_candidates(
         .into_iter()
         .filter(|t| t.status == ThreadStatus::Open && t.github_thread_id.is_none() && user_started(t))
         .map(|t| {
-            let anchor = anchors.get(&t.session_id);
+            let anchor = thread_anchor(anchors, &t);
             let blocked_reason = postable_reason(&t, anchor, pr).map(str::to_string);
             ReviewCandidate {
-                session_ref: sessions.get(&t.session_id).cloned().unwrap_or_default(),
+                session_ref: t.view_ref.clone().or_else(|| sessions.get(&t.session_id).cloned()).unwrap_or_default(),
                 draft: t.pending,
                 blocked_reason,
                 thread: t,
@@ -370,7 +385,7 @@ pub fn review_candidates(
         })
         .collect();
     out.sort_by_key(|c| {
-        let pr_first = anchors.get(&c.thread.session_id).is_some_and(|a| a.is_pr_session);
+        let pr_first = thread_anchor(anchors, &c.thread).is_some_and(|a| a.is_pr_session);
         (c.blocked_reason.is_some(), !pr_first, c.thread.created_at.clone())
     });
     out
@@ -388,7 +403,7 @@ pub fn select_pushable(
         .into_iter()
         .filter(|t| t.status == ThreadStatus::Open && t.github_thread_id.is_none() && !t.pending)
         .filter(|t| {
-            let Some(anchor) = anchors.get(&t.session_id) else {
+            let Some(anchor) = thread_anchor(anchors, t) else {
                 return false;
             };
             if t.file_path == GENERAL_FILE_PATH {
@@ -407,7 +422,7 @@ pub fn select_pushable(
         })
         .collect();
     out.sort_by_key(|t| {
-        let pr_first = anchors.get(&t.session_id).is_some_and(|a| a.is_pr_session);
+        let pr_first = thread_anchor(anchors, t).is_some_and(|a| a.is_pr_session);
         (!pr_first, t.created_at.clone())
     });
     out
@@ -470,6 +485,7 @@ mod pushable_tests {
             updated_at: String::new(),
             pending: false,
             review_id: None,
+            view_ref: None,
         }
     }
 
@@ -615,6 +631,7 @@ mod candidate_tests {
             updated_at: String::new(),
             pending: false,
             review_id: None,
+            view_ref: None,
         }
     }
 

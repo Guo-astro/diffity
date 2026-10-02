@@ -164,6 +164,24 @@ pub fn is_branch_relative(r#ref: &str) -> bool {
     !is_sha && !r#ref.is_empty()
 }
 
+/// A bare branch or tag (`main`): the branch view with uncommitted changes. It shares its review with its
+/// committed-only twin (`main...HEAD`), see `shared_session_ref`.
+pub fn is_all_changes_ref(r#ref: &str) -> bool {
+    is_branch_relative(r#ref)
+        && !r#ref.contains("..")
+        && !r#ref.starts_with("__")
+        && !r#ref.split(|c: char| !c.is_ascii_alphanumeric()).any(|part| part == "HEAD")
+}
+
+/// The ref a view's review session is stored under: `main` and `main...HEAD` are two views of one review, so
+/// comments and Viewed marks follow you when you switch between them.
+pub fn shared_session_ref(r#ref: &str) -> String {
+    if is_all_changes_ref(r#ref) {
+        return format!("{ref}...HEAD", ref = r#ref);
+    }
+    r#ref.to_string()
+}
+
 /// The scope a view of `ref` belongs to in `repo_path`: the checked-out branch (or commit when detached)
 /// for branch-relative refs, empty otherwise.
 pub fn session_scope(repo_path: &str, r#ref: &str) -> String {
@@ -185,7 +203,76 @@ pub fn current_scope(repo_path: &str) -> String {
     }
 }
 
-const SCHEMA_VERSION: i64 = 4;
+/// Threads remember the view they were left in (`view_ref`), since their line numbers belong to it. Branch views
+/// (`main`) are folded into their committed-only twin (`main...HEAD`) so both modes share one review.
+fn migrate_v5(conn: &Connection) -> Result<()> {
+    let has_view_ref: bool = conn.query_row(
+        "SELECT count(*) > 0 FROM pragma_table_info('threads') WHERE name = 'view_ref'",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_view_ref {
+        conn.execute_batch("ALTER TABLE threads ADD COLUMN view_ref TEXT NULL;")?;
+    }
+    conn.execute_batch(
+        "UPDATE threads SET view_ref = (SELECT ref FROM review_sessions s WHERE s.id = threads.session_id) WHERE view_ref IS NULL;",
+    )?;
+    let sessions = {
+        let mut stmt = conn.prepare("SELECT id, repo_path, ref, scope FROM review_sessions ORDER BY created_at, rowid")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?)))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for (id, repo_path, r#ref, scope) in sessions {
+        if !is_all_changes_ref(&r#ref) {
+            continue;
+        }
+        let shared = shared_session_ref(&r#ref);
+        let twin: Option<String> = conn
+            .query_row(
+                "SELECT id FROM review_sessions WHERE repo_path = ?1 AND ref = ?2 AND scope = ?3",
+                params![repo_path, shared, scope],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match twin {
+            Some(into) => merge_sessions(conn, &id, &into)?,
+            None => {
+                conn.execute("UPDATE review_sessions SET ref = ?2 WHERE id = ?1", params![id, shared])?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Moves everything of session `from` into `into` and drops `from`. A pending review of `from` is folded into
+/// the one of `into` when both have one (one pending review per session).
+fn merge_sessions(conn: &Connection, from: &str, into: &str) -> Result<()> {
+    if let (Some(old), Some(kept)) = (pending_review_id(conn, from)?, pending_review_id(conn, into)?) {
+        conn.execute("UPDATE threads SET review_id = ?2 WHERE review_id = ?1", params![old, kept])?;
+        conn.execute("UPDATE comments SET review_id = ?2 WHERE review_id = ?1", params![old, kept])?;
+        conn.execute("DELETE FROM reviews WHERE id = ?1", [&old])?;
+    }
+    conn.execute("UPDATE reviews SET session_id = ?2 WHERE session_id = ?1", params![from, into])?;
+    conn.execute("UPDATE threads SET session_id = ?2 WHERE session_id = ?1", params![from, into])?;
+    conn.execute(
+        "INSERT OR IGNORE INTO viewed_files (session_id, file_path, content_hash, blob_id)
+           SELECT ?2, file_path, content_hash, blob_id FROM viewed_files WHERE session_id = ?1",
+        params![from, into],
+    )?;
+    conn.execute("DELETE FROM viewed_files WHERE session_id = ?1", [from])?;
+    let has_chats: bool = conn.query_row(
+        "SELECT count(*) > 0 FROM sqlite_master WHERE type = 'table' AND name = 'agent_chat_sessions'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_chats {
+        conn.execute("UPDATE agent_chat_sessions SET session_id = ?2 WHERE session_id = ?1", params![from, into])?;
+    }
+    conn.execute("DELETE FROM review_sessions WHERE id = ?1", [from])?;
+    Ok(())
+}
+
+const SCHEMA_VERSION: i64 = 5;
 
 pub struct Store {
     conn: Mutex<Connection>,
@@ -235,6 +322,9 @@ impl Store {
             }
             if version < 4 {
                 migrate_v4(conn)?;
+            }
+            if version < 5 {
+                migrate_v5(conn)?;
             }
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             Ok(())
@@ -345,7 +435,7 @@ pub enum UpsertOutcome {
     Unchanged,
 }
 
-const THREAD_COLS: &str = "id, session_id, file_path, side, start_line, end_line, status, severity, anchor_content, github_thread_id, created_at, updated_at, review_id";
+const THREAD_COLS: &str = "id, session_id, file_path, side, start_line, end_line, status, severity, anchor_content, github_thread_id, created_at, updated_at, review_id, view_ref";
 const COMMENT_COLS: &str = "id, thread_id, author_type, author_name, body, github_comment_id, created_at, pending, review_id";
 const REVIEW_COLS: &str = "id, session_id, state, body, verdict, created_at, submitted_at";
 
@@ -369,6 +459,7 @@ fn row_to_thread(r: &Row) -> rusqlite::Result<Thread> {
         updated_at: r.get(11)?,
         pending: false,
         review_id: r.get(12)?,
+        view_ref: r.get(13)?,
     })
 }
 
@@ -629,10 +720,15 @@ impl Store {
 
     // ---- sessions ----
 
-    /// Get-or-create the review session keyed by (repo_path, ref, scope); see `session_scope`.
+    /// Get-or-create the review session of a view, keyed by (repo_path, shared ref, scope); see `shared_session_ref`
+    /// and `session_scope`. The returned session carries the view's own `ref`.
     pub fn get_or_create_session(&self, repo_path: &str, r#ref: &str) -> Result<ReviewSession> {
         let scope = session_scope(repo_path, r#ref);
-        self.get_or_create_scoped_session(repo_path, r#ref, &scope)
+        let session = self.get_or_create_scoped_session(repo_path, &shared_session_ref(r#ref), &scope)?;
+        Ok(ReviewSession {
+            r#ref: r#ref.to_string(),
+            ..session
+        })
     }
 
     pub fn get_or_create_scoped_session(&self, repo_path: &str, r#ref: &str, scope: &str) -> Result<ReviewSession> {
@@ -709,7 +805,7 @@ impl Store {
              WHERE s.repo_path = ?1 ORDER BY t.updated_at DESC, t.rowid DESC"
         ))?;
         let rows = stmt
-            .query_map([repo_path], |r| Ok((row_to_thread(r)?, r.get::<_, String>(13)?, r.get::<_, String>(14)?)))?
+            .query_map([repo_path], |r| Ok((row_to_thread(r)?, r.get::<_, String>(14)?, r.get::<_, String>(15)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
             .map(|(thread, r#ref, scope)| {
@@ -792,8 +888,8 @@ impl Store {
             None
         };
         tx.execute(
-            "INSERT INTO threads (id, session_id, file_path, side, start_line, end_line, status, severity, anchor_content, created_at, updated_at, review_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, ?9, ?10)",
+            "INSERT INTO threads (id, session_id, file_path, side, start_line, end_line, status, severity, anchor_content, created_at, updated_at, review_id, view_ref)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, ?9, ?10, COALESCE(?11, (SELECT ref FROM review_sessions WHERE id = ?2)))",
             params![
                 id,
                 input.session_id,
@@ -804,7 +900,8 @@ impl Store {
                 input.severity.map(severity_str),
                 input.anchor_content,
                 ts,
-                review_id
+                review_id,
+                input.view_ref
             ],
         )?;
         let author_name = input
@@ -1388,5 +1485,46 @@ mod tests {
         assert_eq!(store.list_threads("s1", None).unwrap().len(), 1);
         let fk: bool = store.conn().unwrap().pragma_query_value(None, "foreign_keys", |r| r.get(0)).unwrap();
         assert!(fk);
+    }
+
+    #[test]
+    fn v5_folds_branch_views_into_one_review() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        conn.execute_batch(MIGRATION_V2).unwrap();
+        migrate_v3(&conn).unwrap();
+        migrate_v4(&conn).unwrap();
+        conn.pragma_update(None, "user_version", 4).unwrap();
+        conn.execute_batch(
+            "INSERT INTO review_sessions (id, repo_path, ref, scope, created_at) VALUES
+               ('all', '/r', 'main', 'feat', 'x'), ('committed', '/r', 'main...HEAD', 'feat', 'x'),
+               ('lone', '/r', 'dev', 'feat', 'x'), ('work', '/r', 'work', '', 'x');
+             INSERT INTO reviews (id, session_id, state, created_at) VALUES ('r1', 'all', 'pending', 'x'), ('r2', 'committed', 'pending', 'x');
+             INSERT INTO threads (id, session_id, file_path, side, start_line, end_line, status, created_at, updated_at, review_id) VALUES
+               ('t1', 'all', 'a.rs', 'new', 1, 1, 'open', 'x', 'x', 'r1'),
+               ('t2', 'committed', 'a.rs', 'new', 2, 2, 'open', 'x', 'x', NULL),
+               ('t3', 'lone', 'a.rs', 'new', 3, 3, 'open', 'x', 'x', NULL),
+               ('t4', 'work', 'a.rs', 'new', 4, 4, 'open', 'x', 'x', NULL);
+             INSERT INTO comments (id, thread_id, author_type, author_name, body, created_at, pending, review_id)
+               VALUES ('c1', 't1', 'user', 'You', 'draft', 'x', 1, 'r1');
+             INSERT INTO viewed_files (session_id, file_path, content_hash) VALUES ('all', 'a.rs', 'h1'), ('all', 'b.rs', 'h2'), ('committed', 'a.rs', 'h3');",
+        )
+        .unwrap();
+
+        let store = Store::init(conn).unwrap();
+        assert!(store.get_session_by_id("all").is_err());
+        let threads = store.list_threads("committed", None).unwrap();
+        let views: Vec<_> = threads.iter().map(|t| (t.id.as_str(), t.view_ref.as_deref())).collect();
+        assert_eq!(views, vec![("t1", Some("main")), ("t2", Some("main...HEAD"))]);
+        assert_eq!(threads[0].review_id.as_deref(), Some("r2"));
+        assert_eq!(store.get_comment("c1").unwrap().pending, true);
+        let viewed: Vec<_> = store.list_viewed("committed").unwrap().into_iter().map(|v| (v.file_path, v.content_hash)).collect();
+        assert_eq!(viewed, vec![("a.rs".to_string(), "h3".to_string()), ("b.rs".to_string(), "h2".to_string())]);
+
+        let lone = store.get_session_by_id("lone").unwrap();
+        assert_eq!(lone.r#ref, "dev...HEAD");
+        assert_eq!(store.list_threads("lone", None).unwrap()[0].view_ref.as_deref(), Some("dev"));
+        assert_eq!(store.get_session_by_id("work").unwrap().r#ref, "work");
+        assert_eq!(store.list_threads("work", None).unwrap()[0].view_ref.as_deref(), Some("work"));
     }
 }

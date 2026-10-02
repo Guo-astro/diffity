@@ -46,6 +46,7 @@ describe('toCommentThread', () => {
       updatedAt: '2026-01-01T00:00:00Z',
       pending: true,
       reviewId: 'r1',
+      viewRef: 'work',
       comments: [
         {
           id: 'c1',

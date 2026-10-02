@@ -117,7 +117,8 @@ pub fn list(store: &Store, repo_path: &str, r#ref: Option<&str>) -> Result<Vec<C
          ORDER BY c.updated_at DESC"
     ))?;
     let scope = r#ref.map(|r| crate::core::store::session_scope(repo_path, r)).unwrap_or_default();
-    let rows = stmt.query_map(params![repo_path, r#ref, scope], chat_from_row)?;
+    let shared = r#ref.map(crate::core::store::shared_session_ref);
+    let rows = stmt.query_map(params![repo_path, shared, scope], chat_from_row)?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?.chat);

@@ -139,9 +139,9 @@ export const submitReview = (sessionId: string, body?: string | null, verdict?: 
   invoke<Review>('submit_review', { sessionId, body: body ?? null, verdict: verdict ?? null });
 export const discardReview = (sessionId: string) => invoke<void>('discard_review', { sessionId });
 export const listViewed = (sessionId: string) => invoke<ViewedFile[]>('list_viewed', { sessionId });
-export const setViewed = (sessionId: string, filePath: string, contentHash: string, viewed: boolean) =>
-  invoke<void>('set_viewed', { sessionId, filePath, contentHash, viewed });
-export const viewedChanges = (sessionId: string, filePath: string) => invoke<string>('viewed_changes', { sessionId, filePath });
+export const setViewed = (sessionId: string, filePath: string, contentHash: string, viewed: boolean, ref: string | null) =>
+  invoke<void>('set_viewed', { sessionId, filePath, contentHash, viewed, ref });
+export const viewedChanges = (sessionId: string, filePath: string, ref: string | null) => invoke<string>('viewed_changes', { sessionId, filePath, ref });
 
 // agents
 export const listAgents = (refresh?: boolean) => invoke<AgentInfo[]>('list_agents', { refresh: refresh ?? null });

@@ -285,6 +285,7 @@ export function toCommentThread(thread: Thread): CommentThread {
     pending: thread.pending,
     reviewId: thread.reviewId,
     githubThreadId: thread.githubThreadId,
+    viewRef: thread.viewRef,
   };
 }
 
@@ -303,6 +304,7 @@ export async function createThread(data: {
   author: CommentAuthor;
   anchorContent?: string;
   options?: SubmitOptions;
+  viewRef?: string | null;
 }): Promise<CommentThread> {
   const thread = await tauri.createThread({
     sessionId: data.sessionId,
@@ -315,6 +317,7 @@ export async function createThread(data: {
     authorType: data.author.type,
     authorName: data.author.name,
     pending: data.options?.pending ?? false,
+    viewRef: data.viewRef ?? null,
   });
   return toCommentThread(thread);
 }
@@ -451,8 +454,8 @@ export async function fetchTreePaths(): Promise<{ paths: string[]; diffIgnored: 
   };
 }
 
-export function fetchViewedChanges(sessionId: string, filePath: string): Promise<string> {
-  return tauri.viewedChanges(sessionId, filePath);
+export function fetchViewedChanges(sessionId: string, filePath: string, ref: string | null): Promise<string> {
+  return tauri.viewedChanges(sessionId, filePath, ref);
 }
 
 export async function fetchTreeEntries(dirPath?: string): Promise<{ entries: TreeEntryResponse[] }> {

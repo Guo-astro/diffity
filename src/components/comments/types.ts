@@ -41,6 +41,7 @@ export interface CommentThread {
   pending?: boolean;
   reviewId?: string | null;
   githubThreadId?: string | null;
+  viewRef?: string | null;
 }
 
 export const DEFAULT_AUTHOR: CommentAuthor = { name: 'You', type: 'user' };

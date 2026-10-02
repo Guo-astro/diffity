@@ -302,6 +302,10 @@ pub fn list_repo_threads(store: &Store, repo_path: &str) -> Result<Vec<RepoThrea
     let scope = crate::core::store::current_scope(repo_path);
     let mut out = Vec::with_capacity(rows.len());
     for (session, thread) in rows {
+        let session = ReviewSession {
+            r#ref: thread.view_ref.clone().unwrap_or(session.r#ref),
+            ..session
+        };
         if !session.scope.is_empty() && session.scope != scope {
             let label = format!("{} · {}", ref_label(repo, &session.r#ref), session.scope);
             let mut item = to_repo_thread(&session, label, thread, ThreadAnchor::Unknown, None);
