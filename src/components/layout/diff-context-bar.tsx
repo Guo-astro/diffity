@@ -1,11 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import { Skeleton } from '../ui/skeleton';
-import { fetchCommit, parseCommitRef } from '../../lib/api';
+import { SegmentedToggle } from '../ui/segmented-toggle';
+import { buttonGhost } from '../ui/button-styles';
+import { fetchCommit, fetchDiff, parseCommitRef } from '../../lib/api';
+import { cn } from '../../lib/cn';
 import { useCopy } from '../../hooks/use-copy';
-import { useGitHubPr } from '../../hooks/use-repo-state';
+import { useRepoNav } from '../../hooks/use-repo';
+import { useGitHubPr, useGitStatus } from '../../hooks/use-repo-state';
 import { AuthorAvatar } from './commit-list';
-import { isPrShapedRef, prDiffRef, rangeParts } from './ref-menu';
+import { isAllChangesRef, isPrShapedRef, prDiffRef, rangeParts, shortBase, uncommittedTwin } from './ref-menu';
 import { CheckIcon, CopyIcon, GitCompareIcon } from '../ui/icon';
 
 export function useCommitDetails(sha: string | null) {
@@ -61,29 +65,118 @@ function CommitHeader(props: { sha: string }) {
   );
 }
 
+function plural(count: number, word: string) {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
+}
+
+/** Files with uncommitted changes (a file both staged and edited counts once); 0 when the tree is clean. */
+function useUncommittedFiles(): number {
+  const { data: status } = useGitStatus();
+  const dirty = !!status && status.staged + status.unstaged + status.untracked > 0;
+  const signature = status ? `${status.staged}/${status.unstaged}/${status.untracked}` : '';
+  const { data } = useQuery({
+    queryKey: ['diff', 'uncommitted-files', signature],
+    queryFn: () => fetchDiff(false, 'work', false),
+    enabled: dirty,
+    placeholderData: (previous) => previous,
+  });
+  if (!dirty || !status) {
+    return 0;
+  }
+  return data?.files.length ?? status.staged + status.unstaged + status.untracked;
+}
+
+/** The PR view shows commits only, since its comments must sit on lines GitHub has. */
+function PrUncommittedNotice(props: { baseRef: string }) {
+  const { baseRef } = props;
+  const nav = useRepoNav();
+  const files = useUncommittedFiles();
+
+  if (files === 0) {
+    return null;
+  }
+  return (
+    <div className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border bg-bg-secondary text-[13px] text-text-secondary">
+      <span className="w-1.5 h-1.5 rounded-full bg-modified shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">
+        {plural(files, 'uncommitted file')} {files === 1 ? 'isn’t' : 'aren’t'} in this pull request yet
+      </span>
+      <button
+        onClick={() => nav.toDiff(`origin/${baseRef}`)}
+        className={cn(buttonGhost, 'h-6 px-2 text-xs text-text')}
+        title="Everything on this branch plus your uncommitted changes. Comments there on uncommitted lines can’t be posted to GitHub until you push"
+      >
+        Show them
+      </button>
+    </div>
+  );
+}
+
+/** Switches a branch comparison between all changes (`main`) and commits only (`main...HEAD`) while the tree is dirty. */
+function UncommittedSwitch(props: { diffRef: string; twin: string }) {
+  const { diffRef, twin } = props;
+  const nav = useRepoNav();
+  const files = useUncommittedFiles();
+  const including = isAllChangesRef(diffRef);
+
+  if (files === 0) {
+    return null;
+  }
+  return (
+    <>
+      <span className="inline-flex items-center gap-1.5 shrink-0">
+        <span className="w-1.5 h-1.5 rounded-full bg-modified" aria-hidden />
+        {plural(files, 'uncommitted file')} {including ? 'included' : 'not shown'}
+      </span>
+      <span className="flex-1" />
+      <SegmentedToggle
+        value={including ? 'all' : 'committed'}
+        onChange={(value) => {
+          if ((value === 'all') !== including) {
+            nav.toDiff(twin);
+          }
+        }}
+        labelClassName="text-xs"
+        options={[
+          { value: 'all', label: 'All changes', title: 'Commits on this branch plus uncommitted changes' },
+          { value: 'committed', label: 'Committed only', title: 'Only what is committed, like the pull request will see it' },
+        ]}
+      />
+    </>
+  );
+}
+
 /** A light header at the top of the diff for a commit or a compared range (not a sticky bar). */
 export function DiffContextHeader(props: { diffRef: string }) {
   const { diffRef } = props;
   const { details, loading: prLoading } = useGitHubPr();
+  const { data: status } = useGitStatus();
   const commitSha = parseCommitRef(diffRef);
   const isPr = details !== null && diffRef === prDiffRef(details);
   const mayBePr = prLoading && isPrShapedRef(diffRef);
+  const twin = uncommittedTwin(diffRef);
 
   if (commitSha) {
     return <CommitHeader sha={commitSha} />;
   }
-  if (isPr || mayBePr || !diffRef.includes('..')) {
+  if (isPr && details) {
+    return <PrUncommittedNotice baseRef={details.baseRef} />;
+  }
+  if (mayBePr || (!diffRef.includes('..') && !isAllChangesRef(diffRef))) {
     return null;
   }
-  const { base, head } = rangeParts(diffRef);
+  const parts = isAllChangesRef(diffRef) ? { base: shortBase(diffRef), head: 'HEAD' } : rangeParts(diffRef);
+  const base = parts.base;
+  const head = parts.head === 'HEAD' ? status?.branch ?? 'HEAD' : parts.head;
   return (
-    <div className="flex items-center gap-2 min-w-0 text-xs text-text-secondary">
+    <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 min-h-7 text-xs text-text-secondary">
       <GitCompareIcon size="sm" className="text-text-muted" />
       <span className="truncate">
-        {diffRef.includes('...')
-          ? <>Changes on <code className="font-mono text-text">{head}</code> since it split from <code className="font-mono text-text">{base}</code></>
-          : <>Every change after <code className="font-mono text-text">{base}</code>, up to <code className="font-mono text-text">{head}</code></>}
+        {diffRef.includes('..') && !diffRef.includes('...')
+          ? <>Every change after <code className="font-mono text-text">{base}</code>, up to <code className="font-mono text-text">{head}</code></>
+          : <>Changes on <code className="font-mono text-text">{head}</code> since it split from <code className="font-mono text-text">{base}</code></>}
       </span>
+      {twin && <UncommittedSwitch diffRef={diffRef} twin={twin} />}
     </div>
   );
 }

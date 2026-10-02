@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import { useRepoNav } from '../../hooks/use-repo';
 import { useBaseBranch, useBranches, useGitHubPr, useGitStatus, useHasGitHubRemote } from '../../hooks/use-repo-state';
 import { openPullRequests } from '../../lib/ui-store';
-import { commitRef, descriptionForRef, fetchCommits, parseCommitRef, type Commit, type GitHubDetails } from '../../lib/api';
+import { commitRef, descriptionForRef, fetchCommits, isWorkingTreeRef, parseCommitRef, type Commit, type GitHubDetails } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import { buttonOutline, inputField } from '../ui/button-styles';
 import { Spinner } from '../icons/spinner';
@@ -31,7 +31,24 @@ export function isPrShapedRef(diffRef: string): boolean {
   return /^origin\/.+\.\.\.HEAD$/.test(diffRef);
 }
 
-function shortBase(base: string): string {
+/**
+ * A bare branch or tag (`main`): everything on HEAD since it split from it, plus uncommitted changes. Its
+ * committed-only twin is `main...HEAD`; the two are separate views with their own comments.
+ */
+export function isAllChangesRef(diffRef: string): boolean {
+  return diffRef !== HOME_REF && !diffRef.includes('..') && !isWorkingTreeRef(diffRef) && !parseCommitRef(diffRef);
+}
+
+/** `main...HEAD` for `main`, and `main` for `main...HEAD`; null for refs without a twin. */
+export function uncommittedTwin(diffRef: string): string | null {
+  if (isAllChangesRef(diffRef)) {
+    return `${diffRef}...HEAD`;
+  }
+  const base = diffRef.endsWith('...HEAD') ? diffRef.slice(0, -'...HEAD'.length) : null;
+  return base && isAllChangesRef(base) ? base : null;
+}
+
+export function shortBase(base: string): string {
   return base.replace(/^origin\//, '');
 }
 
@@ -62,11 +79,11 @@ export function useTargetLabel(diffRef: string, branch: string | null): { label:
   if (details && diffRef === prDiffRef(details)) {
     return { label: `PR #${details.prNumber} · ${details.prTitle}`, icon: <GitPullRequestIcon className="w-3.5 h-3.5" />, pending: false };
   }
-  const againstHead = diffRef.endsWith('...HEAD');
+  const againstHead = diffRef.endsWith('...HEAD') || isAllChangesRef(diffRef);
   if (againstHead && ((prLoading && !githubBudgetSpent) || (branchesPending && !branchesFailed))) {
     return { label: '', icon: <GitCompareIcon className="w-3.5 h-3.5" />, pending: true };
   }
-  if (base && branch && diffRef === `${base}...HEAD`) {
+  if (base && branch && (diffRef === base || diffRef === `${base}...HEAD`)) {
     return { label: `${branch} vs ${shortBase(base)}`, icon: <GitCompareIcon className="w-3.5 h-3.5" />, pending: false };
   }
   if (commitSha) {
@@ -244,7 +261,7 @@ function RefMenuPanel(props: { diffRef: string; branch: string | null; onPick: (
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
   const sentinel = useRef<HTMLDivElement>(null);
-  const branchRef = base ? `${base}...HEAD` : null;
+  const branchRef = base;
   const trimmed = search.trim();
 
   useEffect(() => {
@@ -379,10 +396,10 @@ function RefMenuPanel(props: { diffRef: string; branch: string | null; onPick: (
         )}
         {showWork && !details && branchRef && branch && (
           <Item
-            selected={diffRef === branchRef}
+            selected={diffRef === branchRef || diffRef === `${branchRef}...HEAD`}
             icon={<GitCompareIcon className="w-3.5 h-3.5" />}
             title={`${branch} vs ${shortBase(base ?? '')}`}
-            tooltip={`Every commit on ${branch} that is not on ${shortBase(base ?? '')}`}
+            tooltip={`Everything on ${branch} since it split from ${shortBase(base ?? '')}, uncommitted changes included`}
             onClick={() => onPick(branchRef)}
           />
         )}

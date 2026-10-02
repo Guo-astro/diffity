@@ -373,7 +373,8 @@ export function Dashboard(props: DashboardProps) {
   }, []);
 
   const uncommitted = status ? status.staged + status.unstaged + status.untracked : 0;
-  const branchRef = !details && base && branch && branch !== base && `origin/${branch}` !== base ? `${base}...HEAD` : null;
+  const branchBase = !details && base && branch && branch !== base && `origin/${branch}` !== base ? base : null;
+  const branchRef = branchBase ? `${branchBase}...HEAD` : null;
   const prRef = details ? prDiffRef(details) : null;
   const last = recent?.commits[0] ?? null;
 
@@ -414,7 +415,7 @@ export function Dashboard(props: DashboardProps) {
   }
   if (branchRef && base && branchDiff.summary && branchDiff.summary.files > 0) {
     candidates.push({
-      key: 'branch', ref: branchRef, icon: <GitCompareIcon size="sm" />, eyebrow: 'This branch',
+      key: 'branch', ref: base, icon: <GitCompareIcon size="sm" />, eyebrow: 'This branch',
       title: `${branch} vs ${base.replace(/^origin\//, '')}`,
       explain: 'Everything on this branch since it split from its base',
       summary: branchDiff.summary,
