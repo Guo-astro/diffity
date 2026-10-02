@@ -209,6 +209,29 @@ export interface AgentInfo {
   note: string | null;
 }
 
+/** Model and thinking effort for one Claude run; unset keeps Claude Code's own setting. */
+export interface RunModel {
+  model?: string;
+  effort?: string;
+}
+
+export interface ConfigChoice {
+  value: string;
+  name: string;
+  description?: string;
+}
+
+export interface ModelChoice extends ConfigChoice {
+  efforts: ConfigChoice[];
+}
+
+/** The models Claude Code offers, as it reported them. */
+export interface ModelCatalog {
+  models: ModelChoice[];
+  currentModel?: string;
+  fetchedAt: string;
+}
+
 export interface ContextChip {
   filePath: string;
   side?: Side;
@@ -394,6 +417,15 @@ export interface CommitPointer {
 }
 
 /** A thread of any view of the repo (`list_repo_threads`), with where it lives and whether it is still anchored. */
+/** What Diffity keeps locally for one project (Settings → Data). */
+export interface ProjectData {
+  repoPath: string;
+  name: string;
+  comments: number;
+  chats: number;
+  reviews: number;
+}
+
 export interface RepoThread {
   id: string;
   sessionId: string;
@@ -415,6 +447,8 @@ export interface RepoThread {
   pending: boolean;
   anchor: ThreadAnchor;
   movedTo: CommitPointer | null;
+  /** Branch a PR or branch view's thread was left on, when another branch is checked out now. */
+  otherBranch?: string;
 }
 
 export interface ThreadsChangedPayload {

@@ -3,11 +3,13 @@ use std::sync::{Mutex, MutexGuard};
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::core::diff::WORKING_TREE_REFS;
 use crate::core::error::{AppError, Result};
+use crate::core::git;
 use crate::core::mentions;
 use crate::core::types::{
-    AuthorType, Comment, NewThread, RecentRepo, Review, ReviewSession, ReviewState, ReviewVerdict, Severity, Side,
-    Thread, ThreadStatus, ViewedFile,
+    AuthorType, Comment, NewThread, ProjectData, RecentRepo, Review, ReviewSession, ReviewState, ReviewVerdict, Severity, Side,
+    Thread, ThreadStatus, ViewedFile, TREE_REF,
 };
 
 const SCHEMA: &str = r#"
@@ -127,7 +129,63 @@ fn migrate_v3(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-const SCHEMA_VERSION: i64 = 3;
+/// Sessions get a `scope`: views relative to HEAD (a checked-out PR's `origin/main...HEAD`, the branch view)
+/// are kept per branch, so checking out another PR doesn't show the last one's comments. Existing rows keep an
+/// empty scope until a branch opens their view (`get_or_create_session`). Rebuilt to widen the unique key.
+fn migrate_v4(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE review_sessions_v4 (
+           id TEXT PRIMARY KEY,
+           repo_path TEXT NOT NULL,
+           ref TEXT NOT NULL,
+           scope TEXT NOT NULL DEFAULT '',
+           created_at TEXT NOT NULL,
+           UNIQUE(repo_path, ref, scope)
+         );
+         INSERT INTO review_sessions_v4 (id, repo_path, ref, scope, created_at)
+           SELECT id, repo_path, ref, '', created_at FROM review_sessions;
+         DROP TABLE review_sessions;
+         ALTER TABLE review_sessions_v4 RENAME TO review_sessions;",
+    )?;
+    Ok(())
+}
+
+/// Refs whose diff depends on the checked-out branch: anything relative to HEAD, and a bare branch or tag
+/// (the branch view: everything since it split off, plus uncommitted changes).
+pub fn is_branch_relative(r#ref: &str) -> bool {
+    if r#ref.split(|c: char| !c.is_ascii_alphanumeric()).any(|part| part == "HEAD") {
+        return true;
+    }
+    if WORKING_TREE_REFS.contains(&r#ref) || r#ref == TREE_REF || r#ref.contains("..") {
+        return false;
+    }
+    let base = r#ref.split(['~', '^']).next().unwrap_or_default();
+    let is_sha = (7..=40).contains(&base.len()) && base.chars().all(|c| c.is_ascii_hexdigit());
+    !is_sha && !r#ref.is_empty()
+}
+
+/// The scope a view of `ref` belongs to in `repo_path`: the checked-out branch (or commit when detached)
+/// for branch-relative refs, empty otherwise.
+pub fn session_scope(repo_path: &str, r#ref: &str) -> String {
+    if !is_branch_relative(r#ref) {
+        return String::new();
+    }
+    current_scope(repo_path)
+}
+
+/// The checked-out branch, or `detached@<sha>`; empty outside a git repo.
+pub fn current_scope(repo_path: &str) -> String {
+    let repo = Path::new(repo_path);
+    if let Ok(Some(branch)) = git::current_branch(repo) {
+        return branch;
+    }
+    match git::head_sha(repo) {
+        Ok(Some(sha)) => format!("detached@{}", &sha[..sha.len().min(12)]),
+        _ => String::new(),
+    }
+}
+
+const SCHEMA_VERSION: i64 = 4;
 
 pub struct Store {
     conn: Mutex<Connection>,
@@ -149,9 +207,11 @@ impl Store {
 
     fn init(conn: Connection) -> Result<Store> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
-        conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "busy_timeout", 5000)?;
+        // Off while migrating: rebuilding a table (v4) must not cascade-delete the rows that reference it.
+        conn.pragma_update(None, "foreign_keys", "OFF")?;
         Self::migrate(&conn)?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
         Ok(Store {
             conn: Mutex::new(conn),
         })
@@ -172,6 +232,9 @@ impl Store {
             }
             if version < 3 {
                 migrate_v3(conn)?;
+            }
+            if version < 4 {
+                migrate_v4(conn)?;
             }
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             Ok(())
@@ -566,35 +629,49 @@ impl Store {
 
     // ---- sessions ----
 
-    /// Get-or-create the review session keyed by (repo_path, ref).
+    /// Get-or-create the review session keyed by (repo_path, ref, scope); see `session_scope`.
     pub fn get_or_create_session(&self, repo_path: &str, r#ref: &str) -> Result<ReviewSession> {
+        let scope = session_scope(repo_path, r#ref);
+        self.get_or_create_scoped_session(repo_path, r#ref, &scope)
+    }
+
+    pub fn get_or_create_scoped_session(&self, repo_path: &str, r#ref: &str, scope: &str) -> Result<ReviewSession> {
         let conn = self.conn()?;
+        if !scope.is_empty() {
+            conn.execute(
+                "UPDATE review_sessions SET scope = ?3 WHERE repo_path = ?1 AND ref = ?2 AND scope = '' \
+                 AND NOT EXISTS (SELECT 1 FROM review_sessions WHERE repo_path = ?1 AND ref = ?2 AND scope = ?3)",
+                params![repo_path, r#ref, scope],
+            )?;
+        }
         conn.execute(
-            "INSERT OR IGNORE INTO review_sessions (id, repo_path, ref, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![new_id(), repo_path, r#ref, now()],
+            "INSERT OR IGNORE INTO review_sessions (id, repo_path, ref, scope, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![new_id(), repo_path, r#ref, scope, now()],
         )?;
         let id: String = conn.query_row(
-            "SELECT id FROM review_sessions WHERE repo_path = ?1 AND ref = ?2",
-            params![repo_path, r#ref],
+            "SELECT id FROM review_sessions WHERE repo_path = ?1 AND ref = ?2 AND scope = ?3",
+            params![repo_path, r#ref, scope],
             |r| r.get(0),
         )?;
         Ok(ReviewSession {
             id,
             repo_path: repo_path.to_string(),
             r#ref: r#ref.to_string(),
+            scope: scope.to_string(),
         })
     }
 
     pub fn get_session_by_id(&self, session_id: &str) -> Result<ReviewSession> {
         self.conn()?
             .query_row(
-                "SELECT id, repo_path, ref FROM review_sessions WHERE id = ?1",
+                "SELECT id, repo_path, ref, scope FROM review_sessions WHERE id = ?1",
                 [session_id],
                 |r| {
                     Ok(ReviewSession {
                         id: r.get(0)?,
                         repo_path: r.get(1)?,
                         r#ref: r.get(2)?,
+                        scope: r.get(3)?,
                     })
                 },
             )
@@ -628,18 +705,19 @@ impl Store {
             .collect::<Vec<_>>()
             .join(", ");
         let mut stmt = conn.prepare_cached(&format!(
-            "SELECT {cols}, s.ref FROM threads t JOIN review_sessions s ON s.id = t.session_id \
+            "SELECT {cols}, s.ref, s.scope FROM threads t JOIN review_sessions s ON s.id = t.session_id \
              WHERE s.repo_path = ?1 ORDER BY t.updated_at DESC, t.rowid DESC"
         ))?;
         let rows = stmt
-            .query_map([repo_path], |r| Ok((row_to_thread(r)?, r.get::<_, String>(13)?)))?
+            .query_map([repo_path], |r| Ok((row_to_thread(r)?, r.get::<_, String>(13)?, r.get::<_, String>(14)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
-            .map(|(thread, r#ref)| {
+            .map(|(thread, r#ref, scope)| {
                 let session = ReviewSession {
                     id: thread.session_id.clone(),
                     repo_path: repo_path.to_string(),
                     r#ref,
+                    scope,
                 };
                 Ok((session, with_comments(&conn, thread)?))
             })
@@ -1198,6 +1276,73 @@ impl Store {
         Ok(())
     }
 
+    // ---- data (Settings → Data) ----
+
+    /// Every project with local data: comments (threads), Claude chats and submitted or pending reviews.
+    pub fn project_data(&self) -> Result<Vec<ProjectData>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "WITH paths AS (
+               SELECT repo_path AS path FROM review_sessions
+               UNION SELECT repo_path FROM chats
+               UNION SELECT path FROM repos
+             )
+             SELECT p.path,
+                    (SELECT name FROM repos WHERE path = p.path),
+                    (SELECT count(*) FROM threads t JOIN review_sessions s ON s.id = t.session_id WHERE s.repo_path = p.path),
+                    (SELECT count(*) FROM chats WHERE repo_path = p.path),
+                    (SELECT count(*) FROM reviews r JOIN review_sessions s ON s.id = r.session_id WHERE s.repo_path = p.path)
+             FROM paths p ORDER BY p.path",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            let repo_path: String = r.get(0)?;
+            let name: Option<String> = r.get(1)?;
+            Ok(ProjectData {
+                name: name.unwrap_or_else(|| {
+                    Path::new(&repo_path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| repo_path.clone())
+                }),
+                repo_path,
+                comments: r.get(2)?,
+                chats: r.get(3)?,
+                reviews: r.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Deletes a project's comments, replies, reviews, viewed marks and Claude chats. Its git repo, settings and
+    /// anything on GitHub are untouched.
+    pub fn clear_project_data(&self, repo_path: &str) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM viewed_files WHERE session_id IN (SELECT id FROM review_sessions WHERE repo_path = ?1)",
+            [repo_path],
+        )?;
+        tx.execute("DELETE FROM review_sessions WHERE repo_path = ?1", [repo_path])?;
+        tx.execute("DELETE FROM chats WHERE repo_path = ?1", [repo_path])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Deletes every project's data plus the recent projects list. Settings (theme, editor, Claude and GitHub
+    /// preferences) and logins are kept; `cache_keys` are settings that only cache data and go too.
+    pub fn reset_all_data(&self, cache_keys: &[&str]) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            "DELETE FROM viewed_files;
+             DELETE FROM review_sessions;
+             DELETE FROM chats;
+             DELETE FROM repos;",
+        )?;
+        for key in cache_keys {
+            tx.execute("DELETE FROM settings WHERE key = ?1", [key])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn delete_setting(&self, key: &str) -> Result<()> {
         self.conn()?.execute("DELETE FROM settings WHERE key = ?1", [key])?;
         Ok(())
@@ -1221,5 +1366,27 @@ mod tests {
             )
             .unwrap();
         assert_eq!(n, 9);
+    }
+
+    #[test]
+    fn v4_keeps_sessions_and_their_threads() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA).unwrap();
+        conn.execute_batch(MIGRATION_V2).unwrap();
+        migrate_v3(&conn).unwrap();
+        conn.pragma_update(None, "user_version", 3).unwrap();
+        conn.execute_batch(
+            "INSERT INTO review_sessions (id, repo_path, ref, created_at) VALUES ('s1', '/r', 'origin/main...HEAD', 'x');
+             INSERT INTO threads (id, session_id, file_path, side, start_line, end_line, status, created_at, updated_at)
+               VALUES ('t1', 's1', 'a.rs', 'new', 1, 1, 'open', 'x', 'x');",
+        )
+        .unwrap();
+
+        let store = Store::init(conn).unwrap();
+        let session = store.get_session_by_id("s1").unwrap();
+        assert_eq!(session.scope, "");
+        assert_eq!(store.list_threads("s1", None).unwrap().len(), 1);
+        let fk: bool = store.conn().unwrap().pragma_query_value(None, "foreign_keys", |r| r.get(0)).unwrap();
+        assert!(fk);
     }
 }

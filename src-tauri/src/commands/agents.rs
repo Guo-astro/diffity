@@ -1,5 +1,6 @@
 use crate::agents::{
-    AgentAction, AgentEvent, AgentInfo, Chat, ChatMessage, ContextChip, StartChat,
+    AgentAction, AgentEvent, AgentInfo, Chat, ChatMessage, ContextChip, ModelCatalog, RunModel,
+    StartChat,
 };
 use crate::core::AppError;
 use tauri::ipc::Channel;
@@ -13,6 +14,14 @@ pub async fn list_agents(
     refresh: Option<bool>,
 ) -> Result<Vec<AgentInfo>, AppError> {
     state.agents.list_agents(refresh.unwrap_or(false)).await
+}
+
+#[tauri::command]
+pub async fn agent_models(
+    state: State<'_, AppState>,
+    refresh: Option<bool>,
+) -> Result<Option<ModelCatalog>, AppError> {
+    state.agents.model_catalog(refresh.unwrap_or(false)).await
 }
 
 #[tauri::command]
@@ -44,6 +53,7 @@ pub async fn send_prompt(
     text: String,
     context: Vec<ContextChip>,
     action: AgentAction,
+    model: Option<RunModel>,
     on_event: Channel<AgentEvent>,
 ) -> Result<(), AppError> {
     let sink = Box::new(move |event: AgentEvent| {
@@ -53,7 +63,7 @@ pub async fn send_prompt(
     });
     state
         .agents
-        .send_prompt(&chat_id, text, context, action, sink)
+        .send_prompt(&chat_id, text, context, action, model.unwrap_or_default(), sink)
         .await
 }
 

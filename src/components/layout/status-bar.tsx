@@ -5,7 +5,6 @@ import { prDiffRef } from './ref-menu';
 import { useRepoNav } from '../../hooks/use-repo';
 import { StaleNotice } from './stale-notice';
 import { shortPath } from '../../features/welcome/recent-repos';
-import { OtherViewsNotice } from '../../features/comments/other-views-notice';
 import { useState } from 'react';
 import { cn } from '../../lib/cn';
 import { toast } from 'sonner';
@@ -18,7 +17,6 @@ import { Skeleton, useRevealClass } from '../ui/skeleton';
 
 interface StatusBarProps {
   diffRef?: string;
-  sessionId?: string | null;
   stale?: { onRefresh: () => void; message?: string } | null;
 }
 
@@ -104,7 +102,7 @@ function RepoPathButton(props: { label: string; path: string }) {
 }
 
 export function StatusBar(props: StatusBarProps) {
-  const { diffRef, sessionId, stale } = props;
+  const { diffRef, stale } = props;
   const nav = useRepoNav();
   const { data: status } = useGitStatus();
   const { data: meta } = useRepoMeta();
@@ -134,7 +132,6 @@ export function StatusBar(props: StatusBarProps) {
         </span>
       )}
       {stale && <StaleNotice onRefresh={stale.onRefresh} message={stale.message} />}
-      {sessionId && <OtherViewsNotice sessionId={sessionId} />}
       <span className="flex-1" />
       {details && diffRef !== prDiffRef(details) && (
         <button

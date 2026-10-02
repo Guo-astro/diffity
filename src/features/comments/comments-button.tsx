@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { isOpenThread, useRepoThreads } from '../../hooks/use-repo-threads';
+import { inView, isOpenThread, useRepoThreads } from '../../hooks/use-repo-threads';
+import { useCurrentViewRef } from '../../hooks/use-current-view';
 import { Skeleton } from '../../components/ui/skeleton';
 import { toggleComments, useUi } from '../../lib/ui-store';
 import { cn } from '../../lib/cn';
@@ -9,7 +10,8 @@ import { clearFreshComments, useCommentSync } from '../pr/pr-checkout';
 
 export function CommentsButton() {
   const { data, isPending, isError } = useRepoThreads();
-  const count = (data ?? []).filter(isOpenThread).length;
+  const viewRef = useCurrentViewRef();
+  const count = (data ?? []).filter((thread) => isOpenThread(thread) && inView(thread, viewRef)).length;
   const loading = isPending && !isError;
   const open = useUi((state) => state.commentsOpen);
   const fresh = useCommentSync((state) => state.fresh);
@@ -24,7 +26,7 @@ export function CommentsButton() {
     <button
       onClick={toggleComments}
       className={cn(buttonOutline, 'relative px-2.5', open && 'bg-selected hover:bg-selected')}
-      title={`All comments in this repository, across every view${count > 0 ? ` (${count} open)` : ''}${fresh > 0 ? `; ${fresh} new from GitHub` : ''} — C`}
+      title={`${viewRef ? 'Comments in this view' : 'All comments in this repository'}${count > 0 ? ` (${count} open)` : ''}${fresh > 0 ? `; ${fresh} new from GitHub` : ''} — C`}
       aria-pressed={open}
     >
       <CommentIcon size="md" className="text-text-secondary" />

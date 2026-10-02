@@ -4,6 +4,7 @@ import { CommentBubble } from './comment-bubble';
 import { CommentForm } from './comment-form';
 import { cn } from '../../lib/cn';
 import { enqueueClaude, useThreadActivity } from '../../features/claude/claude-runner';
+import { AskClaudeThreadButton } from '../../features/claude/ask-claude-thread';
 import { useReviewState } from '../../features/review/review-state';
 import { EllipsisIcon, GitHubIcon, GitPullRequestIcon, SparkleIcon } from '../ui/icon';
 import { Popover, useMenu } from '../ui/popover';
@@ -188,14 +189,7 @@ export function ThreadCard(props: ThreadCardProps) {
             </button>
           )}
           {!compact && showAskClaude && !canPromote && (
-            <button
-              onClick={askClaude}
-              className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
-              title="Claude answers or makes the change for this comment"
-            >
-              <SparkleIcon className="w-3 h-3 text-claude" />
-              Ask Claude
-            </button>
+            <AskClaudeThreadButton threadId={thread.id} sessionId={thread.sessionId ?? null} />
           )}
           {!compact && onResolve && onUnresolve && (
             <button

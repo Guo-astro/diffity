@@ -7,7 +7,8 @@ import { GitHubPane } from './github-pane';
 import { EditorPane } from './editor-pane';
 import { ShortcutsPane } from './shortcuts-pane';
 import { AboutPane } from './about-pane';
-import { CodeIcon, GitHubIcon, InfoIcon, KeyboardIcon, SearchIcon, SettingsIcon, SparkleIcon, XIcon } from '../../components/ui/icon';
+import { DataPane } from './data-pane';
+import { CodeIcon, GitHubIcon, InfoIcon, KeyboardIcon, SearchIcon, SettingsIcon, SparkleIcon, TrashIcon, XIcon } from '../../components/ui/icon';
 
 const LABELS: Record<SettingsSection, string> = {
   general: 'General',
@@ -15,6 +16,7 @@ const LABELS: Record<SettingsSection, string> = {
   shortcuts: 'Keyboard shortcuts',
   claude: 'Claude Code',
   github: 'GitHub',
+  data: 'Data',
   about: 'About',
 };
 
@@ -24,13 +26,14 @@ const ICONS: Record<SettingsSection, ComponentType<{ className?: string }>> = {
   shortcuts: KeyboardIcon,
   claude: SparkleIcon,
   github: GitHubIcon,
+  data: TrashIcon,
   about: InfoIcon,
 };
 
 const GROUPS: { label: string; sections: SettingsSection[] }[] = [
   { label: 'App', sections: ['general', 'editor', 'shortcuts'] },
   { label: 'Connections', sections: ['claude', 'github'] },
-  { label: 'Diffity', sections: ['about'] },
+  { label: 'Diffity', sections: ['data', 'about'] },
 ];
 
 const ORDER = GROUPS.flatMap((group) => group.sections);
@@ -47,6 +50,9 @@ const INDEX: { label: string; section: SettingsSection; keywords?: string }[] = 
   { label: 'GitHub account', section: 'github', keywords: 'sign in sign out login' },
   { label: 'Import from GitHub CLI', section: 'github', keywords: 'gh token' },
   { label: 'Personal access token', section: 'github', keywords: 'pat token keychain' },
+  { label: 'Claude models', section: 'claude', keywords: 'model opus sonnet haiku effort thinking' },
+  { label: 'Clear a project', section: 'data', keywords: 'delete comments chats purge remove storage' },
+  { label: 'Reset Diffity', section: 'data', keywords: 'delete everything purge wipe reset storage data' },
   { label: 'Version', section: 'about', keywords: 'about' },
   { label: 'Check for updates', section: 'about', keywords: 'update upgrade release new version' },
   { label: 'What’s new', section: 'about', keywords: 'release notes changelog new features whats' },
@@ -69,6 +75,9 @@ function Pane(props: { section: SettingsSection }) {
   }
   if (section === 'editor') {
     return <EditorPane />;
+  }
+  if (section === 'data') {
+    return <DataPane />;
   }
   if (section === 'shortcuts') {
     return <ShortcutsPane />;

@@ -54,6 +54,17 @@ pub struct RecentRepo {
     pub last_opened_at: String,
 }
 
+/// What Diffity keeps locally for one project (Settings → Data).
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectData {
+    pub repo_path: String,
+    pub name: String,
+    pub comments: u32,
+    pub chats: u32,
+    pub reviews: u32,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedRef {
@@ -203,6 +214,9 @@ pub struct ReviewSession {
     pub repo_path: String,
     #[serde(rename = "ref")]
     pub r#ref: String,
+    /// The branch a HEAD-relative view (`origin/main...HEAD`, `main`) belongs to; empty for other views.
+    #[serde(default)]
+    pub scope: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -368,4 +382,7 @@ pub struct RepoThread {
     pub pending: bool,
     pub anchor: ThreadAnchor,
     pub moved_to: Option<CommitPointer>,
+    /// The branch a HEAD-relative view's thread was left on, when that isn't the checked-out branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub other_branch: Option<String>,
 }

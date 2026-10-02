@@ -3,12 +3,13 @@ import { toast } from 'sonner';
 import * as tauri from '../../lib/tauri';
 import { queryClient } from '../../lib/query-client';
 import { openComments, openSettingsAt } from '../../lib/ui-store';
-import type { AgentAction, AgentInfo, AgentMode, PermissionDiff, PermissionOption, RepoThread } from '../../lib/types';
+import type { AgentAction, AgentInfo, AgentMode, PermissionDiff, PermissionOption, RepoThread, RunModel } from '../../lib/types';
 import { parseCommitRef, refForSession } from '../../lib/api';
 import { TREE_REF } from '../../lib/types';
 import { goToThread, viewLabel } from '../../lib/thread-location';
 import type { CommentThread } from '../../components/comments/types';
 import { getPermissionSetting, runSkipsPrompts, showBypassNotice } from './permission-setting';
+import { getModelSetting, readRepoModel, type ModelPurpose } from './model-setting';
 
 export type ClaudeAction = Extract<
   AgentAction,
@@ -21,6 +22,8 @@ export interface ClaudeRunContext {
   ref?: string | null;
   /** GitHub threads whose new Claude reply should be posted back to GitHub when the run ends. */
   postRepliesToGitHub?: string[];
+  /** Model picked for this run; unset uses the repo's last pick, then Settings. */
+  model?: RunModel;
 }
 
 export interface ClaudeRun {
@@ -43,6 +46,8 @@ export interface ClaudeRun {
   stopRequested?: boolean;
   /** The user chose "Allow for this run": later edits in this run are approved automatically. */
   editsApproved: boolean;
+  /** Model and effort the run uses, once it starts. */
+  model: RunModel | null;
 }
 
 export interface ClaudePermission {
@@ -85,6 +90,18 @@ export function canSendToClaude(diffRef: string | null | undefined): boolean {
     return !head || head === 'HEAD';
   }
   return true;
+}
+
+export function modelPurpose(action: ClaudeAction): ModelPurpose {
+  return action.kind === 'review' ? 'review' : 'fix';
+}
+
+async function runModelFor(run: ClaudeRun): Promise<RunModel> {
+  if (run.context.model) {
+    return run.context.model;
+  }
+  const purpose = modelPurpose(run.action);
+  return readRepoModel(purpose, run.context.repoPath) ?? (await getModelSetting(purpose));
 }
 
 function modeFor(action: ClaudeAction, ref: string | null): AgentMode {
@@ -179,6 +196,7 @@ export function enqueueClaude(action: ClaudeAction, context: ClaudeRunContext) {
     newThreadIds: [],
     skipsPrompts: false,
     editsApproved: false,
+    model: null,
   };
   useClaude.setState((state) => ({ runs: [...state.runs, run] }));
   void pump(context.repoPath);
@@ -416,7 +434,8 @@ async function execute(run: ClaudeRun) {
     title: chatTitle(run.action),
   });
   const skipsPrompts = runSkipsPrompts(modeFor(run.action, ref), run.action, await getPermissionSetting());
-  patchRun(run.id, { chatId: chat.id, sessionId, startedAt: Date.now(), ref, skipsPrompts });
+  const model = await runModelFor(run);
+  patchRun(run.id, { chatId: chat.id, sessionId, startedAt: Date.now(), ref, skipsPrompts, model });
   if (useClaude.getState().runs.find((item) => item.id === run.id)?.stopRequested) {
     toast.info('Claude was stopped');
     return;
@@ -449,7 +468,7 @@ async function execute(run: ClaudeRun) {
   let failed: ClaudeFailure | null = null;
   let cancelled = false;
   try {
-    await tauri.sendPrompt(chat.id, '', [], run.action, (event) => {
+    await tauri.sendPrompt(chat.id, '', [], run.action, model, (event) => {
       if (event.type === 'permissionRequest') {
         const permission: ClaudePermission = {
           runId: run.id,

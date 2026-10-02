@@ -2,7 +2,11 @@ import type { RepoThread } from './types';
 import { GENERAL_THREAD_FILE_PATH } from '../components/comments/types';
 
 export interface ViewGroup {
+  /** Unique per view: the same ref on another branch is a separate group. */
+  key: string;
   ref: string;
+  /** Set for a PR or branch view of a branch other than the checked-out one. */
+  otherBranch?: string;
   label: string;
   latest: string;
   files: { path: string; threads: RepoThread[] }[];
@@ -11,11 +15,12 @@ export interface ViewGroup {
 
 /** Groups threads by view (current view first, then most recently active) and by file (general first). */
 export function groupThreads(threads: RepoThread[], currentRef: string | null): ViewGroup[] {
-  const byRef = new Map<string, { label: string; latest: string; threads: RepoThread[] }>();
+  const byRef = new Map<string, { ref: string; otherBranch?: string; label: string; latest: string; threads: RepoThread[] }>();
   for (const thread of threads) {
-    const group = byRef.get(thread.ref);
+    const key = thread.otherBranch ? `${thread.ref}\n${thread.otherBranch}` : thread.ref;
+    const group = byRef.get(key);
     if (!group) {
-      byRef.set(thread.ref, { label: thread.refLabel, latest: thread.updatedAt, threads: [thread] });
+      byRef.set(key, { ref: thread.ref, otherBranch: thread.otherBranch, label: thread.refLabel, latest: thread.updatedAt, threads: [thread] });
       continue;
     }
     group.threads.push(thread);
@@ -24,7 +29,7 @@ export function groupThreads(threads: RepoThread[], currentRef: string | null): 
     }
   }
   const groups: ViewGroup[] = [];
-  for (const [ref, group] of byRef) {
+  for (const [key, group] of byRef) {
     const byFile = new Map<string, RepoThread[]>();
     for (const thread of group.threads) {
       const list = byFile.get(thread.filePath) ?? [];
@@ -42,13 +47,14 @@ export function groupThreads(threads: RepoThread[], currentRef: string | null): 
         return a.localeCompare(b);
       })
       .map(([path, list]) => ({ path, threads: list.sort((x, y) => x.startLine - y.startLine) }));
-    groups.push({ ref, label: group.label, latest: group.latest, files, count: group.threads.length });
+    groups.push({ key, ref: group.ref, otherBranch: group.otherBranch, label: group.label, latest: group.latest, files, count: group.threads.length });
   }
+  const isCurrent = (group: ViewGroup) => group.ref === currentRef && !group.otherBranch;
   return groups.sort((a, b) => {
-    if (a.ref === currentRef) {
+    if (isCurrent(a)) {
       return -1;
     }
-    if (b.ref === currentRef) {
+    if (isCurrent(b)) {
       return 1;
     }
     return b.latest.localeCompare(a.latest);

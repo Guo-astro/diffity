@@ -685,7 +685,6 @@ export function DiffPage(props: DiffPageProps) {
       </Workspace>
       <StatusBar
         diffRef={refParam}
-        sessionId={reviewsEnabled ? sessionId : null}
         stale={isStale ? { onRefresh: handleRefreshDiff } : null}
       />
     </div>

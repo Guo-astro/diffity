@@ -15,7 +15,7 @@ use crate::agents::chats;
 use crate::agents::core_backend::CoreBackend;
 use crate::agents::detect::{self, AgentKind, DetectedAgent};
 use crate::agents::prompts;
-use crate::agents::session::{AgentSession, EventSink, PermissionBroker, SessionConfig};
+use crate::agents::session::{self, AgentSession, EventSink, PermissionBroker, SessionConfig};
 use crate::agents::tools::Binding;
 use crate::agents::types::*;
 
@@ -23,6 +23,7 @@ pub use crate::agents::bridge::ThreadsChangedHook;
 
 const DETECT_TTL: Duration = Duration::from_secs(30);
 const DEFAULT_REF: &str = "work";
+const MODELS_SETTING: &str = "agent.claude.models";
 
 struct Runtime {
     session: AgentSession,
@@ -46,6 +47,7 @@ pub struct AgentManager {
     broker: Arc<PermissionBroker>,
     detected: Mutex<Option<DetectCache>>,
     runtimes: std::sync::Mutex<HashMap<String, Slot>>,
+    catalog: Mutex<Option<ModelCatalog>>,
 }
 
 impl AgentManager {
@@ -72,6 +74,7 @@ impl AgentManager {
             broker: Arc::new(PermissionBroker::default()),
             detected: Mutex::new(None),
             runtimes: std::sync::Mutex::new(HashMap::new()),
+            catalog: Mutex::new(None),
         }
     }
 
@@ -132,6 +135,52 @@ impl AgentManager {
             .into_iter()
             .map(|a| a.info)
             .collect())
+    }
+
+    /// The models Claude Code offers. Read from a throwaway agent session once, then kept in the
+    /// settings store; `refresh` asks the agent again (new releases, a Claude Code update).
+    pub async fn model_catalog(&self, refresh: bool) -> Result<Option<ModelCatalog>> {
+        let mut cached = self.catalog.lock().await;
+        if !refresh {
+            if let Some(catalog) = cached.as_ref() {
+                return Ok(Some(catalog.clone()));
+            }
+            let store = self.store.clone();
+            let saved = blocking(move || store.get_setting(MODELS_SETTING)).await?;
+            if let Some(catalog) = saved.and_then(|json| serde_json::from_str::<ModelCatalog>(&json).ok()) {
+                *cached = Some(catalog.clone());
+                return Ok(Some(catalog));
+            }
+        }
+        let kind = AgentKind::Claude;
+        let detected = self.detected_agents(refresh).await.into_iter().find(|a| a.kind == kind);
+        let Some(launch) = detected.as_ref().and_then(|a| a.launch.clone()) else {
+            return Err(AppError::new(
+                "agent_not_installed",
+                format!("{} is not installed", kind.display_name()),
+            ));
+        };
+        if detected.as_ref().and_then(|a| a.info.authenticated) == Some(false) {
+            return Err(AppError::new(
+                "agent_auth_required",
+                format!("{} is not signed in", kind.display_name()),
+            ));
+        }
+        let Some(catalog) = session::probe_models(launch, std::env::temp_dir()).await? else {
+            return Ok(None);
+        };
+        let (store, json) = (
+            self.store.clone(),
+            serde_json::to_string(&catalog).map_err(|e| AppError::internal(e.to_string()))?,
+        );
+        blocking(move || store.set_setting(MODELS_SETTING, &json)).await?;
+        *cached = Some(catalog.clone());
+        Ok(Some(catalog))
+    }
+
+    /// Drops the in-memory model list (the stored copy is a setting, cleared separately).
+    pub async fn forget_model_catalog(&self) {
+        *self.catalog.lock().await = None;
     }
 
     pub async fn start_chat(&self, input: StartChat) -> Result<Chat> {
@@ -386,6 +435,7 @@ impl AgentManager {
         text: String,
         context: Vec<ContextChip>,
         action: AgentAction,
+        model: RunModel,
         on_event: Box<dyn Fn(AgentEvent) + Send + Sync>,
     ) -> Result<()> {
         let (store, id) = (self.store.clone(), chat_id.to_string());
@@ -439,7 +489,7 @@ impl AgentManager {
         let sink: EventSink = Arc::from(on_event);
         let setting = self.permission_setting().await;
         let run = crate::agents::policy::run_permissions(rec.chat.mode, &action, setting);
-        let events = rt.session.prompt(prompt, run, sink).await?;
+        let events = rt.session.prompt(prompt, run, model, sink).await?;
 
         let (store, id) = (self.store.clone(), chat_id.to_string());
         let content = ChatMessageContent::Agent(events);

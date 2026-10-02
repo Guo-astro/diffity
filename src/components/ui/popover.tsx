@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn';
 import { CheckIcon } from './icon';
 
 const GAP = 6;
+
+/** Panels of popovers opened from inside another popover, so clicks in them don't close the outer one. */
+const NestedPanels = createContext<Set<HTMLElement> | null>(null);
 const MARGIN = 8;
 
 interface PopoverProps {
@@ -43,6 +46,19 @@ export function Popover(props: PopoverProps) {
   const { open, onClose, anchorRef, align = 'start', width, className, children } = props;
   const panelRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<Position | null>(null);
+  const [nested] = useState(() => new Set<HTMLElement>());
+  const parent = useContext(NestedPanels);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!open || !parent || !panel) {
+      return;
+    }
+    parent.add(panel);
+    return () => {
+      parent.delete(panel);
+    };
+  }, [open, parent]);
 
   const update = useCallback(() => {
     const anchor = anchorRef.current;
@@ -70,10 +86,13 @@ export function Popover(props: PopoverProps) {
       if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) {
         return;
       }
+      if ([...nested].some((panel) => panel.contains(target))) {
+        return;
+      }
       onClose();
     };
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      if (event.key === 'Escape' && nested.size === 0) {
         event.stopPropagation();
         onClose();
       }
@@ -93,7 +112,7 @@ export function Popover(props: PopoverProps) {
       window.removeEventListener('resize', update);
       window.removeEventListener('scroll', update, true);
     };
-  }, [open, onClose, anchorRef, update]);
+  }, [open, onClose, anchorRef, update, nested]);
 
   if (!open) {
     return null;
@@ -112,7 +131,7 @@ export function Popover(props: PopoverProps) {
         visibility: position ? 'visible' : 'hidden',
       }}
     >
-      {children}
+      <NestedPanels.Provider value={nested}>{children}</NestedPanels.Provider>
     </div>,
     document.body,
   );

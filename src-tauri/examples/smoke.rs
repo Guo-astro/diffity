@@ -193,7 +193,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (text, action)
     };
-    let run = manager.send_prompt(&chat.id, text, vec![], action, sink);
+    let run = manager.send_prompt(&chat.id, text, vec![], action, Default::default(), sink);
     let outcome = tokio::time::timeout(Duration::from_secs(170), run).await;
     match outcome {
         Ok(Ok(())) => println!("\n[turn finished]"),

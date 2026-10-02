@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { CommentAuthor, CommentSide, CommentThread, SubmitOptions } from '../components/comments/types';
 import * as api from '../lib/api';
 import { enqueueClaude } from '../features/claude/claude-runner';
+import { mentionsAgent } from '../lib/mentions';
 
 function reportError(error: unknown) {
   toast.error(api.errorMessage(error));
@@ -109,8 +110,16 @@ export function useCommentActions(sessionId: string | null, enabled: boolean) {
     if (!enabled) {
       return;
     }
-    api.editComment(commentId, body).then(invalidateThreads, reportError);
-  }, [enabled, invalidateThreads]);
+    const thread = queryClient.getQueryData<CommentThread[]>(['threads', sessionId])?.find((item) => item.comments.some((comment) => comment.id === commentId));
+    const comment = thread?.comments.find((item) => item.id === commentId);
+    const newMention = !!comment && comment.author.type === 'user' && !comment.pending && !mentionsAgent(comment.body) && mentionsAgent(body);
+    api.editComment(commentId, body).then(() => {
+      invalidateThreads();
+      if (thread && newMention) {
+        enqueueClaude({ kind: 'thread', threadId: thread.id }, { repoPath: api.getRepoPath(), sessionId: thread.sessionId ?? null });
+      }
+    }, reportError);
+  }, [enabled, invalidateThreads, queryClient, sessionId]);
 
   const deleteComment = useCallback((_threadId: string, commentId: string) => {
     if (!enabled) {

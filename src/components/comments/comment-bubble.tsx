@@ -2,6 +2,7 @@ import { buttonGhost, buttonPrimary } from '../ui/button-styles';
 import { useState, useRef, useEffect } from 'react';
 import type { Comment } from './types';
 import { MarkdownContent } from '../layout/markdown-content';
+import { MentionTextarea } from './mention-textarea';
 import { ThreadBadge } from '../ui/thread-badge';
 import { PencilIcon, SparkleIcon, TrashIcon } from '../ui/icon';
 
@@ -132,10 +133,10 @@ export function CommentBubble(props: CommentBubbleProps) {
         <div className="text-[13px] leading-5 text-text pl-7">
         {isEditing ? (
           <div>
-            <textarea
+            <MentionTextarea
               ref={textareaRef}
               value={editBody}
-              onChange={(e) => setEditBody(e.target.value)}
+              onChange={setEditBody}
               onKeyDown={handleKeyDown}
               rows={3}
               className="w-full px-3 py-2 text-[13px] bg-bg text-text resize-y outline-none rounded-md border border-border focus:border-focus min-h-[60px]"

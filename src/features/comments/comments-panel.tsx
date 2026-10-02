@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useCurrentViewRef } from '../../hooks/use-current-view';
 import { create } from 'zustand';
 import { useRepoPath } from '../../hooks/use-repo';
-import { useRepoThreads } from '../../hooks/use-repo-threads';
+import { inView, useRepoThreads } from '../../hooks/use-repo-threads';
 import { closeComments, useUi } from '../../lib/ui-store';
 import { threadPath } from '../../lib/thread-location';
 import { groupThreads } from '../../lib/repo-thread-groups';
@@ -14,23 +14,26 @@ import { SegmentedToggle } from '../../components/ui/segmented-toggle';
 import { formatRelativeTime } from '../../components/comments/comment-bubble';
 import { GENERAL_THREAD_FILE_PATH } from '../../components/comments/types';
 import { InlineMarkdown } from '../../components/comments/inline-markdown';
-import { CheckIcon, ChevronIcon, CommentIcon, FileIcon, GitCommitIcon, GitCompareIcon, PencilIcon, SparkleIcon, UndoIcon, XIcon } from '../../components/ui/icon';
+import { CheckIcon, ChevronIcon, CommentIcon, FileIcon, GitCommitIcon, GitCompareIcon, PencilIcon, SparkleIcon, TrashIcon, UndoIcon, XIcon } from '../../components/ui/icon';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { errorMessage, updateThreadStatus } from '../../lib/api';
+import { deleteThread, errorMessage, updateThreadStatus } from '../../lib/api';
+import { ConfirmDialog } from '../../components/ui/confirm-dialog';
 import { enqueueClaude, useThreadActivity } from '../claude/claude-runner';
 import { useReviewThreads } from '../../hooks/use-review-threads';
 import { MarkdownContent } from '../../components/layout/markdown-content';
 
 type StatusFilter = 'open' | 'resolved' | 'all';
 type AuthorFilter = 'all' | 'agent' | 'user';
+type ScopeFilter = 'view' | 'all';
 
 interface PanelFilters {
   status: StatusFilter;
   author: AuthorFilter;
+  scope: ScopeFilter;
 }
 
-const useFilters = create<PanelFilters>(() => ({ status: 'open', author: 'all' }));
+const useFilters = create<PanelFilters>(() => ({ status: 'open', author: 'all', scope: 'view' }));
 
 const PATH_PREFIX = '__path__:';
 const GROUPS_KEY = 'diffity-comment-groups';
@@ -188,6 +191,18 @@ function ThreadRow(props: ThreadRowProps) {
     }
     setExpanded(!expanded);
   };
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const remove = () => {
+    setConfirmDelete(false);
+    deleteThread(thread.id).then(
+      () => {
+        queryClient.invalidateQueries({ queryKey: ['repo-threads'] });
+        queryClient.invalidateQueries({ queryKey: ['threads'] });
+        queryClient.invalidateQueries({ queryKey: ['reviews'] });
+      },
+      (error) => toast.error(errorMessage(error)),
+    );
+  };
   const toggleStatus = () => {
     updateThreadStatus(thread.id, isOpen ? 'resolved' : 'open').then(
       () => {
@@ -199,6 +214,7 @@ function ThreadRow(props: ThreadRowProps) {
   };
 
   return (
+    <>
     <div
       role="button"
       tabIndex={openable ? 0 : -1}
@@ -265,6 +281,21 @@ function ThreadRow(props: ThreadRowProps) {
             {isOpen ? <CheckIcon size="xs" /> : <UndoIcon size="xs" />}
             {isOpen ? 'Resolve' : 'Reopen'}
           </button>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              if (thread.replyCount > 0) {
+                setConfirmDelete(true);
+                return;
+              }
+              remove();
+            }}
+            className="hidden group-hover:inline-flex group-focus-within:inline-flex items-center justify-center w-5 h-5 -my-0.5 rounded text-text-muted hover:text-deleted hover:bg-hover cursor-pointer shrink-0"
+            title="Delete this comment and its replies"
+            aria-label="Delete comment"
+          >
+            <TrashIcon size="xs" />
+          </button>
         </div>
         {!expanded && <InlineMarkdown text={thread.excerpt || 'Comment'} className="text-[13px] leading-5 text-text line-clamp-2 mt-0.5" />}
         {expanded && <OutdatedThreadBody thread={thread} />}
@@ -296,10 +327,30 @@ function ThreadRow(props: ThreadRowProps) {
         )}
       </div>
     </div>
+    {confirmDelete && (
+      <ConfirmDialog
+        title="Delete comment"
+        message={`Delete this comment and its ${thread.replyCount} repl${thread.replyCount === 1 ? 'y' : 'ies'}? This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={remove}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    )}
+    </>
   );
 }
 
-function emptyMessage(filters: PanelFilters, total: number): string {
+function deleteMessage(filters: PanelFilters, count: number, viewOnly: boolean): string {
+  const status = filters.status === 'open' ? 'open ' : filters.status === 'resolved' ? 'resolved ' : '';
+  const author = filters.author === 'agent' ? ' from Claude' : filters.author === 'user' ? ' from you' : '';
+  const noun = count === 1 ? 'comment' : 'comments';
+  return `Delete ${count === 1 ? 'the' : `all ${count}`} ${status}${noun}${author} ${viewOnly ? 'in this view' : 'across every view in this repository'}? This cannot be undone.`;
+}
+
+function emptyMessage(filters: PanelFilters, total: number, viewOnly: boolean): string {
+  if (total === 0 && viewOnly) {
+    return 'No comments in this view yet. Switch to All views to see comments from other diffs.';
+  }
   if (total === 0) {
     return 'No comments in this repository yet. Comments you or Claude leave in any view show up here.';
   }
@@ -362,7 +413,8 @@ function CommentsPanelBody() {
   const currentRef = useCurrentViewRef();
   const { data, isLoading, error } = useRepoThreads();
   const filters = useFilters();
-  const threads = useMemo(() => data ?? [], [data]);
+  const scopeRef = filters.scope === 'view' ? currentRef : null;
+  const threads = useMemo(() => (data ?? []).filter((thread) => inView(thread, scopeRef)), [data, scopeRef]);
 
   const counts = useMemo(() => {
     const byAuthor = threads.filter((thread) => matchesAuthor(thread, filters.author));
@@ -373,12 +425,28 @@ function CommentsPanelBody() {
     };
   }, [threads, filters.author]);
 
-  const groups = useMemo(() => {
-    const visible = threads.filter(
-      (thread) => matchesStatus(thread, filters.status) && matchesAuthor(thread, filters.author),
-    );
-    return groupThreads(visible, currentRef);
-  }, [threads, filters, currentRef]);
+  const visible = useMemo(
+    () => threads.filter((thread) => matchesStatus(thread, filters.status) && matchesAuthor(thread, filters.author)),
+    [threads, filters],
+  );
+  const groups = useMemo(() => groupThreads(visible, currentRef), [visible, currentRef]);
+  const queryClient = useQueryClient();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const deleteVisible = async () => {
+    setConfirmDelete(false);
+    const ids = visible.map((thread) => thread.id);
+    const results = await Promise.allSettled(ids.map((id) => deleteThread(id)));
+    queryClient.invalidateQueries({ queryKey: ['repo-threads'] });
+    queryClient.invalidateQueries({ queryKey: ['threads'] });
+    queryClient.invalidateQueries({ queryKey: ['reviews'] });
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed) {
+      toast.error('Some comments could not be deleted', { description: errorMessage(failed.reason) });
+      return;
+    }
+    toast.success(`Deleted ${ids.length} comment${ids.length === 1 ? '' : 's'}`);
+  };
 
   const openThread = (thread: RepoThread) => {
     closeComments();
@@ -396,17 +464,17 @@ function CommentsPanelBody() {
 
   const [groupState, setGroupState] = useState(readGroupState);
   const isGroupOpen = (group: (typeof groups)[number]) => {
-    const stored = groupState[`${repoPath}\n${group.ref}`];
+    const stored = groupState[`${repoPath}\n${group.key}`];
     if (stored !== undefined) {
       return stored;
     }
-    if (group.ref === currentRef) {
+    if (group.ref === currentRef && !group.otherBranch) {
       return true;
     }
     return group.files.some((file) => file.threads.some((thread) => thread.status === 'open' && thread.authorType === 'agent'));
   };
   const toggleGroup = (group: (typeof groups)[number]) => {
-    const next = { ...groupState, [`${repoPath}\n${group.ref}`]: !isGroupOpen(group) };
+    const next = { ...groupState, [`${repoPath}\n${group.key}`]: !isGroupOpen(group) };
     setGroupState(next);
     writeGroupState(next);
   };
@@ -422,7 +490,18 @@ function CommentsPanelBody() {
         <div className="flex items-center gap-2">
           <CommentIcon size="md" className="text-text-secondary" />
           <h2 className="text-[15px] font-semibold text-text">Comments</h2>
-          <span className="text-xs text-text-secondary">across this repository</span>
+          {currentRef ? (
+            <SegmentedToggle<ScopeFilter>
+              value={filters.scope}
+              onChange={(scope) => useFilters.setState({ scope })}
+              options={[
+                { value: 'view', label: 'This view' },
+                { value: 'all', label: 'All views' },
+              ]}
+            />
+          ) : (
+            <span className="text-xs text-text-secondary">across this repository</span>
+          )}
         </div>
         <button
           onClick={closeComments}
@@ -458,12 +537,12 @@ function CommentsPanelBody() {
         {isLoading && <div className="px-4 py-6 text-xs text-text-muted">Loading comments…</div>}
         {error && <div className="px-4 py-6 text-xs text-deleted">Could not load comments: {String((error as { message?: string }).message ?? error)}</div>}
         {!isLoading && !error && groups.length === 0 && (
-          <div className="px-6 py-10 text-center text-xs text-text-muted leading-relaxed">{emptyMessage(filters, threads.length)}</div>
+          <div className="px-6 py-10 text-center text-xs text-text-muted leading-relaxed">{emptyMessage(filters, threads.length, !!scopeRef)}</div>
         )}
         {groups.map((group) => {
           const expanded = isGroupOpen(group);
           return (
-            <section key={group.ref} className="mb-2">
+            <section key={group.key} className="mb-2">
               <div className="sticky top-0 z-10 flex items-center gap-2 pl-2 pr-4 h-9 bg-sidebar">
                 <button
                   onClick={() => toggleGroup(group)}
@@ -474,12 +553,12 @@ function CommentsPanelBody() {
                   <ChevronIcon expanded={expanded} />
                   <ViewIcon viewRef={group.ref} />
                   <span className="text-xs font-medium text-text truncate" title={group.ref}>{group.label}</span>
-                  {group.ref === currentRef && (
+                  {group.ref === currentRef && !group.otherBranch && (
                     <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-fill text-text-secondary shrink-0">This view</span>
                   )}
                   <span className="text-xs text-text-muted shrink-0 tabular-nums">{group.count}</span>
                 </button>
-                {group.ref !== currentRef && (
+                {group.ref !== currentRef && !group.otherBranch && (
                   <button
                     onClick={() => openView(group.ref)}
                     className="h-6 px-2 -mr-1 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover cursor-pointer shrink-0"
@@ -506,7 +585,26 @@ function CommentsPanelBody() {
       </div>
       <div className="px-4 h-9 flex items-center gap-1 border-t border-border-muted text-xs text-text-muted">
         Press <kbd className="px-1 py-0.5 bg-raised border border-control-border rounded font-sans text-[11px]">C</kbd> to toggle this panel
+        {visible.length > 0 && (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="ml-auto -mr-2 inline-flex items-center gap-1 h-6 px-2 rounded-md text-text-muted hover:text-deleted hover:bg-hover cursor-pointer"
+            title="Delete the comments shown above"
+          >
+            <TrashIcon size="xs" />
+            Delete all
+          </button>
+        )}
       </div>
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Delete ${visible.length} comment${visible.length === 1 ? '' : 's'}`}
+          message={deleteMessage(filters, visible.length, !!scopeRef)}
+          confirmLabel="Delete"
+          onConfirm={() => void deleteVisible()}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
     </>
   );
 }

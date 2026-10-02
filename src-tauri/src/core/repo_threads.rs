@@ -299,8 +299,16 @@ pub fn list_repo_threads(store: &Store, repo_path: &str) -> Result<Vec<RepoThrea
     let rows = store.list_repo_threads(repo_path)?;
     let mut views: HashMap<String, (String, View)> = HashMap::new();
     let mut head: Option<Option<HeadCommit>> = None;
+    let scope = crate::core::store::current_scope(repo_path);
     let mut out = Vec::with_capacity(rows.len());
     for (session, thread) in rows {
+        if !session.scope.is_empty() && session.scope != scope {
+            let label = format!("{} · {}", ref_label(repo, &session.r#ref), session.scope);
+            let mut item = to_repo_thread(&session, label, thread, ThreadAnchor::Unknown, None);
+            item.other_branch = Some(session.scope.clone());
+            out.push(item);
+            continue;
+        }
         let (label, view) = views.entry(session.r#ref.clone()).or_insert_with(|| load_view(repo, &session));
         let anchor = match view {
             View::Tree => tree_anchor(repo, &thread),
@@ -360,6 +368,7 @@ fn to_repo_thread(
         pending: thread.pending,
         anchor,
         moved_to,
+        other_branch: None,
     }
 }
 

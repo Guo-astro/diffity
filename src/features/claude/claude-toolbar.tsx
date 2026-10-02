@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { useReviewState } from '../review/review-state';
 import { SparkleIcon, StopIcon } from '../../components/ui/icon';
 import { Spinner } from '../../components/icons/spinner';
+import { runModelLabel, useModelCatalog } from './model-setting';
 
 interface ClaudeToolbarProps {
   diffRef: string | null;
@@ -43,6 +44,7 @@ export function ClaudeStatus() {
   const queued = useQueuedCount(repoPath);
   const now = useNow(run !== null);
   const currentRef = useCurrentViewRef();
+  const { data: catalog } = useModelCatalog();
 
   if (!run) {
     return null;
@@ -62,14 +64,7 @@ export function ClaudeStatus() {
       >
         <Spinner className="text-claude" />
         <span className="font-medium truncate @max-3xl/titlebar:hidden">{runLabel(run.action)}</span>
-        {(run.skipsPrompts || run.editsApproved) && (
-          <span
-            className="text-text-secondary @max-5xl/titlebar:hidden"
-            title={run.skipsPrompts ? 'Claude edits files and runs commands without asking. Change in Settings → Claude Code.' : 'You allowed edits for this run'}
-          >
-            · {run.skipsPrompts ? 'no permission prompts' : 'auto-approving edits'}
-          </span>
-        )}
+        {run.model && <span className="text-text-muted truncate max-w-[160px] @max-5xl/titlebar:hidden">{runModelLabel(catalog, run.model)}</span>}
         {elsewhere && where && (
           <span className="text-text-secondary truncate max-w-[180px] @max-4xl/titlebar:hidden">on {where}</span>
         )}

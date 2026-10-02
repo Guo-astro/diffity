@@ -113,10 +113,11 @@ pub fn list(store: &Store, repo_path: &str, r#ref: Option<&str>) -> Result<Vec<C
     let conn = store.conn()?;
     let mut stmt = conn.prepare(&format!(
         "{SELECT} WHERE c.repo_path = ?1
-           AND (?2 IS NULL OR s.session_id IN (SELECT id FROM review_sessions WHERE repo_path = ?1 AND ref = ?2))
+           AND (?2 IS NULL OR s.session_id IN (SELECT id FROM review_sessions WHERE repo_path = ?1 AND ref = ?2 AND scope = ?3))
          ORDER BY c.updated_at DESC"
     ))?;
-    let rows = stmt.query_map(params![repo_path, r#ref], chat_from_row)?;
+    let scope = r#ref.map(|r| crate::core::store::session_scope(repo_path, r)).unwrap_or_default();
+    let rows = stmt.query_map(params![repo_path, r#ref, scope], chat_from_row)?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?.chat);

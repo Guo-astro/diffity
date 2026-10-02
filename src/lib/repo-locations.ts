@@ -113,3 +113,12 @@ export function activateRepoCache(client: QueryClient, repoPath: string) {
   }
   cacheOwner = repoPath;
 }
+
+/** Drops parked caches after their data was deleted (Settings → Data); null drops every repository's. */
+export function forgetRepoCaches(repoPath: string | null) {
+  if (repoPath === null) {
+    caches.clear();
+    return;
+  }
+  caches.delete(repoPath);
+}

@@ -21,6 +21,48 @@ pub struct AgentInfo {
     pub note: Option<String>,
 }
 
+/// Model and thinking effort for one run. `None` keeps the agent's own setting.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RunModel {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigChoice {
+    pub value: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelChoice {
+    pub value: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Thinking effort levels this model takes; empty when it has none.
+    #[serde(default)]
+    pub efforts: Vec<ConfigChoice>,
+}
+
+/// The models an agent offers, as it reported them in a session.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCatalog {
+    pub models: Vec<ModelChoice>,
+    /// The model the agent picks on its own (the user's own setting).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_model: Option<String>,
+    pub fetched_at: String,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ContextChip {

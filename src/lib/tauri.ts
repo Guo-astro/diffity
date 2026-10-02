@@ -11,6 +11,9 @@ import type {
   ChatMessage,
   Commit,
   ContextChip,
+  ModelCatalog,
+  ProjectData,
+  RunModel,
   DeviceCode,
   DiffResult,
   FileContent,
@@ -75,6 +78,9 @@ export const openInEditor = (repoPath: string, path: string, line?: number | nul
   invoke<void>('open_in_editor', { repoPath, path, line: line ?? null, editor: editor ?? null });
 export const reportIssue = () => invoke<void>('report_issue');
 export const takeOpenRequests = () => invoke<OpenRequest[]>('take_open_requests');
+export const projectData = () => invoke<ProjectData[]>('project_data');
+export const clearProjectData = (repoPath: string) => invoke<void>('clear_project_data', { repoPath });
+export const resetAllData = () => invoke<void>('reset_all_data');
 export const getSetting = (key: string) => invoke<string | null>('get_setting', { key });
 export const setSetting = (key: string, value: string) => invoke<void>('set_setting', { key, value });
 
@@ -139,6 +145,7 @@ export const viewedChanges = (sessionId: string, filePath: string) => invoke<str
 
 // agents
 export const listAgents = (refresh?: boolean) => invoke<AgentInfo[]>('list_agents', { refresh: refresh ?? null });
+export const agentModels = (refresh = false) => invoke<ModelCatalog | null>('agent_models', { refresh });
 export const startChat = (input: StartChat) => invoke<Chat>('start_chat', { input });
 export const listChats = (repoPath: string, ref?: string) => invoke<Chat[]>('list_chats', { repoPath, ref: ref ?? null });
 export const getChatMessages = (chatId: string) => invoke<ChatMessage[]>('get_chat_messages', { chatId });
@@ -147,11 +154,12 @@ export function sendPrompt(
   text: string,
   context: ContextChip[],
   action: AgentAction,
+  model: RunModel,
   onEvent: (event: AgentEvent) => void,
 ) {
   const channel = new Channel<AgentEvent>();
   channel.onmessage = onEvent;
-  return invoke<void>('send_prompt', { chatId, text, context, action, onEvent: channel });
+  return invoke<void>('send_prompt', { chatId, text, context, action, model, onEvent: channel });
 }
 export const cancelPrompt = (chatId: string) => invoke<void>('cancel_prompt', { chatId });
 export const respondPermission = (requestId: string, optionId: string | null, forRun = false) =>

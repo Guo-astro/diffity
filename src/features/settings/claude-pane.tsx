@@ -15,6 +15,9 @@ import {
 import { AlertCircleIcon, CheckIcon, RefreshIcon, SparkleIcon } from '../../components/ui/icon';
 import { Skeleton, useRevealClass } from '../../components/ui/skeleton';
 import { PERMISSION_OPTIONS, savePermissionSetting, usePermissionSetting, type PermissionSetting } from '../claude/permission-setting';
+import { ModelPicker } from '../claude/model-picker';
+import { findModel, MODEL_PURPOSES, saveModelSetting, useModelCatalog, useModelSetting, type ModelPurpose } from '../claude/model-setting';
+import type { RunModel } from '../../lib/types';
 
 const CLAUDE_PATH_KEY = 'agent.claude.path';
 
@@ -165,6 +168,43 @@ function PathRow(props: { onSaved: () => Promise<void> }) {
   );
 }
 
+function ModelRow(props: { purpose: ModelPurpose; label: string; hint: string }) {
+  const { purpose, label, hint } = props;
+  const value = useModelSetting(purpose);
+  const { data: catalog } = useModelCatalog();
+  const gone = !!catalog && !!value.model && !findModel(catalog, value.model);
+
+  const save = async (next: RunModel) => {
+    try {
+      await saveModelSetting(purpose, next);
+    } catch (error) {
+      toast.error('Could not save the model', { description: tauri.errorMessage(error) });
+    }
+  };
+
+  return (
+    <PreferencesRow
+      label={label}
+      hint={gone ? <span className="text-modified">{value.model} is no longer offered. Claude Code’s own setting is used.</span> : hint}
+    >
+      <ModelPicker value={value} onChange={(next) => void save(next)} align="end" className="-mr-1.5" />
+    </PreferencesRow>
+  );
+}
+
+function ModelsGroup() {
+  return (
+    <PreferencesGroup label="Models">
+      <p className="pt-1.5 pb-1 text-[11.5px] leading-snug text-text-muted">
+        Starting point for each kind of run. The review and send popovers can change it, and remember the pick per project. The list comes from your Claude Code install.
+      </p>
+      {MODEL_PURPOSES.map((item) => (
+        <ModelRow key={item.value} purpose={item.value} label={item.label} hint={item.hint} />
+      ))}
+    </PreferencesGroup>
+  );
+}
+
 function PermissionsGroup() {
   const setting = usePermissionSetting();
 
@@ -226,6 +266,7 @@ export function ClaudePane() {
       <PreferencesGroup label="Location">
         <PathRow onSaved={redetect} />
       </PreferencesGroup>
+      <ModelsGroup />
       <PermissionsGroup />
       <PreferencesGroup label="What Claude can do here">
         <ul className="flex flex-col gap-2.5 pt-1.5">

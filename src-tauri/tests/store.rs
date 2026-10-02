@@ -327,7 +327,7 @@ fn migrates_v1_database() {
         .unwrap()
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
     let t = store.get_thread("t1").unwrap();
     assert!(!t.pending);
     assert!(t.review_id.is_none());
@@ -380,7 +380,7 @@ fn v2_database_gains_viewed_snapshots() {
     }
     let store = Store::open(&path).unwrap();
     let version: i64 = store.conn().unwrap().pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
     let old = store.get_viewed("s1", "old.rs").unwrap().unwrap();
     assert_eq!((old.content_hash.as_str(), old.blob_id), ("h0", None));
 
@@ -392,4 +392,84 @@ fn v2_database_gains_viewed_snapshots() {
     assert!(store.get_viewed("s1", "old.rs").unwrap().is_none());
     drop(store);
     assert!(Store::open(&path).is_ok());
+}
+
+mod common;
+
+#[test]
+fn branch_relative_refs() {
+    use diffity_desktop_lib::core::store::is_branch_relative;
+    for r in ["origin/main...HEAD", "main...HEAD", "main", "origin/main", "HEAD~1", "HEAD~2..HEAD", "abc1234..HEAD"] {
+        assert!(is_branch_relative(r), "{r}");
+    }
+    for r in ["work", "staged", "unstaged", ".", "__tree__", "abc1234", "abc1234~1..abc1234", "main..feature"] {
+        assert!(!is_branch_relative(r), "{r}");
+    }
+}
+
+#[test]
+fn pr_views_are_kept_per_branch() {
+    let repo = common::Repo::with_commit();
+    let path = repo.path.to_string_lossy().to_string();
+    let store = Store::open_in_memory().unwrap();
+    let pr = "origin/main...HEAD";
+
+    let on_main = store.get_or_create_session(&path, pr).unwrap();
+    assert_eq!(on_main.scope, "main");
+    store.create_thread(&new_thread(&on_main.id, "on main")).unwrap();
+
+    common::git(&repo.path, &["checkout", "-q", "-b", "pr-2"]);
+    let on_pr = store.get_or_create_session(&path, pr).unwrap();
+    assert_ne!(on_pr.id, on_main.id);
+    assert!(store.list_threads(&on_pr.id, None).unwrap().is_empty());
+
+    let work_a = store.get_or_create_session(&path, "work").unwrap();
+    common::git(&repo.path, &["checkout", "-q", "main"]);
+    assert_eq!(store.get_or_create_session(&path, pr).unwrap().id, on_main.id);
+    assert_eq!(store.get_or_create_session(&path, "work").unwrap().id, work_a.id, "uncommitted changes aren't per branch");
+}
+
+#[test]
+fn unscoped_sessions_are_adopted_by_the_first_branch() {
+    let repo = common::Repo::with_commit();
+    let path = repo.path.to_string_lossy().to_string();
+    let store = Store::open_in_memory().unwrap();
+    let legacy = store.get_or_create_scoped_session(&path, "main", "").unwrap();
+    let adopted = store.get_or_create_session(&path, "main").unwrap();
+    assert_eq!(adopted.id, legacy.id);
+    assert_eq!(adopted.scope, "main");
+}
+
+#[test]
+fn clears_one_project_and_resets_all() {
+    let store = Store::open_in_memory().unwrap();
+    let a = store.get_or_create_session("/a", "work").unwrap();
+    let b = store.get_or_create_session("/b", "work").unwrap();
+    let thread = store.create_thread(&new_thread(&a.id, "a")).unwrap();
+    store.add_reply(&thread.id, "reply", AuthorType::User, Some("You")).unwrap();
+    store.create_thread(&new_thread(&b.id, "b")).unwrap();
+    store
+        .conn()
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO chats (id, repo_path, agent_id, mode, title, created_at, updated_at)
+               VALUES ('c1', '/a', 'claude', 'review', 't', 'x', 'x');",
+        )
+        .unwrap();
+    store.set_setting("theme", "dark").unwrap();
+    store.set_setting("agent.claude.models", "{}").unwrap();
+
+    let data = store.project_data().unwrap();
+    let a_data = data.iter().find(|p| p.repo_path == "/a").unwrap();
+    assert_eq!((a_data.comments, a_data.chats), (1, 1));
+
+    store.clear_project_data("/a").unwrap();
+    assert!(store.get_thread(&thread.id).is_err());
+    assert!(store.project_data().unwrap().iter().all(|p| p.repo_path != "/a"));
+    assert_eq!(store.list_threads(&b.id, None).unwrap().len(), 1, "other projects are untouched");
+
+    store.reset_all_data(&["agent.claude.models"]).unwrap();
+    assert!(store.project_data().unwrap().is_empty());
+    assert_eq!(store.get_setting("theme").unwrap().as_deref(), Some("dark"));
+    assert_eq!(store.get_setting("agent.claude.models").unwrap(), None);
 }

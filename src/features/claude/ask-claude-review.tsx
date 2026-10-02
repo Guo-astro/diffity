@@ -11,6 +11,9 @@ import { Popover } from '../../components/ui/popover';
 import { buttonClaudeSolid, buttonGhost, inputField } from '../../components/ui/button-styles';
 import { SparkleIcon } from '../../components/ui/icon';
 import { enqueueClaude } from './claude-runner';
+import { ModelPicker } from './model-picker';
+import { readRepoModel, useModelSetting, writeRepoModel } from './model-setting';
+import type { RunModel } from '../../lib/types';
 
 export const REVIEW_FOCUSES = ['Security', 'Performance', 'Correctness', 'Naming', 'Tests', 'Types'] as const;
 
@@ -83,6 +86,9 @@ function AskClaudePanel(props: AskClaudePanelProps) {
   const [focus, setFocus] = useState<string[]>(() => readFocus(repoPath));
   const [scope, setScope] = useState<Scope>('all');
   const [glob, setGlob] = useState('');
+  const fallbackModel = useModelSetting('review');
+  const [pickedModel, setPickedModel] = useState<RunModel | null>(() => readRepoModel('review', repoPath));
+  const model = pickedModel ?? fallbackModel;
   const textRef = useRef<HTMLTextAreaElement>(null);
   const { data: diff } = useQuery(diffOptions(false, diffRef));
   const files = useMemo(() => diff?.files.map((file) => getFilePath(file)) ?? [], [diff]);
@@ -108,6 +114,9 @@ function AskClaudePanel(props: AskClaudePanelProps) {
       return;
     }
     writeFocus(repoPath, focus);
+    if (pickedModel) {
+      writeRepoModel('review', repoPath, pickedModel);
+    }
     const session = sessionId ?? (await tauri.getSession(repoPath, diffRef).catch(() => null))?.id ?? null;
     enqueueClaude(
       {
@@ -117,7 +126,7 @@ function AskClaudePanel(props: AskClaudePanelProps) {
         instructions: text.trim() || undefined,
         paths: paths.length > 0 ? paths : undefined,
       },
-      { repoPath, sessionId: session },
+      { repoPath, sessionId: session, model },
     );
     onClose();
     onStarted?.();
@@ -214,7 +223,8 @@ function AskClaudePanel(props: AskClaudePanelProps) {
           </div>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2 pt-1">
+      <div className="flex items-center gap-2 pt-1">
+        <ModelPicker value={model} onChange={setPickedModel} className="-ml-1.5 mr-auto" />
         <button type="button" onClick={onClose} className={buttonGhost}>
           Cancel
         </button>

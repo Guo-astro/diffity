@@ -34,6 +34,9 @@ import { PrSyncRow } from '../pr/pr-session';
 import { ApproveIcon, CheckIcon, ChevronDownIcon, CommentIcon, GitHubIcon, GitPullRequestIcon, RequestChangesIcon, SendIcon, SparkleIcon, type GlyphProps } from '../../components/ui/icon';
 import { Spinner } from '../../components/icons/spinner';
 import { Popover } from '../../components/ui/popover';
+import { ModelPicker } from '../claude/model-picker';
+import { readRepoModel, useModelSetting, writeRepoModel } from '../claude/model-setting';
+import type { RunModel } from '../../lib/types';
 
 interface FinishReviewProps {
   githubDetails: GitHubDetails | null;
@@ -134,6 +137,9 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
   const busy = useBusyThreadIds();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
+  const fallbackModel = useModelSetting('fix');
+  const [pickedModel, setPickedModel] = useState<RunModel | null>(() => readRepoModel('fix', getRepoPath()));
+  const model = pickedModel ?? fallbackModel;
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [claudePicked, setClaudePicked] = useState<Set<string> | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
@@ -183,8 +189,11 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
         threadIds: [...new Set([...selected.map((thread) => thread.id), ...(pendingCount > 0 ? pendingReview?.threadIds ?? [] : [])])],
         note: note.trim() || undefined,
       },
-      { repoPath: getRepoPath(), sessionId, postRepliesToGitHub: postReplies ? remoteSelected.map((thread) => thread.id) : undefined },
+      { repoPath: getRepoPath(), sessionId, model, postRepliesToGitHub: postReplies ? remoteSelected.map((thread) => thread.id) : undefined },
     );
+    if (pickedModel) {
+      writeRepoModel('fix', getRepoPath(), pickedModel);
+    }
     setNote('');
     setExcluded(new Set());
     setClaudePicked(null);
@@ -301,7 +310,8 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
               className="block w-full px-2.5 py-1.5 text-[13px] leading-5 bg-raised text-text rounded-md border border-control-border focus:border-focus resize-y outline-none placeholder:text-text-muted"
             />
             {claudeProblem && <div className="mt-2 px-2.5 py-1.5 rounded-md bg-deleted/10 text-xs text-deleted">{claudeProblem}</div>}
-            <div className="mt-2.5 flex items-center justify-end gap-2">
+            <div className="mt-2.5 flex items-center gap-2">
+              <ModelPicker value={model} onChange={setPickedModel} className="-ml-1.5 mr-auto" />
               <button type="button" onClick={() => setOpen(false)} className={buttonGhost}>Cancel</button>
               <button type="submit" disabled={selected.length + pendingCount === 0} className={buttonClaudeSolid} title="⌘↵">
                 <SendIcon size="sm" />

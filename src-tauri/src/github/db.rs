@@ -134,11 +134,15 @@ pub fn list_session_threads(store: &Store, session_id: &str) -> Result<Vec<Threa
     Ok(out)
 }
 
-/// `(session_id, ref)` for every review session of a repo, oldest first.
+/// `(session_id, ref)` for every review session of a repo seen from the checked-out branch, oldest first.
+/// Sessions of other branches (another PR's `origin/main...HEAD`) are left out.
 pub fn list_repo_sessions(store: &Store, repo_path: &str) -> Result<Vec<(String, String)>> {
+    let scope = crate::core::store::current_scope(repo_path);
     let conn = store.conn()?;
-    let mut stmt = conn.prepare("SELECT id, ref FROM review_sessions WHERE repo_path = ?1 ORDER BY created_at, rowid")?;
-    let rows = stmt.query_map([repo_path], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut stmt = conn.prepare(
+        "SELECT id, ref FROM review_sessions WHERE repo_path = ?1 AND (scope = '' OR scope = ?2) ORDER BY created_at, rowid",
+    )?;
+    let rows = stmt.query_map(params![repo_path, scope], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);

@@ -18,11 +18,12 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     cancelRef.current?.focus();
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.stopImmediatePropagation();
         onCancel();
       }
     };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
+    window.addEventListener('keydown', handleKey, true);
+    return () => window.removeEventListener('keydown', handleKey, true);
   }, [onCancel]);
 
   return (

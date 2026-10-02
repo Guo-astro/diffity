@@ -90,6 +90,7 @@ export function useRepoEvents(repoPath: string) {
         queryClient.invalidateQueries({ queryKey: ['repo-meta'] });
         queryClient.invalidateQueries({ queryKey: ['branches'] });
         queryClient.invalidateQueries({ queryKey: ['repo-threads'] });
+        queryClient.invalidateQueries({ queryKey: ['repo-info'] });
       })
       .then(keep, () => undefined);
     tauri

@@ -518,7 +518,6 @@ export function TreePage() {
       </div>
       </Workspace>
       <StatusBar
-        sessionId={sessionId}
         stale={isStale ? { onRefresh: handleRefreshTree, message: 'Files changed on disk' } : null}
       />
     </div>

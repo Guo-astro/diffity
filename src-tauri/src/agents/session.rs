@@ -8,7 +8,9 @@ use agent_client_protocol::schema::v1::{
     InitializeRequest, LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest,
     PromptRequest, ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionModeState, SessionNotification, SetSessionModeRequest, SessionUpdate, TextContent, ToolCallContent, WriteTextFileRequest,
+    SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelect,
+    SessionConfigSelectOptions, SessionModeState, SessionNotification, SetSessionConfigOptionRequest,
+    SetSessionModeRequest, SessionUpdate, TextContent, ToolCallContent, WriteTextFileRequest,
     WriteTextFileResponse,
 };
 use agent_client_protocol::schema::ProtocolVersion;
@@ -20,7 +22,10 @@ use crate::core::{AppError, Result};
 
 use crate::agents::detect::LaunchSpec;
 use crate::agents::policy::{self, PermissionDecision, RunPermissions};
-use crate::agents::types::{AgentEvent, AgentMode, PermissionDiff, PermissionOption, PlanEntry};
+use crate::agents::types::{
+    AgentEvent, AgentMode, ConfigChoice, ModelCatalog, ModelChoice, PermissionDiff, PermissionOption, PlanEntry,
+    RunModel,
+};
 
 pub type EventSink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
 
@@ -527,6 +532,7 @@ enum Command {
     Prompt {
         text: String,
         mode_id: &'static str,
+        model: RunModel,
         reply: oneshot::Sender<Result<String>>,
     },
     Cancel,
@@ -675,6 +681,7 @@ impl AgentSession {
 
                     let mut session_id: Option<String> = None;
                     let mut modes: Option<SessionModeState> = None;
+                    let mut options: Vec<SessionConfigOption> = Vec::new();
                     if let (Some(prev), true) = (resume, init.agent_capabilities.load_session) {
                         let load = cx
                             .send_request(LoadSessionRequest::new(prev.clone(), cwd.clone()).mcp_servers(vec![mcp.clone()]))
@@ -683,6 +690,7 @@ impl AgentSession {
                         match load {
                             Ok(loaded) => {
                                 modes = loaded.modes;
+                                options = loaded.config_options.unwrap_or_default();
                                 session_id = Some(prev);
                             }
                             Err(e) => tracing::warn!("session/load failed, starting a new session: {e:?}"),
@@ -697,6 +705,7 @@ impl AgentSession {
                                 .await?;
                             tracing::debug!("session/new modes={:?}", created.modes);
                             modes = created.modes;
+                            options = created.config_options.unwrap_or_default();
                             created.session_id.0.to_string()
                         }
                     };
@@ -709,9 +718,10 @@ impl AgentSession {
                         .map(|m| m.available_modes.into_iter().map(|mode| mode.id.0.to_string()).collect())
                         .unwrap_or_default();
                     while let Some(cmd) = cmd_rx.recv().await {
-                        let Command::Prompt { text, mode_id, reply } = cmd else {
+                        let Command::Prompt { text, mode_id, model, reply } = cmd else {
                             continue;
                         };
+                        apply_run_model(&cx, &session_id, &mut options, &model).await;
                         if needs_mode_switch(&available, current_mode.as_deref(), mode_id) {
                             let switched = cx
                                 .send_request(SetSessionModeRequest::new(session_id.clone(), mode_id))
@@ -801,6 +811,7 @@ impl AgentSession {
         &self,
         text: String,
         run: RunPermissions,
+        model: RunModel,
         sink: EventSink,
     ) -> Result<Vec<AgentEvent>> {
         {
@@ -835,6 +846,7 @@ impl AgentSession {
         let sent = self.commands.send(Command::Prompt {
             text,
             mode_id: run.acp_mode_id(),
+            model,
             reply: reply_tx,
         });
         let outcome = match sent {
@@ -882,6 +894,149 @@ impl AgentSession {
             let _ = tokio::time::timeout(std::time::Duration::from_secs(3), handle).await;
         }
     }
+}
+
+fn select_option(
+    options: &[SessionConfigOption],
+    category: SessionConfigOptionCategory,
+) -> Option<(&SessionConfigOption, &SessionConfigSelect)> {
+    options.iter().find_map(|option| match &option.kind {
+        SessionConfigKind::Select(select) if option.category.as_ref() == Some(&category) => Some((option, select)),
+        _ => None,
+    })
+}
+
+fn select_choices(select: &SessionConfigSelect) -> Vec<ConfigChoice> {
+    let flat: Vec<_> = match &select.options {
+        SessionConfigSelectOptions::Ungrouped(options) => options.iter().collect(),
+        SessionConfigSelectOptions::Grouped(groups) => groups.iter().flat_map(|g| g.options.iter()).collect(),
+        _ => Vec::new(),
+    };
+    flat.into_iter()
+        .map(|o| ConfigChoice {
+            value: o.value.0.to_string(),
+            name: o.name.clone(),
+            description: o.description.clone().filter(|d| !d.trim().is_empty()),
+        })
+        .collect()
+}
+
+/// Sets the run's model, then its effort (the levels depend on the model). Values the agent no
+/// longer offers are skipped, so the agent's own setting applies.
+async fn apply_run_model(
+    cx: &ConnectionTo<Agent>,
+    session_id: &str,
+    options: &mut Vec<SessionConfigOption>,
+    wanted: &RunModel,
+) {
+    let steps = [
+        (SessionConfigOptionCategory::Model, wanted.model.as_deref()),
+        (SessionConfigOptionCategory::ThoughtLevel, wanted.effort.as_deref()),
+    ];
+    for (category, value) in steps {
+        let Some(value) = value else {
+            continue;
+        };
+        let Some((option, select)) = select_option(options, category.clone()) else {
+            tracing::warn!("agent offers no {category:?} option; ignoring {value}");
+            continue;
+        };
+        if select.current_value.0.as_ref() == value {
+            continue;
+        }
+        if !select_choices(select).iter().any(|c| c.value == value) {
+            tracing::warn!("agent does not offer {value} for {category:?}");
+            continue;
+        }
+        let request = SetSessionConfigOptionRequest::new(session_id.to_string(), option.id.clone(), value);
+        match cx.send_request(request).block_task().await {
+            Ok(response) => *options = response.config_options,
+            Err(e) => tracing::warn!("session/set_config_option {value} failed: {e:?}"),
+        }
+    }
+}
+
+/// Starts a throwaway session to read the models the agent offers and each model's effort levels.
+/// Nothing is prompted, so it costs no tokens.
+pub async fn probe_models(launch: LaunchSpec, cwd: PathBuf) -> Result<Option<ModelCatalog>> {
+    let stderr: Arc<Mutex<VecDeque<String>>> = Arc::default();
+    let stderr_sink = stderr.clone();
+    let agent = AcpAgent::new(
+        AcpAgentConfig::new(launch.command.clone())
+            .args(launch.args.clone())
+            .envs(launch.env.clone())
+            .env("DIFFITY", "1"),
+    )
+    .with_debug(move |line, dir| {
+        if !matches!(dir, LineDirection::Stderr) {
+            return;
+        }
+        if let Ok(mut buf) = stderr_sink.lock() {
+            if buf.len() >= STDERR_LINES {
+                buf.pop_front();
+            }
+            buf.push_back(line.to_string());
+        }
+    });
+    let result = agent_client_protocol::Client
+        .builder()
+        .name("diffity")
+        .connect_with(agent, async move |cx: ConnectionTo<Agent>| {
+            cx.send_request(
+                InitializeRequest::new(ProtocolVersion::V1)
+                    .client_capabilities(ClientCapabilities::new().terminal(false))
+                    .client_info(Implementation::new("diffity", env!("CARGO_PKG_VERSION"))),
+            )
+            .block_task()
+            .await?;
+            let created = cx.send_request(NewSessionRequest::new(cwd)).block_task().await?;
+            let session_id = created.session_id.0.to_string();
+            let mut options = created.config_options.unwrap_or_default();
+            let Some((model_option, select)) = select_option(&options, SessionConfigOptionCategory::Model) else {
+                return Ok(None);
+            };
+            let config_id = model_option.id.clone();
+            let current_model = Some(select.current_value.0.to_string());
+            let mut models = Vec::new();
+            for choice in select_choices(select) {
+                let switched = cx
+                    .send_request(SetSessionConfigOptionRequest::new(
+                        session_id.clone(),
+                        config_id.clone(),
+                        choice.value.as_str(),
+                    ))
+                    .block_task()
+                    .await;
+                let efforts = match switched {
+                    Ok(response) => {
+                        options = response.config_options;
+                        select_option(&options, SessionConfigOptionCategory::ThoughtLevel)
+                            .map(|(_, effort)| select_choices(effort))
+                            .unwrap_or_default()
+                    }
+                    Err(e) => {
+                        tracing::warn!("probe: switching to {} failed: {e:?}", choice.value);
+                        Vec::new()
+                    }
+                };
+                models.push(ModelChoice {
+                    value: choice.value,
+                    name: choice.name,
+                    description: choice.description,
+                    efforts,
+                });
+            }
+            Ok(Some(ModelCatalog {
+                models,
+                current_model,
+                fetched_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            }))
+        })
+        .await;
+    result.map_err(|e| {
+        let tail = stderr.lock().map(|b| b.iter().cloned().collect::<Vec<_>>().join("\n")).unwrap_or_default();
+        classify(&e, &tail)
+    })
 }
 
 /// Switch only to a mode the agent advertises, and only when it isn't already active.

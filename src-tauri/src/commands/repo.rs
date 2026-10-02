@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
-use crate::core::types::{Branch, Commit, GitStatus, OverviewFile, RecentRepo, RepoInfo};
+use crate::core::types::{Branch, Commit, GitStatus, OverviewFile, ProjectData, RecentRepo, RepoInfo};
 use crate::core::watch::WatcherRegistry;
 use crate::core::diffignore::DiffIgnore;
 use crate::core::{editor, git, AppError};
@@ -51,6 +51,29 @@ pub async fn recent_repos(state: State<'_, AppState>) -> Result<Vec<RecentRepo>,
         .into_iter()
         .filter(|r| PathBuf::from(&r.path).is_dir())
         .collect())
+}
+
+/// Settings that only cache data, dropped by a reset: the model list and hidden recent projects.
+const CACHE_SETTINGS: [&str; 2] = ["agent.claude.models", "welcome.hiddenRepos"];
+
+#[tauri::command]
+pub async fn project_data(state: State<'_, AppState>) -> Result<Vec<ProjectData>, AppError> {
+    let store = state.store.clone();
+    blocking(move || store.project_data()).await
+}
+
+#[tauri::command]
+pub async fn clear_project_data(state: State<'_, AppState>, repo_path: String) -> Result<(), AppError> {
+    let store = state.store.clone();
+    blocking(move || store.clear_project_data(&repo_path)).await
+}
+
+#[tauri::command]
+pub async fn reset_all_data(state: State<'_, AppState>) -> Result<(), AppError> {
+    let store = state.store.clone();
+    blocking(move || store.reset_all_data(&CACHE_SETTINGS)).await?;
+    state.agents.forget_model_catalog().await;
+    Ok(())
 }
 
 #[tauri::command]
