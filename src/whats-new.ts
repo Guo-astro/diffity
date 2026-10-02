@@ -13,6 +13,16 @@ export interface WhatsNewRelease {
 
 export const WHATS_NEW: WhatsNewRelease[] = [
   {
+    version: '0.0.8',
+    date: '2026-10-02',
+    items: [
+      'Open a repository, a diff or a pull request URL from the terminal with `diffity` (Diffity → Install ‘diffity’ Command…)',
+      'The branch view includes uncommitted changes, so Claude’s edits show up as it makes them, with a switch to see committed changes only',
+      'The pull request view tells you when uncommitted files aren’t in the PR yet',
+      'Fixed opening a pull request by URL moving all your projects to the top of the recent list',
+    ],
+  },
+  {
     version: '0.0.7',
     date: '2026-10-01',
     items: [
