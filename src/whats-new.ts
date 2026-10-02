@@ -1,114 +1,103 @@
 /**
- * Release notes shown in Help → What's New. Newest first. Each release's bullets match its GitHub release notes;
- * add the next release here in the release commit, before tagging.
+ * What changed in each release, as Help → What's New draws it. The notes are the GitHub release's own body, read
+ * from the releases API when the dialog opens, so the release is the only copy and an edit to it reaches every
+ * installed version.
  */
 
-export interface WhatsNewRelease {
+export const RELEASES_URL = 'https://github.com/nilbuild/diffity/releases';
+export const RELEASES_API = 'https://api.github.com/repos/nilbuild/diffity/releases?per_page=10';
+
+export interface Release {
   version: string;
-  /** ISO date, YYYY-MM-DD. */
+  /** ISO instant, when GitHub published it. */
   date: string;
-  /** Plain text; `backticks` show as code, or as a key when they hold a shortcut. */
+  /**
+   * One note a line of the body, its `- ` dropped. `backticks` show as code, or as a key when they hold a shortcut;
+   * `[text](https://…)` is a link out, to the web only. Nothing else in Markdown is read.
+   */
   items: string[];
 }
 
-export const WHATS_NEW: WhatsNewRelease[] = [
-  {
-    version: '0.0.8',
-    date: '2026-10-02',
-    items: [
-      'Open a repository, a diff or a pull request URL from the terminal with `diffity` (Diffity → Install ‘diffity’ Command…)',
-      'The branch view includes uncommitted changes, so Claude’s edits show up as it makes them, with a switch to see committed changes only',
-      'The pull request view tells you when uncommitted files aren’t in the PR yet',
-      'Fixed opening a pull request by URL moving all your projects to the top of the recent list',
-    ],
-  },
-  {
-    version: '0.0.7',
-    date: '2026-10-01',
-    items: [
-      'Comment on a whole file from its header in the diff',
-      'See GitHub avatars in the commit history',
-      'Images and HTML in pull request descriptions now show',
-      'The title bar fits smaller windows, with buttons shrinking to icons instead of overlapping',
-      'Outdated comments move out of the diff into the Comments panel, where you can read the whole thread, resolve it or ask Claude about it',
-      'Ask Claude on a comment answers questions in the thread instead of resolving them',
-      'On past commits, Claude replies with the change it would make instead of editing your files',
-      'Clearer messages when Claude fails, with the full output one click away',
-      'Confirm before deleting a thread with replies or discarding draft comments',
-      'Notification buttons sit below the text',
-      'Fixed the diff sometimes missing changes until you refreshed',
-      'Fixed Stop not working while Claude is starting',
-      'Fixed your general comments being skipped when sent to Claude',
-      'Fixed the Send to Claude count not matching what gets sent',
-    ],
-  },
-  {
-    version: '0.0.6',
-    date: '2026-09-30',
-    items: [
-      'Send Claude’s review comments back to Claude to fix, alongside your own',
-      'Claude can work on several projects at once',
-      'Fixed a Claude run in one project showing in every other project',
-    ],
-  },
-  {
-    version: '0.0.5',
-    date: '2026-09-30',
-    items: [
-      'Check for updates from the Diffity menu or `⌘K`',
-      'Simpler What’s New, with each release’s notes as a plain list',
-      'Close a notification by swiping it away, with the × shown on hover',
-      'The update notification no longer shows buttons while it installs',
-      'Fixed an empty “Results” header in `⌘K` when nothing matches',
-    ],
-  },
-  {
-    version: '0.0.4',
-    date: '2026-09-30',
-    items: [
-      'See what changed in each update from What’s New in the Help menu or `⌘K`',
-      'Fixed Claude Code not being found when Diffity is opened from Finder or the Dock',
-      'Clearer message when Node.js is missing for the Claude features',
-    ],
-  },
-  {
-    version: '0.0.3',
-    date: '2026-09-30',
-    items: [
-      'Find anything in the whole diff with `⌘F`, including collapsed and not-yet-loaded files',
-      'See which files changed since you marked them viewed, and show just those changes',
-      'Hide generated files from diffs with a `.diffityignore` file or a list in Settings',
-      'Colour-blind friendly diff colours in Settings',
-      'Fixed multi-line comments and strings losing their syntax colour in the diff',
-    ],
-  },
-  {
-    version: '0.0.2',
-    date: '2026-09-30',
-    items: [
-      'Report an issue from the Help menu, `⌘K` or Settings, with your app and macOS versions filled in',
-      'Fixed dragging across lines sometimes not opening the comment box',
-      'Fixed quick drags selecting only the first line',
-      'Fixed the review panel briefly saying there’s nothing to post',
-      'Claude’s progress in a thread now lines up with the comments',
-      'Smaller download',
-    ],
-  },
-  {
-    version: '0.0.1',
-    date: '2026-09-30',
-    items: [
-      'Diffity is now a native Mac app, replacing the CLI and browser viewer',
-      'Comment on lines, ranges, files or the whole diff',
-      '@claude in any comment gets an answer in that thread',
-      'Ask Claude to review, or send your comments to Claude to fix',
-      'Check out any pull request and post your review to GitHub',
-      '`⌘K` for every action, `⌘P` for files',
-      'Projects rail with `⌘1–9` to switch projects',
-      'Updates itself',
-    ],
-  },
-];
+/** A release body as its notes: one per non-empty line, list marks off. */
+export function notesFrom(body: string): string[] {
+  return body
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*[-*]\s+/, '').trim())
+    .filter(Boolean);
+}
+
+interface GitHubRelease {
+  tag_name?: unknown;
+  body?: unknown;
+  published_at?: unknown;
+  draft?: unknown;
+  prerelease?: unknown;
+}
+
+/** The releases API's answer as releases, newest first; anything that will not read as a published release is left out. */
+export function releasesFrom(answer: unknown): Release[] {
+  if (!Array.isArray(answer)) {
+    return [];
+  }
+  return (answer as GitHubRelease[])
+    .filter(
+      (release) =>
+        !release.draft &&
+        !release.prerelease &&
+        typeof release.tag_name === 'string' &&
+        typeof release.published_at === 'string',
+    )
+    .map((release) => ({
+      version: String(release.tag_name).replace(/^v/, ''),
+      date: String(release.published_at),
+      items: notesFrom(typeof release.body === 'string' ? release.body : ''),
+    }));
+}
+
+export type NotePart =
+  | { kind: 'text'; text: string }
+  | { kind: 'link'; text: string; href: string }
+  | { kind: 'code'; text: string }
+  | { kind: 'key'; text: string };
+
+const INLINE = /\[([^\]\n]+)\]\(([^)\s]+)\)|`([^`\n]+)`/g;
+
+function isWebAddress(href: string): boolean {
+  try {
+    const url = new URL(href);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * One item split into what it draws as. A link to anything but the web stays the text it
+ * was written as, so a note can never carry a `javascript:` address into the app.
+ */
+export function noteParts(item: string): NotePart[] {
+  const parts: NotePart[] = [];
+  let at = 0;
+
+  for (const match of item.matchAll(INLINE)) {
+    const index = match.index ?? 0;
+    if (index > at) {
+      parts.push({ kind: 'text', text: item.slice(at, index) });
+    }
+    const [whole, linkText, href, code] = match;
+    if (linkText !== undefined && href !== undefined) {
+      parts.push(isWebAddress(href) ? { kind: 'link', text: linkText, href } : { kind: 'text', text: whole });
+    } else if (code !== undefined) {
+      parts.push({ kind: code.startsWith('⌘') ? 'key' : 'code', text: code });
+    }
+    at = index + whole.length;
+  }
+
+  if (at < item.length) {
+    parts.push({ kind: 'text', text: item.slice(at) });
+  }
+  return parts;
+}
 
 /** -1, 0 or 1; missing or non-numeric parts count as 0. */
 export function compareVersions(a: string, b: string): number {

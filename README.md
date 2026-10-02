@@ -111,8 +111,6 @@ diffity -n                                     # in a new window
 
 Coding agents can run it too, so you can ask Claude Code to “open your changes in Diffity” before it opens a PR.
 
-If `diffity` still runs something else, like the `diffity` npm package, another `diffity` comes earlier in your `PATH`; the install step tells you which one.
-
 ### More
 
 - **Find in the whole diff.** `⌘F` searches every file in the diff, including collapsed ones, and `⌘G` jumps to the next match.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { WHATS_NEW, compareVersions, shouldShowUpdateNotice } from '../src/whats-new';
+import { compareVersions, notesFrom, noteParts, releasesFrom, shouldShowUpdateNotice } from '../src/whats-new';
 
 describe('shouldShowUpdateNotice', () => {
   it('says nothing on a fresh install', () => {
@@ -35,27 +35,52 @@ describe('compareVersions', () => {
   });
 });
 
-describe('WHATS_NEW', () => {
-  it('lists releases newest first with unique versions', () => {
-    const versions = WHATS_NEW.map((release) => release.version);
-    expect(new Set(versions).size).toBe(versions.length);
-    for (let i = 1; i < versions.length; i++) {
-      expect(compareVersions(versions[i - 1], versions[i])).toBe(1);
-    }
+describe('releasesFrom', () => {
+  it('keeps published releases, version without its v, in the order GitHub gives', () => {
+    expect(
+      releasesFrom([
+        { tag_name: 'v0.0.9', body: '- Draft', published_at: null, draft: true },
+        { tag_name: 'v0.0.8', body: '- Links in notes\n- Fixed a bug', published_at: '2026-10-02T11:00:00Z', draft: false, prerelease: false },
+        { tag_name: 'v0.0.8-beta', published_at: '2026-10-01T00:00:00Z', prerelease: true },
+        { tag_name: 'v0.0.7', body: null, published_at: '2026-10-01T17:01:45Z' },
+      ]),
+    ).toEqual([
+      { version: '0.0.8', date: '2026-10-02T11:00:00Z', items: ['Links in notes', 'Fixed a bug'] },
+      { version: '0.0.7', date: '2026-10-01T17:01:45Z', items: [] },
+    ]);
   });
 
-  it('has a date and at least one bullet per release', () => {
-    for (const release of WHATS_NEW) {
-      expect(release.version).toMatch(/^\d+\.\d+\.\d+$/);
-      expect(release.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(release.items.length).toBeGreaterThan(0);
-      for (const item of release.items) {
-        expect(item.trim()).not.toBe('');
-      }
-    }
+  it('reads anything that is not a list of releases as none', () => {
+    expect(releasesFrom({ message: 'API rate limit exceeded' })).toEqual([]);
+  });
+});
+
+describe('notesFrom', () => {
+  it('takes one note a line, list marks off, blank lines out', () => {
+    expect(notesFrom('- One\r\n\n* Two\nThree\n')).toEqual(['One', 'Two', 'Three']);
+  });
+});
+
+describe('noteParts', () => {
+  it('reads a Markdown link to the web as a link', () => {
+    expect(noteParts('Read the [guide](https://diffity.com/guide) first')).toEqual([
+      { kind: 'text', text: 'Read the ' },
+      { kind: 'link', text: 'guide', href: 'https://diffity.com/guide' },
+      { kind: 'text', text: ' first' },
+    ]);
   });
 
-  it('includes the launch and the latest releases', () => {
-    expect(WHATS_NEW.map((release) => release.version)).toEqual(expect.arrayContaining(['0.0.1', '0.0.2', '0.0.3']));
+  it('leaves a link to anything but the web as the text it was written as', () => {
+    expect(noteParts('[mail](mailto:a@b.c)')).toEqual([{ kind: 'text', text: '[mail](mailto:a@b.c)' }]);
+    expect(noteParts('[x](javascript:void)').every((part) => part.kind === 'text')).toBe(true);
+  });
+
+  it('marks code, and a shortcut as a key', () => {
+    expect(noteParts('Press `⌘K` or add a `.diffityignore`')).toEqual([
+      { kind: 'text', text: 'Press ' },
+      { kind: 'key', text: '⌘K' },
+      { kind: 'text', text: ' or add a ' },
+      { kind: 'code', text: '.diffityignore' },
+    ]);
   });
 });
