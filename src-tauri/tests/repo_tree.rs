@@ -224,6 +224,33 @@ fn watcher_emits_changes() {
 }
 
 #[test]
+fn watcher_skips_ignored_changes() {
+    use std::sync::mpsc;
+    use std::sync::Arc;
+    use std::time::Duration;
+    let repo = Repo::with_commit();
+    repo.write(".gitignore", "node_modules/\n");
+    repo.write("node_modules/pkg/index.js", "a\n");
+    let registry = diffity_desktop_lib::core::watch::WatcherRegistry::new();
+    let (tx, rx) = mpsc::channel::<()>();
+    let tx = std::sync::Mutex::new(tx);
+    let key = repo.path.to_string_lossy().into_owned();
+    let cb: diffity_desktop_lib::core::watch::ChangeCallback = Arc::new(move |_: &str| {
+        let _ = tx.lock().unwrap().send(());
+    });
+    registry.watch(&key, cb).unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    while rx.try_recv().is_ok() {}
+    for i in 0..50 {
+        repo.write(&format!("node_modules/pkg/f{i}.js"), "b\n");
+    }
+    assert!(rx.recv_timeout(Duration::from_millis(800)).is_err(), "ignored writes fired");
+    repo.write("probe.txt", "probe\n");
+    rx.recv_timeout(Duration::from_secs(5)).expect("repo-changed");
+    registry.unwatch(&key).unwrap();
+}
+
+#[test]
 fn watcher_survives_out_of_order_unwatch() {
     use std::sync::Arc;
     let repo = Repo::with_commit();
