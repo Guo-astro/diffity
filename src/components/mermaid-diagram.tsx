@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import { XIcon } from './ui/icon';
+import { useThemeStore } from '../hooks/use-theme';
 
-let initialized = false;
+let initializedTheme: 'light' | 'dark' | null = null;
 
-function initMermaid(isDark: boolean) {
+function initMermaid(theme: 'light' | 'dark') {
+  if (initializedTheme === theme) {
+    return;
+  }
   mermaid.initialize({
     startOnLoad: false,
-    theme: isDark ? 'dark' : 'default',
+    theme: theme === 'dark' ? 'dark' : 'default',
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
     fontSize: 12,
     flowchart: { padding: 8 },
     securityLevel: 'strict',
   });
-  initialized = true;
+  initializedTheme = theme;
 }
 
 let idCounter = 0;
@@ -24,6 +28,7 @@ export function MermaidDiagram(props: { chart: string }) {
   const [error, setError] = useState<string | null>(null);
   const [svgContent, setSvgContent] = useState<string | null>(null);
   const idRef = useRef(`mermaid-${idCounter++}`);
+  const theme = useThemeStore((state) => state.theme);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -31,10 +36,7 @@ export function MermaidDiagram(props: { chart: string }) {
       return;
     }
 
-    const isDark = document.documentElement.classList.contains('dark');
-    if (!initialized) {
-      initMermaid(isDark);
-    }
+    initMermaid(theme);
 
     let cancelled = false;
 
@@ -58,7 +60,7 @@ export function MermaidDiagram(props: { chart: string }) {
     return () => {
       cancelled = true;
     };
-  }, [props.chart]);
+  }, [props.chart, theme]);
 
   if (error) {
     return (
