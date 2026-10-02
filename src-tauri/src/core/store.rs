@@ -1517,7 +1517,7 @@ mod tests {
         let views: Vec<_> = threads.iter().map(|t| (t.id.as_str(), t.view_ref.as_deref())).collect();
         assert_eq!(views, vec![("t1", Some("main")), ("t2", Some("main...HEAD"))]);
         assert_eq!(threads[0].review_id.as_deref(), Some("r2"));
-        assert_eq!(store.get_comment("c1").unwrap().pending, true);
+        assert!(store.get_comment("c1").unwrap().pending);
         let viewed: Vec<_> = store.list_viewed("committed").unwrap().into_iter().map(|v| (v.file_path, v.content_hash)).collect();
         assert_eq!(viewed, vec![("a.rs".to_string(), "h3".to_string()), ("b.rs".to_string(), "h2".to_string())]);
 
