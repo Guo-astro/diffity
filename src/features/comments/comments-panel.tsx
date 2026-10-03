@@ -19,7 +19,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { deleteThread, errorMessage, updateThreadStatus } from '../../lib/api';
 import { ConfirmDialog } from '../../components/ui/confirm-dialog';
-import { enqueueClaude, useThreadActivity } from '../claude/claude-runner';
+import { enqueueClaude, useThreadActivity, useThreadRunAgent } from '../claude/claude-runner';
+import { agentMeta } from '../claude/agents';
+import { useRunPick } from '../claude/model-setting';
 import { useReviewThreads } from '../../hooks/use-review-threads';
 import { MarkdownContent } from '../../components/layout/markdown-content';
 
@@ -183,6 +185,10 @@ function ThreadRow(props: ThreadRowProps) {
   const isOpen = thread.status === 'open';
   const activity = useThreadActivity(thread.id);
   const repoPath = useRepoPath();
+  const fixPick = useRunPick('fix', repoPath);
+  const repoAgent = agentMeta(fixPick.agent);
+  const runAgentId = useThreadRunAgent(thread.id);
+  const runAgentName = runAgentId ? agentMeta(runAgentId).short : null;
   const canAskClaude = isOpen && !thread.pending && thread.anchor !== 'current' && thread.anchor !== 'unknown' && activity === 'idle';
   const open = () => {
     if (thread.anchor === 'current') {
@@ -259,13 +265,13 @@ function ThreadRow(props: ThreadRowProps) {
             <button
               onClick={(event) => {
                 event.stopPropagation();
-                enqueueClaude({ kind: 'thread', threadId: thread.id }, { repoPath, sessionId: thread.sessionId, ref: thread.ref });
+                enqueueClaude({ kind: 'thread', threadId: thread.id }, { repoPath, sessionId: thread.sessionId, ref: thread.ref, pick: fixPick });
               }}
               className="ml-auto hidden group-hover:inline-flex group-focus-within:inline-flex items-center gap-1 h-5 -my-0.5 px-1.5 rounded text-xs text-text-secondary hover:text-text hover:bg-hover cursor-pointer shrink-0"
-              title="Claude answers or makes the change for this comment"
+              title={`${repoAgent.short} answers or makes the change for this comment`}
             >
               <SparkleIcon className="w-3 h-3 text-claude" />
-              Ask Claude
+              Ask {repoAgent.short}
             </button>
           )}
           <button
@@ -302,7 +308,7 @@ function ThreadRow(props: ThreadRowProps) {
         {activity !== 'idle' && (
           <div className="flex items-center gap-1.5 mt-1 text-xs text-text-muted">
             <SparkleIcon className="w-3 h-3 text-claude" />
-            {activity === 'working' ? 'Claude is working…' : 'Queued for Claude'}
+            {activity === 'working' ? `${runAgentName ?? 'Agent'} is working…` : runAgentName ? `Queued for ${runAgentName}` : 'Queued'}
           </div>
         )}
         {(thread.replyCount > 0 || note) && (
@@ -342,7 +348,7 @@ function ThreadRow(props: ThreadRowProps) {
 
 function deleteMessage(filters: PanelFilters, count: number, viewOnly: boolean): string {
   const status = filters.status === 'open' ? 'open ' : filters.status === 'resolved' ? 'resolved ' : '';
-  const author = filters.author === 'agent' ? ' from Claude' : filters.author === 'user' ? ' from you' : '';
+  const author = filters.author === 'agent' ? ' from agents' : filters.author === 'user' ? ' from you' : '';
   const noun = count === 1 ? 'comment' : 'comments';
   return `Delete ${count === 1 ? 'the' : `all ${count}`} ${status}${noun}${author} ${viewOnly ? 'in this view' : 'across every view in this repository'}? This cannot be undone.`;
 }
@@ -352,7 +358,7 @@ function emptyMessage(filters: PanelFilters, total: number, viewOnly: boolean): 
     return 'No comments in this view yet. Switch to All views to see comments from other diffs.';
   }
   if (total === 0) {
-    return 'No comments in this repository yet. Comments you or Claude leave in any view show up here.';
+    return 'No comments in this repository yet. Comments you or an agent leave in any view show up here.';
   }
   if (filters.status === 'open') {
     return 'No open comments. Everything has been resolved.';
@@ -527,7 +533,7 @@ function CommentsPanelBody() {
             onChange={(author) => useFilters.setState({ author })}
             options={[
               { value: 'all', label: 'Everyone' },
-              { value: 'agent', label: 'Claude' },
+              { value: 'agent', label: 'Agents' },
               { value: 'user', label: 'You' },
             ]}
           />

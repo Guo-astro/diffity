@@ -23,7 +23,6 @@ pub use crate::agents::bridge::ThreadsChangedHook;
 
 const DETECT_TTL: Duration = Duration::from_secs(30);
 const DEFAULT_REF: &str = "work";
-const MODELS_SETTING: &str = "agent.claude.models";
 
 struct Runtime {
     session: AgentSession,
@@ -47,7 +46,7 @@ pub struct AgentManager {
     broker: Arc<PermissionBroker>,
     detected: Mutex<Option<DetectCache>>,
     runtimes: std::sync::Mutex<HashMap<String, Slot>>,
-    catalog: Mutex<Option<ModelCatalog>>,
+    catalogs: Mutex<HashMap<String, ModelCatalog>>,
 }
 
 impl AgentManager {
@@ -74,7 +73,7 @@ impl AgentManager {
             broker: Arc::new(PermissionBroker::default()),
             detected: Mutex::new(None),
             runtimes: std::sync::Mutex::new(HashMap::new()),
-            catalog: Mutex::new(None),
+            catalogs: Mutex::new(HashMap::new()),
         }
     }
 
@@ -137,22 +136,24 @@ impl AgentManager {
             .collect())
     }
 
-    /// The models Claude Code offers. Read from a throwaway agent session once, then kept in the
-    /// settings store; `refresh` asks the agent again (new releases, a Claude Code update).
-    pub async fn model_catalog(&self, refresh: bool) -> Result<Option<ModelCatalog>> {
-        let mut cached = self.catalog.lock().await;
+    /// The models an agent offers. Read from a throwaway agent session once, then kept in the
+    /// settings store; `refresh` asks the agent again (new releases, an agent update).
+    pub async fn model_catalog(&self, agent_id: &str, refresh: bool) -> Result<Option<ModelCatalog>> {
+        let Some(kind) = AgentKind::from_id(agent_id).filter(|k| k.is_enabled()) else {
+            return Err(AppError::not_found(format!("unknown agent `{agent_id}`")));
+        };
+        let mut cached = self.catalogs.lock().await;
         if !refresh {
-            if let Some(catalog) = cached.as_ref() {
+            if let Some(catalog) = cached.get(kind.id()) {
                 return Ok(Some(catalog.clone()));
             }
             let store = self.store.clone();
-            let saved = blocking(move || store.get_setting(MODELS_SETTING)).await?;
+            let saved = blocking(move || store.get_setting(&kind.models_setting_key())).await?;
             if let Some(catalog) = saved.and_then(|json| serde_json::from_str::<ModelCatalog>(&json).ok()) {
-                *cached = Some(catalog.clone());
+                cached.insert(kind.id().to_string(), catalog.clone());
                 return Ok(Some(catalog));
             }
         }
-        let kind = AgentKind::Claude;
         let detected = self.detected_agents(refresh).await.into_iter().find(|a| a.kind == kind);
         let Some(launch) = detected.as_ref().and_then(|a| a.launch.clone()) else {
             return Err(AppError::new(
@@ -173,14 +174,14 @@ impl AgentManager {
             self.store.clone(),
             serde_json::to_string(&catalog).map_err(|e| AppError::internal(e.to_string()))?,
         );
-        blocking(move || store.set_setting(MODELS_SETTING, &json)).await?;
-        *cached = Some(catalog.clone());
+        blocking(move || store.set_setting(&kind.models_setting_key(), &json)).await?;
+        cached.insert(kind.id().to_string(), catalog.clone());
         Ok(Some(catalog))
     }
 
-    /// Drops the in-memory model list (the stored copy is a setting, cleared separately).
+    /// Drops the in-memory model lists (the stored copies are settings, cleared separately).
     pub async fn forget_model_catalog(&self) {
-        *self.catalog.lock().await = None;
+        self.catalogs.lock().await.clear();
     }
 
     pub async fn start_chat(&self, input: StartChat) -> Result<Chat> {
@@ -390,6 +391,7 @@ impl AgentManager {
         let edit_rejected = binding.edit_rejected.clone();
         let token = self.bridge.register(binding);
         let started = AgentSession::start(SessionConfig {
+            agent: kind,
             launch,
             cwd: PathBuf::from(&rec.chat.repo_path),
             mode: rec.chat.mode,

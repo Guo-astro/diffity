@@ -120,7 +120,7 @@ describe('post button', () => {
   });
 
   it('local-only submit keeps the old rules', () => {
-    expect(disabledReason({ ...base, postToGitHub: false })).toBe('Choose where the review goes: GitHub, Claude, or both.');
+    expect(disabledReason({ ...base, postToGitHub: false })).toBe('Choose where the review goes: GitHub, an agent, or both.');
     expect(disabledReason({ ...base, postToGitHub: false, draftCount: 2 })).toBeNull();
   });
 

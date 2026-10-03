@@ -19,9 +19,11 @@ pub async fn list_agents(
 #[tauri::command]
 pub async fn agent_models(
     state: State<'_, AppState>,
+    agent_id: Option<String>,
     refresh: Option<bool>,
 ) -> Result<Option<ModelCatalog>, AppError> {
-    state.agents.model_catalog(refresh.unwrap_or(false)).await
+    let agent_id = agent_id.unwrap_or_else(|| "claude".into());
+    state.agents.model_catalog(&agent_id, refresh.unwrap_or(false)).await
 }
 
 #[tauri::command]

@@ -14,12 +14,12 @@ export const PERMISSION_OPTIONS: { value: PermissionSetting; label: string; hint
   {
     value: 'skip',
     label: 'Skip all permission prompts',
-    hint: 'Claude edits files and runs commands without asking when it fixes comments. Reviews stay read-only.',
+    hint: 'The agent edits files and runs commands without asking when it fixes comments. Reviews stay read-only.',
   },
   {
     value: 'askOnce',
     label: 'Ask once per run',
-    hint: 'Approve the first edit and Claude keeps going for the rest of that run. Commands still ask.',
+    hint: 'Approve the first edit and the agent keeps going for the rest of that run. Commands still ask.',
   },
   {
     value: 'askEach',
@@ -79,12 +79,12 @@ function markNoticeSeen() {
 }
 
 /** Shown the first time a run starts without permission prompts. */
-export function showBypassNotice(openSettings: () => void) {
+export function showBypassNotice(name: string, openSettings: () => void) {
   if (noticeSeen()) {
     return;
   }
   markNoticeSeen();
-  toast('Claude runs without permission prompts', {
+  toast(`${name} runs without permission prompts`, {
     description: 'It can edit files and run commands without asking.',
     duration: 15_000,
     action: { label: 'Change in Settings', onClick: openSettings },

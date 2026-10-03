@@ -53,8 +53,8 @@ pub async fn recent_repos(state: State<'_, AppState>) -> Result<Vec<RecentRepo>,
         .collect())
 }
 
-/// Settings that only cache data, dropped by a reset: the model list and hidden recent projects.
-const CACHE_SETTINGS: [&str; 2] = ["agent.claude.models", "welcome.hiddenRepos"];
+/// Settings that only cache data, dropped by a reset: the model lists and hidden recent projects.
+const CACHE_SETTINGS: [&str; 3] = ["agent.claude.models", "agent.codex.models", "welcome.hiddenRepos"];
 
 #[tauri::command]
 pub async fn project_data(state: State<'_, AppState>) -> Result<Vec<ProjectData>, AppError> {

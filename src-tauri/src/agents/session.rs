@@ -20,7 +20,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::core::{AppError, Result};
 
-use crate::agents::detect::LaunchSpec;
+use crate::agents::detect::{AgentKind, LaunchSpec};
 use crate::agents::policy::{self, PermissionDecision, RunPermissions};
 use crate::agents::types::{
     AgentEvent, AgentMode, ConfigChoice, ModelCatalog, ModelChoice, PermissionDiff, PermissionOption, PlanEntry,
@@ -94,6 +94,9 @@ struct Shared {
     edit_rejected: Arc<AtomicBool>,
     run: Mutex<RunPermissions>,
     run_approved: AtomicBool,
+    /// Tool call titles and diffs by id; Codex sends permission requests with the id only.
+    tool_titles: Mutex<HashMap<String, String>>,
+    tool_diffs: Mutex<HashMap<String, PermissionDiff>>,
 }
 
 fn enum_str<T: Serialize>(value: &T) -> String {
@@ -180,6 +183,13 @@ impl Shared {
                 }
             }
             SessionUpdate::ToolCall(call) => {
+                let id = call.tool_call_id.0.to_string();
+                if let Ok(mut titles) = self.tool_titles.lock() {
+                    titles.insert(id.clone(), call.title.clone());
+                }
+                if let (Some(diff), Ok(mut diffs)) = (first_diff(&call.content), self.tool_diffs.lock()) {
+                    diffs.insert(id, diff);
+                }
                 self.emit(AgentEvent::ToolCall {
                     id: call.tool_call_id.0.to_string(),
                     title: call.title,
@@ -196,6 +206,13 @@ impl Shared {
                 let status = update.fields.status.as_ref().map(enum_str);
                 if status.is_none() && update.fields.title.is_none() {
                     return;
+                }
+                if let (Some(title), Ok(mut titles)) = (&update.fields.title, self.tool_titles.lock()) {
+                    titles.insert(update.tool_call_id.0.to_string(), title.clone());
+                }
+                let diff = update.fields.content.as_deref().and_then(first_diff);
+                if let (Some(diff), Ok(mut diffs)) = (diff, self.tool_diffs.lock()) {
+                    diffs.insert(update.tool_call_id.0.to_string(), diff);
                 }
                 self.emit(AgentEvent::ToolCallUpdate {
                     id: update.tool_call_id.0.to_string(),
@@ -265,6 +282,14 @@ impl Shared {
         }
     }
 
+    fn tool_title(&self, id: &str) -> Option<String> {
+        self.tool_titles.lock().ok().and_then(|titles| titles.get(id).cloned())
+    }
+
+    fn tool_diff(&self, id: &str) -> Option<PermissionDiff> {
+        self.tool_diffs.lock().ok().and_then(|diffs| diffs.get(id).cloned())
+    }
+
     fn take_approved_write(&self, path: &Path) -> bool {
         self.approved_writes
             .lock()
@@ -274,18 +299,32 @@ impl Shared {
 }
 
 /// Diffity's own MCP tools are already gated by mode on the bridge, so they never need a user prompt.
+/// Matched by exact name so a shell command that merely mentions a tool doesn't pass: Claude titles
+/// them `mcp__diffity__add_comment`, Codex `mcp.diffity.add_comment`.
 fn is_own_tool(title: Option<&str>) -> bool {
     let Some(title) = title else {
         return false;
     };
-    let lower = title.to_ascii_lowercase();
-    if !lower.contains("diffity") {
-        return false;
-    }
-    policy::READ_TOOLS
+    let lower = title.trim().to_ascii_lowercase();
+    let Some(rest) = ["mcp__diffity__", "mcp.diffity.", "diffity."]
         .iter()
-        .chain(policy::WRITE_TOOLS)
-        .any(|t| lower.contains(t))
+        .find_map(|prefix| lower.strip_prefix(prefix))
+    else {
+        return false;
+    };
+    let name = rest.split(|c: char| c.is_whitespace() || c == '(').next().unwrap_or_default();
+    policy::READ_TOOLS.iter().chain(policy::WRITE_TOOLS).any(|t| *t == name)
+}
+
+fn first_diff(content: &[ToolCallContent]) -> Option<PermissionDiff> {
+    content.iter().find_map(|c| match c {
+        ToolCallContent::Diff(d) => Some(PermissionDiff {
+            path: d.path.to_string_lossy().into_owned(),
+            old_text: d.old_text.clone(),
+            new_text: d.new_text.clone(),
+        }),
+        _ => None,
+    })
 }
 
 fn permission_response(option: Option<String>) -> RequestPermissionResponse {
@@ -310,6 +349,30 @@ async fn handle_permission(
         .as_ref()
         .map(enum_str)
         .unwrap_or_else(|| "other".into());
+    let title = req
+        .tool_call
+        .fields
+        .title
+        .clone()
+        .or_else(|| shared.tool_title(&req.tool_call.tool_call_id.0));
+    tracing::debug!(
+        "permission request kind={kind} title={title:?} options={:?}",
+        req.options.iter().map(|o| enum_str(&o.kind)).collect::<Vec<_>>()
+    );
+    if is_own_tool(title.as_deref()) {
+        let allow = req
+            .options
+            .iter()
+            .find(|o| enum_str(&o.kind) == "allow_always")
+            .or_else(|| {
+                req.options
+                    .iter()
+                    .find(|o| enum_str(&o.kind).starts_with("allow"))
+            })
+            .map(|o| o.option_id.0.to_string());
+        return responder.respond(permission_response(allow));
+    }
+
     if policy::permission_decision(shared.mode, &kind) == PermissionDecision::AutoDeny {
         let reject = req
             .options
@@ -324,30 +387,13 @@ async fn handle_permission(
         return responder.respond(permission_response(reject));
     }
 
-    if is_own_tool(req.tool_call.fields.title.as_deref()) {
-        let allow = req
-            .options
-            .iter()
-            .find(|o| enum_str(&o.kind) == "allow_always")
-            .or_else(|| {
-                req.options
-                    .iter()
-                    .find(|o| enum_str(&o.kind).starts_with("allow"))
-            })
-            .map(|o| o.option_id.0.to_string());
-        return responder.respond(permission_response(allow));
-    }
-
-    let diff = req.tool_call.fields.content.as_ref().and_then(|content| {
-        content.iter().find_map(|c| match c {
-            ToolCallContent::Diff(d) => Some(PermissionDiff {
-                path: d.path.to_string_lossy().into_owned(),
-                old_text: d.old_text.clone(),
-                new_text: d.new_text.clone(),
-            }),
-            _ => None,
-        })
-    });
+    let diff = req
+        .tool_call
+        .fields
+        .content
+        .as_deref()
+        .and_then(first_diff)
+        .or_else(|| shared.tool_diff(&req.tool_call.tool_call_id.0));
     let mut write_paths: Vec<PathBuf> = req
         .tool_call
         .fields
@@ -385,12 +431,7 @@ async fn handle_permission(
     shared.track(&request_id, true);
     shared.emit(AgentEvent::PermissionRequest {
         request_id: request_id.clone(),
-        title: req
-            .tool_call
-            .fields
-            .title
-            .clone()
-            .unwrap_or_else(|| "Permission requested".into()),
+        title: title.unwrap_or_else(|| "Permission requested".into()),
         options: req
             .options
             .iter()
@@ -539,6 +580,7 @@ enum Command {
 }
 
 pub struct SessionConfig {
+    pub agent: AgentKind,
     pub launch: LaunchSpec,
     pub cwd: PathBuf,
     pub mode: AgentMode,
@@ -551,6 +593,7 @@ pub struct SessionConfig {
 }
 
 pub struct AgentSession {
+    agent: AgentKind,
     commands: mpsc::UnboundedSender<Command>,
     shared: Arc<Shared>,
     task: Mutex<Option<tokio::task::JoinHandle<()>>>,
@@ -599,6 +642,8 @@ impl AgentSession {
                 RunPermissions::ReadOnly
             }),
             run_approved: AtomicBool::new(false),
+            tool_titles: Mutex::new(HashMap::new()),
+            tool_diffs: Mutex::new(HashMap::new()),
         });
 
         let stderr_shared = shared.clone();
@@ -793,6 +838,7 @@ impl AgentSession {
             }
         };
         Ok(Self {
+            agent: config.agent,
             commands: cmd_tx,
             shared,
             task: Mutex::new(Some(task)),
@@ -845,7 +891,7 @@ impl AgentSession {
         let (reply_tx, reply_rx) = oneshot::channel();
         let sent = self.commands.send(Command::Prompt {
             text,
-            mode_id: run.acp_mode_id(),
+            mode_id: run.acp_mode_id(self.agent),
             model,
             reply: reply_tx,
         });
@@ -1117,9 +1163,14 @@ mod tests {
     #[test]
     fn recognizes_own_tools() {
         assert!(is_own_tool(Some("mcp__diffity__add_comment")));
+        assert!(is_own_tool(Some("mcp.diffity.add_comment")));
         assert!(is_own_tool(Some("diffity.list_threads")));
+        assert!(is_own_tool(Some("mcp__diffity__reply (MCP)")));
         assert!(!is_own_tool(Some("mcp__other__add_comment")));
         assert!(!is_own_tool(Some("Edit diffity.rs")));
+        assert!(!is_own_tool(Some("echo mcp.diffity.add_comment")));
+        assert!(!is_own_tool(Some("mcp.diffity.add_comment; rm -rf .")));
+        assert!(!is_own_tool(Some("mcp.diffity.rm_rf")));
         assert!(!is_own_tool(None));
     }
 

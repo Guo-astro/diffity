@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentType, type Keyboard
 import { closeSettings, setSettingsSection, useUi, type SettingsSection } from '../../lib/ui-store';
 import { cn } from '../../lib/cn';
 import { GeneralPane } from './general-pane';
-import { ClaudePane } from './claude-pane';
+import { AgentsPane } from './agents-pane';
 import { GitHubPane } from './github-pane';
 import { EditorPane } from './editor-pane';
 import { ShortcutsPane } from './shortcuts-pane';
@@ -14,7 +14,7 @@ const LABELS: Record<SettingsSection, string> = {
   general: 'General',
   editor: 'Editor',
   shortcuts: 'Keyboard shortcuts',
-  claude: 'Claude Code',
+  agents: 'Agents',
   github: 'GitHub',
   data: 'Data',
   about: 'About',
@@ -24,7 +24,7 @@ const ICONS: Record<SettingsSection, ComponentType<{ className?: string }>> = {
   general: SettingsIcon,
   editor: CodeIcon,
   shortcuts: KeyboardIcon,
-  claude: SparkleIcon,
+  agents: SparkleIcon,
   github: GitHubIcon,
   data: TrashIcon,
   about: InfoIcon,
@@ -32,7 +32,7 @@ const ICONS: Record<SettingsSection, ComponentType<{ className?: string }>> = {
 
 const GROUPS: { label: string; sections: SettingsSection[] }[] = [
   { label: 'App', sections: ['general', 'editor', 'shortcuts'] },
-  { label: 'Connections', sections: ['claude', 'github'] },
+  { label: 'Connections', sections: ['agents', 'github'] },
   { label: 'Diffity', sections: ['data', 'about'] },
 ];
 
@@ -45,12 +45,12 @@ const INDEX: { label: string; section: SettingsSection; keywords?: string }[] = 
   { label: 'Open files with', section: 'editor', keywords: 'vs code cursor zed editor' },
   { label: 'Custom editor command', section: 'editor', keywords: 'subl idea cli' },
   { label: 'Keyboard shortcuts', section: 'shortcuts', keywords: 'keys hotkeys' },
-  { label: 'Claude Code status', section: 'claude', keywords: 'agent installed login re-detect' },
-  { label: 'Claude Code binary path', section: 'claude', keywords: 'path claude-agent-acp cli' },
+  { label: 'Agent status', section: 'agents', keywords: 'claude codex installed login re-detect' },
+  { label: 'Agent binary path', section: 'agents', keywords: 'path claude-agent-acp codex-acp cli' },
   { label: 'GitHub account', section: 'github', keywords: 'sign in sign out login' },
   { label: 'Import from GitHub CLI', section: 'github', keywords: 'gh token' },
   { label: 'Personal access token', section: 'github', keywords: 'pat token keychain' },
-  { label: 'Claude models', section: 'claude', keywords: 'model opus sonnet haiku effort thinking' },
+  { label: 'Agent models', section: 'agents', keywords: 'claude codex model opus sonnet gpt effort thinking' },
   { label: 'Clear a project', section: 'data', keywords: 'delete comments chats purge remove storage' },
   { label: 'Reset Diffity', section: 'data', keywords: 'delete everything purge wipe reset storage data' },
   { label: 'Version', section: 'about', keywords: 'about' },
@@ -67,8 +67,8 @@ function matches(query: string) {
 function Pane(props: { section: SettingsSection }) {
   const { section } = props;
 
-  if (section === 'claude') {
-    return <ClaudePane />;
+  if (section === 'agents') {
+    return <AgentsPane />;
   }
   if (section === 'github') {
     return <GitHubPane />;

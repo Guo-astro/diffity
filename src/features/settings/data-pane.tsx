@@ -36,22 +36,22 @@ function plural(count: number, word: string) {
 function summary(project: ProjectData): string {
   const parts = [plural(project.comments, 'comment')];
   if (project.chats > 0) {
-    parts.push(plural(project.chats, 'Claude chat'));
+    parts.push(plural(project.chats, 'agent chat'));
   }
   return parts.join(' · ');
 }
 
 const REMOVED = [
   'Comments and replies, including resolved ones and unsent drafts',
-  'Reviews you finished in Diffity and Claude’s review comments',
+  'Reviews you finished in Diffity and agents’ review comments',
   'Files marked as viewed',
-  'Claude chat history',
+  'Agent chat history',
 ];
 
 const KEPT = [
   'Your code, branches and git history',
   'Anything on GitHub. Comments you posted stay there and come back the next time a PR syncs',
-  'Your settings, GitHub sign-in and Claude Code login',
+  'Your settings, GitHub sign-in and agent logins',
 ];
 
 function DataList(props: { title: string; items: string[]; tone: 'removed' | 'kept' }) {
@@ -224,7 +224,7 @@ export function DataPane() {
                 variant="danger"
                 disabled={running}
                 onClick={() => setClearing(project)}
-                title={running ? 'Claude is working in this project. Stop it first.' : undefined}
+                title={running ? 'An agent is working in this project. Stop it first.' : undefined}
               >
                 Clear…
               </SettingsButton>
@@ -244,7 +244,7 @@ export function DataPane() {
             variant="danger"
             disabled={busyRepos.size > 0}
             onClick={() => setResetting(true)}
-            title={busyRepos.size > 0 ? 'Claude is working. Stop it first.' : undefined}
+            title={busyRepos.size > 0 ? 'An agent is working. Stop it first.' : undefined}
           >
             Reset…
           </SettingsButton>

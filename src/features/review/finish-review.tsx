@@ -35,8 +35,8 @@ import { ApproveIcon, CheckIcon, ChevronDownIcon, CommentIcon, GitHubIcon, GitPu
 import { Spinner } from '../../components/icons/spinner';
 import { Popover } from '../../components/ui/popover';
 import { ModelPicker } from '../claude/model-picker';
-import { readRepoModel, useModelSetting, writeRepoModel } from '../claude/model-setting';
-import type { RunModel } from '../../lib/types';
+import { useRunPick, writeRepoPick, type RunPick } from '../claude/model-setting';
+import { agentMeta, type AgentMeta } from '../claude/agents';
 
 interface FinishReviewProps {
   githubDetails: GitHubDetails | null;
@@ -50,17 +50,17 @@ const VERDICTS: { value: ReviewVerdict; label: string; description: string; icon
   { value: 'requestChanges', label: 'Request changes', description: 'Must be addressed before merging', icon: RequestChangesIcon, tone: 'text-deleted' },
 ];
 
-function useClaudeProblem(enabled: boolean): string | null {
+function useAgentProblem(meta: AgentMeta, enabled: boolean): string | null {
   const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => tauri.listAgents(), enabled, staleTime: 30_000 });
   if (!enabled || !agents) {
     return null;
   }
-  const claude = agents.find((agent) => agent.id === 'claude');
-  if (!claude || !claude.installed) {
-    return 'Claude Code is not installed.';
+  const agent = agents.find((item) => item.id === meta.id);
+  if (!agent || !agent.installed) {
+    return `${meta.name} is not installed.`;
   }
-  if (claude.authenticated === false) {
-    return 'Claude Code is not logged in. Run `claude` in a terminal first.';
+  if (agent.authenticated === false) {
+    return `${meta.name} is not logged in. ${meta.login}`;
   }
   return null;
 }
@@ -103,7 +103,7 @@ function threadLocation(thread: CommentThread): string {
   return range;
 }
 
-/** Claude's own open review comments nobody has replied to yet. */
+/** Agents' own open review comments nobody has replied to yet. */
 export function claudeReviewThreads(threads: CommentThread[]): CommentThread[] {
   return threads.filter((thread) => {
     if (thread.status !== 'open' || thread.pending || thread.githubThreadId || thread.filePath === GENERAL_THREAD_FILE_PATH) {
@@ -113,7 +113,7 @@ export function claudeReviewThreads(threads: CommentThread[]): CommentThread[] {
   });
 }
 
-/** Open GitHub review threads whose latest comment is from a reviewer (not you or Claude). */
+/** Open GitHub review threads whose latest comment is from a reviewer (not you or an agent). */
 export function reviewerThreads(threads: CommentThread[]): CommentThread[] {
   return threads.filter((thread) => {
     if (thread.status !== 'open' || thread.pending || !thread.githubThreadId) {
@@ -137,9 +137,10 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
   const busy = useBusyThreadIds();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
-  const fallbackModel = useModelSetting('fix');
-  const [pickedModel, setPickedModel] = useState<RunModel | null>(() => readRepoModel('fix', getRepoPath()));
-  const model = pickedModel ?? fallbackModel;
+  const fallbackPick = useRunPick('fix', getRepoPath());
+  const [picked, setPicked] = useState<RunPick | null>(null);
+  const pick = picked ?? fallbackPick;
+  const agent = agentMeta(pick.agent);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [claudePicked, setClaudePicked] = useState<Set<string> | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
@@ -165,7 +166,7 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
   const selected = [...candidates.filter((thread) => !excluded.has(thread.id)), ...selectedClaude];
   const count = candidates.length + fromClaude.length + pendingCount;
   const sendCount = selected.length + pendingCount;
-  const claudeProblem = useClaudeProblem(count > 0);
+  const claudeProblem = useAgentProblem(agent, count > 0);
 
   const groups = useMemo(() => threadsByFile(local), [local]);
   const claudeGroups = useMemo(() => threadsByFile(fromClaude), [fromClaude]);
@@ -176,7 +177,7 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
 
   const send = async () => {
     if (claudeProblem) {
-      toast.error(claudeProblem, { action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') } });
+      toast.error(claudeProblem, { action: { label: 'Agent settings', onClick: () => openSettingsAt('agents') } });
       return;
     }
     if (pendingCount > 0) {
@@ -189,10 +190,10 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
         threadIds: [...new Set([...selected.map((thread) => thread.id), ...(pendingCount > 0 ? pendingReview?.threadIds ?? [] : [])])],
         note: note.trim() || undefined,
       },
-      { repoPath: getRepoPath(), sessionId, model, postRepliesToGitHub: postReplies ? remoteSelected.map((thread) => thread.id) : undefined },
+      { repoPath: getRepoPath(), sessionId, pick, postRepliesToGitHub: postReplies ? remoteSelected.map((thread) => thread.id) : undefined },
     );
-    if (pickedModel) {
-      writeRepoModel('fix', getRepoPath(), pickedModel);
+    if (picked) {
+      writeRepoPick('fix', getRepoPath(), picked);
     }
     setNote('');
     setExcluded(new Set());
@@ -233,11 +234,11 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
         onClick={() => setOpen(!open)}
         disabled={submit.isPending}
         className={buttonClaudeSolid}
-        title={`Claude answers questions and makes the requested changes for ${plural(sendCount || count, 'open comment')}`}
+        title={`${agent.short} answers questions and makes the requested changes for ${plural(sendCount || count, 'open comment')}`}
         aria-expanded={open}
       >
         <SendIcon size="md" />
-        <span className="@max-3xl/titlebar:hidden">{sendCount > 0 ? `Send ${sendCount} to Claude` : 'Send to Claude'}</span>
+        <span className="@max-3xl/titlebar:hidden">{sendCount > 0 ? `Send ${sendCount} to ${agent.short}` : `Send to ${agent.short}`}</span>
         {sendCount > 0 && <span className="hidden @max-3xl/titlebar:inline tabular-nums">{sendCount}</span>}
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} align="end" width={420} className="p-0">
@@ -255,8 +256,8 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
           }}
         >
           <div className="px-4 pt-3.5 pb-2">
-            <div className="text-[13px] font-semibold text-text">Send comments to Claude</div>
-            <p className="mt-0.5 text-xs text-text-secondary">Claude edits your working tree to address them and replies on each thread.</p>
+            <div className="text-[13px] font-semibold text-text">Send comments to {agent.short}</div>
+            <p className="mt-0.5 text-xs text-text-secondary">{agent.short} edits your working tree to address them and replies on each thread.</p>
           </div>
           <div className="max-h-[300px] overflow-y-auto px-2">
             {local.length > 0 && fromClaude.length > 0 && <div className="px-2 pt-2 pb-0.5 text-[11px] font-medium text-text-muted">Your comments</div>}
@@ -267,7 +268,7 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
               <div className="pb-1">
                 <div className="flex items-center gap-1.5 px-2 pt-2 pb-0.5 text-[11px] font-medium text-text-muted">
                   <SparkleIcon size="xs" className="text-claude" />
-                  <span className="flex-1">Claude’s comments</span>
+                  <span className="flex-1">Agent comments</span>
                   <button type="button" onClick={toggleAllClaude} className="text-text-secondary hover:text-text cursor-pointer">
                     {allClaudePicked ? 'Select none' : 'Select all'}
                   </button>
@@ -295,7 +296,7 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
                 ))}
                 <label className="flex items-center gap-2 px-2 pt-1.5 text-xs text-text-secondary cursor-pointer">
                   <input type="checkbox" checked={postReplies} onChange={() => setPostReplies(!postReplies)} className="accent-claude" disabled={remoteSelected.length === 0} />
-                  Post Claude’s replies to these GitHub threads
+                  Post {agent.short}’s replies to these GitHub threads
                 </label>
               </div>
             )}
@@ -311,11 +312,11 @@ function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean
             />
             {claudeProblem && <div className="mt-2 px-2.5 py-1.5 rounded-md bg-deleted/10 text-xs text-deleted">{claudeProblem}</div>}
             <div className="mt-2.5 flex items-center gap-2">
-              <ModelPicker value={model} onChange={setPickedModel} className="-ml-1.5 mr-auto" />
+              <ModelPicker value={pick} onChange={setPicked} className="-ml-1.5 mr-auto" />
               <button type="button" onClick={() => setOpen(false)} className={buttonGhost}>Cancel</button>
               <button type="submit" disabled={selected.length + pendingCount === 0} className={buttonClaudeSolid} title="⌘↵">
                 <SendIcon size="sm" />
-                Send {selected.length + pendingCount} to Claude
+                Send {selected.length + pendingCount} to {agent.short}
               </button>
             </div>
           </div>
@@ -484,7 +485,7 @@ function ItemList(props: { items: ReviewItem[]; highlightMentions: boolean }) {
         <li key={item.threadId} className="flex items-center gap-2 h-7 px-2 text-xs min-w-0">
           <span className="font-mono text-[11px] text-text-secondary shrink-0 max-w-[140px] truncate">{item.location}</span>
           <span className="text-text truncate min-w-0 flex-1">{item.body}</span>
-          {highlightMentions && item.mentions && <SparkleIcon size="xs" className="text-claude" title="Mentions @claude" />}
+          {highlightMentions && item.mentions && <SparkleIcon size="xs" className="text-claude"  title="Mentions an agent" />}
         </li>
       ))}
     </ul>
@@ -557,7 +558,8 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
   const [savedReview, setSavedReview] = useState<Review | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  const claudeProblem = useClaudeProblem(open && sendClaude);
+  const defaultAgent = agentMeta(useRunPick('fix', repoPath).agent);
+  const claudeProblem = useAgentProblem(defaultAgent, open && sendClaude && scopeChoice !== 'mentions');
 
   const candidatesQuery = useQuery({
     queryKey: ['review-candidates', repoPath, pr.prNumber],
@@ -634,13 +636,13 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
     if (busy) {
       return postToGitHub ? 'Posting…' : 'Submitting…';
     }
-    const claudePart = claudeHasWork ? (scope === 'mentions' ? `send ${plural(claudeCount, 'mention')} to Claude` : 'send to Claude') : null;
+    const claudePart = claudeHasWork ? (scope === 'mentions' ? `send ${plural(claudeCount, 'mention')}` : `send to ${defaultAgent.short}`) : null;
     if (postToGitHub) {
       const verb = postLabel(pr.prNumber, verdict, selected.length);
       return claudePart ? `${verb} & ${claudePart}` : verb;
     }
     if (claudePart) {
-      return scope === 'mentions' ? `Send ${plural(claudeCount, 'mention')} to Claude` : `Send ${pendingCount > 0 ? plural(pendingCount, 'comment') : 'summary'} to Claude`;
+      return scope === 'mentions' ? `Send ${plural(claudeCount, 'mention')}` : `Send ${pendingCount > 0 ? plural(pendingCount, 'comment') : 'summary'} to ${defaultAgent.short}`;
     }
     return pendingCount > 0 ? `Save ${plural(pendingCount, 'comment')} locally` : 'Save summary locally';
   };
@@ -785,10 +787,10 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
           <Section
             checked={sendClaude}
             onToggle={() => setSendClaude(!sendClaude)}
-            title={<><SparkleIcon size="sm" className="text-claude" />Send to Claude</>}
-            hint="Claude edits your local checkout of this PR branch."
+            title={<><SparkleIcon size="sm" className="text-claude" />Send to {scope === 'mentions' ? 'agents' : defaultAgent.short}</>}
+            hint={scope === 'mentions' ? 'Each mentioned agent edits your local checkout of this PR branch.' : `${defaultAgent.short} edits your local checkout of this PR branch.`}
           >
-            <div role="radiogroup" aria-label="What Claude gets">
+            <div role="radiogroup" aria-label="What the agent gets">
               <RadioRow
                 checked={scope === 'all'}
                 onSelect={() => setScopeChoice('all')}
@@ -798,7 +800,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
               <RadioRow
                 checked={scope === 'mentions'}
                 onSelect={() => setScopeChoice('mentions')}
-                label="Only comments that mention @claude"
+                label="Only comments that mention an agent"
                 detail={`${mentioned.length}`}
                 disabled={!sendClaude || mentioned.length === 0}
               />
@@ -807,14 +809,14 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
           </Section>
           {!sendClaude && mentioned.length > 0 && (
             <div className="px-4 -mt-1 pb-2 text-xs text-text-muted">
-              {plural(mentioned.length, 'comment')} mention @claude. Claude answers those on their own.
+              {plural(mentioned.length, 'comment')} mention an agent. The mentioned agent answers those on its own.
             </div>
           )}
 
           {sendClaude && claudeProblem && (
             <div className="mx-4 mb-2 px-2.5 py-1.5 rounded-md bg-deleted/10 text-xs text-deleted">
               {claudeProblem}{' '}
-              <button onClick={() => openSettingsAt('claude')} className="underline cursor-pointer">
+              <button onClick={() => openSettingsAt('agents')} className="underline cursor-pointer">
                 Open settings
               </button>
             </div>

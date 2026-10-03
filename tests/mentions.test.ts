@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mentionsAgent } from '../src/lib/mentions';
+import { mentionedAgent, mentionsAgent } from '../src/lib/mentions';
 
 describe('mentionsAgent', () => {
   it('matches @claude as a whole word', () => {
@@ -15,6 +15,16 @@ describe('mentionsAgent', () => {
   });
 });
 
+describe('mentionedAgent', () => {
+  it('returns the first mentioned agent outside code', () => {
+    expect(mentionedAgent('@codex please look')).toBe('codex');
+    expect(mentionedAgent('@Codex or @claude')).toBe('codex');
+    expect(mentionedAgent('@claude then @codex')).toBe('claude');
+    expect(mentionedAgent('`@claude` but @codex')).toBe('codex');
+    expect(mentionedAgent('@codexx and bob@codex.dev')).toBe(null);
+  });
+});
+
 describe('splitMentions', () => {
   it('splits whole-word mentions only', async () => {
     const { splitMentions } = await import('../src/lib/mentions');
@@ -24,6 +34,7 @@ describe('splitMentions', () => {
       { text: ', check this', mention: false },
     ]);
     expect(splitMentions('@claude')).toEqual([{ text: '@claude', mention: true }]);
+    expect(splitMentions('@codex fix')).toEqual([{ text: '@codex', mention: true }, { text: ' fix', mention: false }]);
     expect(splitMentions('bob@claude.ai and @claude_bot')).toEqual([{ text: 'bob@claude.ai and @claude_bot', mention: false }]);
   });
 });

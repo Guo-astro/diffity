@@ -3,7 +3,9 @@ import { isThreadResolved } from './types';
 import { CommentBubble } from './comment-bubble';
 import { CommentForm } from './comment-form';
 import { cn } from '../../lib/cn';
-import { enqueueClaude, useThreadActivity } from '../../features/claude/claude-runner';
+import { enqueueClaude, useThreadActivity, useThreadRunAgent } from '../../features/claude/claude-runner';
+import { agentByName, agentMeta } from '../../features/claude/agents';
+import { pickForAgent, useRunPick } from '../../features/claude/model-setting';
 import { AskClaudeThreadButton } from '../../features/claude/ask-claude-thread';
 import { useReviewState } from '../../features/review/review-state';
 import { EllipsisIcon, GitHubIcon, GitPullRequestIcon, SparkleIcon } from '../ui/icon';
@@ -74,8 +76,10 @@ function OriginBadge(props: { thread: CommentThreadType; prMode: boolean; prUrl:
   const { thread, prMode, prUrl } = props;
   const base = 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium';
 
-  if (thread.comments[0]?.author.type === 'agent') {
-    return <span className={cn(base, 'bg-claude/12 text-claude')} title="Written by Claude, kept in Diffity">Claude</span>;
+  const first = thread.comments[0];
+  if (first?.author.type === 'agent') {
+    const name = agentByName(first.author.name)?.short ?? first.author.name;
+    return <span className={cn(base, 'bg-claude/12 text-claude')} title={`Written by ${name}, kept in Diffity`}>{name}</span>;
   }
   if (thread.pending) {
     return (
@@ -124,7 +128,14 @@ export function ThreadCard(props: ThreadCardProps) {
   const resolved = isThreadResolved(thread);
   const activity = useThreadActivity(thread.id);
   const canAskClaude = review.enabled && !resolved && !thread.pending && activity === 'idle' && !!onReply;
-  const lastByClaude = thread.comments[thread.comments.length - 1]?.author.type === 'agent';
+  const last = thread.comments[thread.comments.length - 1];
+  const lastByClaude = last?.author.type === 'agent';
+  const lastAgentName = lastByClaude ? agentByName(last.author.name)?.short ?? last.author.name : null;
+  const fixPick = useRunPick('fix', api.getRepoPath());
+  const askPick = pickForAgent(fixPick, (lastByClaude ? agentByName(last.author.name)?.id : null) ?? fixPick.agent);
+  const askAgent = agentMeta(askPick.agent);
+  const runAgentId = useThreadRunAgent(thread.id);
+  const runAgentName = runAgentId ? agentMeta(runAgentId).short : null;
   const showAskClaude = canAskClaude && !lastByClaude;
   const [confirmDelete, setConfirmDelete] = useState(false);
   const requestDelete = () => {
@@ -167,7 +178,7 @@ export function ThreadCard(props: ThreadCardProps) {
   };
 
   const askClaude = () => {
-    enqueueClaude({ kind: 'thread', threadId: thread.id }, { repoPath: api.getRepoPath(), sessionId: thread.sessionId ?? null });
+    enqueueClaude({ kind: 'thread', threadId: thread.id }, { repoPath: api.getRepoPath(), sessionId: thread.sessionId ?? null, pick: askPick });
   };
 
   return (
@@ -183,7 +194,7 @@ export function ThreadCard(props: ThreadCardProps) {
             <button
               onClick={() => void promote()}
               className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
-              title="Copy Claude's comment into your GitHub review as a draft you can edit"
+              title={`Copy ${lastAgentName ?? 'the agent'}'s comment into your GitHub review as a draft you can edit`}
             >
               <GitPullRequestIcon size="xs" className="text-added" />
               Add to my review
@@ -205,7 +216,7 @@ export function ThreadCard(props: ThreadCardProps) {
               ...menuItems,
               ...(compact && onResolve && onUnresolve && !resolved ? [{ label: 'Resolve', onSelect: onResolve }] : []),
               ...(compact && onUnresolve && resolved ? [{ label: 'Reopen', onSelect: onUnresolve }] : []),
-              ...(canAskClaude && (compact || !showAskClaude || canPromote) ? [{ label: 'Ask Claude', onSelect: askClaude }] : []),
+              ...(canAskClaude && (compact || !showAskClaude || canPromote) ? [{ label: `Ask ${askAgent.short}`, onSelect: askClaude }] : []),
               ...(compact && canPromote ? [{ label: 'Add to my review', onSelect: () => void promote() }] : []),
               { label: 'Delete thread', onSelect: requestDelete, danger: true },
             ]}
@@ -244,7 +255,7 @@ export function ThreadCard(props: ThreadCardProps) {
               <SparkleIcon className="w-3 h-3 text-claude" />
             )}
           </span>
-          {activity === 'working' ? 'Claude is working…' : 'Queued for Claude'}
+          {activity === 'working' ? `${runAgentName ?? 'Agent'} is working…` : runAgentName ? `Queued for ${runAgentName}` : 'Queued'}
         </div>
       )}
       {onReply && (
@@ -256,13 +267,13 @@ export function ThreadCard(props: ThreadCardProps) {
                 setShowReply(false);
               }}
               onCancel={() => setShowReply(false)}
-              placeholder={lastByClaude && review.enabled ? 'Reply to Claude…' : 'Reply…'}
+              placeholder={lastAgentName && review.enabled ? `Reply to ${lastAgentName}…` : 'Reply…'}
               submitLabel="Reply"
               reviewable={!claudeThread}
               isReply
               draftKey={replyKey}
               threadPending={!!thread.pending}
-              claudeReplies={lastByClaude && review.enabled}
+              replyAgent={review.enabled ? lastAgentName : null}
             />
           </div>
         ) : (
@@ -271,7 +282,7 @@ export function ThreadCard(props: ThreadCardProps) {
               onClick={() => setShowReply(true)}
               className="flex items-center w-full h-8 px-2.5 rounded-md border border-control-border bg-raised text-left text-[13px] text-text-muted hover:border-focus hover:text-text-secondary transition-colors cursor-text"
             >
-              {lastByClaude && review.enabled ? 'Reply to Claude…' : 'Reply…'}
+              {lastAgentName && review.enabled ? `Reply to ${lastAgentName}…` : 'Reply…'}
             </button>
           </div>
         )

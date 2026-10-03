@@ -1,4 +1,7 @@
-// Mirror of `crate::core::mentions::mentions_agent` (src-tauri): `@claude` (case-insensitive, whole word) outside code.
+// Mirror of `crate::core::mentions` (src-tauri): `@claude` / `@codex` (case-insensitive, whole word) outside code.
+
+/** Mention handles, one per agent id. */
+export const AGENT_HANDLES = ['claude', 'codex'] as const;
 
 function stripCode(body: string): string {
   const out: string[] = [];
@@ -23,13 +26,18 @@ function stripCode(body: string): string {
   return out.join('\n');
 }
 
-const MENTION = /(^|[^\p{L}\p{N}_\-@./])@claude(?![\p{L}\p{N}_\-@/]|\.[\p{L}\p{N}_-])/iu;
+const HANDLES = AGENT_HANDLES.join('|');
+const MENTION_GLOBAL = new RegExp(`(^|[^\\p{L}\\p{N}_\\-@./])(@(${HANDLES}))(?![\\p{L}\\p{N}_\\-@/]|\\.[\\p{L}\\p{N}_-])`, 'giu');
 
-export function mentionsAgent(body: string): boolean {
-  return MENTION.test(stripCode(body));
+/** The agent id of the earliest agent mention outside code, if any. */
+export function mentionedAgent(body: string): string | null {
+  const match = new RegExp(MENTION_GLOBAL.source, 'iu').exec(stripCode(body));
+  return match ? match[3].toLowerCase() : null;
 }
 
-const MENTION_GLOBAL = /(^|[^\p{L}\p{N}_\-@./])(@claude)(?![\p{L}\p{N}_\-@/]|\.[\p{L}\p{N}_-])/giu;
+export function mentionsAgent(body: string): boolean {
+  return mentionedAgent(body) !== null;
+}
 
 export type MentionPart = { text: string; mention: boolean };
 
@@ -88,7 +96,7 @@ function highlightChildren(node: HastNode) {
   node.children = next;
 }
 
-/** rehype plugin: wraps `@claude` mentions outside code in a highlighted span. */
+/** rehype plugin: wraps agent mentions outside code in a highlighted span. */
 export function rehypeMentions() {
   return (tree: HastNode) => {
     highlightChildren(tree);

@@ -7,6 +7,7 @@ import { useRepoPath } from '../../hooks/use-repo';
 import type { PermissionOption } from '../../lib/types';
 import { SparkleIcon } from '../../components/ui/icon';
 import { savePermissionSetting } from './permission-setting';
+import { agentMeta } from './agents';
 
 function isReject(option: PermissionOption) {
   return option.kind.startsWith('reject') || option.kind === 'deny';
@@ -56,6 +57,8 @@ export function ClaudeApprovalModal() {
   const repoPath = useRepoPath();
   const permission = useClaude((state) => state.permissions.find((item) => item.repoPath === repoPath) ?? state.permissions[0] ?? null);
   const [dontAsk, setDontAsk] = useState(false);
+  const agentId = useClaude((state) => state.runs.find((run) => run.id === permission?.runId)?.agentId ?? null);
+  const name = agentId ? agentMeta(agentId).short : 'The agent';
 
   const reject = permission?.options.find(isReject) ?? null;
   const allowOnce = permission?.options.find(isAllowOnce) ?? permission?.options.find((option) => !isReject(option)) ?? null;
@@ -110,7 +113,7 @@ export function ClaudeApprovalModal() {
         <div className="flex items-start gap-2.5 px-4 pt-4 pb-3">
           <SparkleIcon className="w-4 h-4 mt-0.5 text-claude shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-text">Claude wants to {verb} {diff ? 'a file' : 'a command'}{otherProject && ` in ${otherProject}`}</h3>
+            <h3 className="text-sm font-semibold text-text">{name} wants to {verb} {diff ? 'a file' : 'a command'}{otherProject && ` in ${otherProject}`}</h3>
             <p className="text-xs text-text-muted font-mono break-all mt-0.5">{target}</p>
           </div>
         </div>

@@ -16,28 +16,26 @@ import { AlertCircleIcon, CheckIcon, RefreshIcon, SparkleIcon } from '../../comp
 import { Skeleton, useRevealClass } from '../../components/ui/skeleton';
 import { PERMISSION_OPTIONS, savePermissionSetting, usePermissionSetting, type PermissionSetting } from '../claude/permission-setting';
 import { ModelPicker } from '../claude/model-picker';
-import { findModel, MODEL_PURPOSES, saveModelSetting, useModelCatalog, useModelSetting, type ModelPurpose } from '../claude/model-setting';
-import type { RunModel } from '../../lib/types';
-
-const CLAUDE_PATH_KEY = 'agent.claude.path';
+import { findModel, MODEL_PURPOSES, saveModelSetting, useModelCatalog, useModelSetting, type ModelPurpose, type RunPick } from '../claude/model-setting';
+import { AGENTS, agentMeta, type AgentMeta } from '../claude/agents';
 
 const CAPABILITIES = [
   { title: 'Review a diff', detail: 'Reads the changes you are looking at and leaves comments on lines. Never edits files while reviewing.' },
-  { title: 'Answer @claude', detail: 'Mention @claude in a comment or reply and Claude answers in the thread.' },
+  { title: 'Answer @mentions', detail: 'Mention @claude or @codex in a comment or reply and that agent answers in the thread.' },
   { title: 'Resolve comments', detail: 'Makes the requested edits, then resolves the thread with a summary. Permissions below decide whether it asks first.' },
-  { title: 'Stay local', detail: 'Uses your own Claude Code login. Nothing is posted to GitHub unless you post it.' },
+  { title: 'Stay local', detail: 'Uses your own agent logins. Nothing is posted to GitHub unless you post it.' },
 ];
 
-function statusOf(agent: AgentInfo | null): { tone: 'success' | 'warning' | 'danger'; label: string; hint: string | null } {
+function statusOf(meta: AgentMeta, agent: AgentInfo | null): { tone: 'success' | 'warning' | 'danger'; label: string; hint: string | null } {
   if (!agent || !agent.installed) {
     return {
       tone: 'danger',
       label: 'Not found',
-      hint: 'Install it with npm i -g @anthropic-ai/claude-code, or point to it below.',
+      hint: agent?.binaryPath && agent.note ? agent.note : `Install it with ${meta.install}, or point to it below.`,
     };
   }
   if (agent.authenticated === false) {
-    return { tone: 'warning', label: 'Logged out', hint: 'Run claude in a terminal and log in, then re-detect.' };
+    return { tone: 'warning', label: 'Logged out', hint: `${meta.login} Then re-detect.` };
   }
   if (agent.authenticated === null) {
     return { tone: 'warning', label: 'Login unknown', hint: agent.note };
@@ -55,7 +53,7 @@ function useRedetect() {
       const next = await tauri.listAgents(true);
       queryClient.setQueryData(['agents'], next);
     } catch (error) {
-      toast.error('Could not detect Claude Code', { description: tauri.errorMessage(error) });
+      toast.error('Could not detect agents', { description: tauri.errorMessage(error) });
     } finally {
       setBusy(false);
     }
@@ -64,9 +62,9 @@ function useRedetect() {
   return { busy, redetect };
 }
 
-function StatusCard(props: { agent: AgentInfo | null; loading: boolean; busy: boolean; onRedetect: () => void }) {
-  const { agent, loading, busy, onRedetect } = props;
-  const status = statusOf(agent);
+function StatusCard(props: { meta: AgentMeta; agent: AgentInfo | null; loading: boolean; busy: boolean; onRedetect: () => void }) {
+  const { meta, agent, loading, busy, onRedetect } = props;
+  const status = statusOf(meta, agent);
   const reveal = useRevealClass(loading);
 
   return (
@@ -85,7 +83,7 @@ function StatusCard(props: { agent: AgentInfo | null; loading: boolean; busy: bo
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-[13px] font-semibold text-text">Claude Code</span>
+            <span className="text-[13px] font-semibold text-text">{meta.name}</span>
             {loading ? (
               <Skeleton className="h-5 w-20 rounded-full" />
             ) : (
@@ -114,10 +112,11 @@ function StatusCard(props: { agent: AgentInfo | null; loading: boolean; busy: bo
   );
 }
 
-function PathRow(props: { onSaved: () => Promise<void> }) {
-  const { onSaved } = props;
+function PathRow(props: { meta: AgentMeta; onSaved: () => Promise<void> }) {
+  const { meta, onSaved } = props;
   const queryClient = useQueryClient();
-  const { data: saved } = useQuery({ queryKey: ['setting', CLAUDE_PATH_KEY], queryFn: () => tauri.getSetting(CLAUDE_PATH_KEY) });
+  const pathKey = `agent.${meta.id}.path`;
+  const { data: saved } = useQuery({ queryKey: ['setting', pathKey], queryFn: () => tauri.getSetting(pathKey) });
   const [draft, setDraft] = useState('');
 
   useEffect(() => {
@@ -129,9 +128,9 @@ function PathRow(props: { onSaved: () => Promise<void> }) {
   const save = async () => {
     const value = draft.trim();
     try {
-      await tauri.setSetting(CLAUDE_PATH_KEY, value);
-      queryClient.setQueryData(['setting', CLAUDE_PATH_KEY], value);
-      toast.success(value ? 'Claude Code path saved' : 'Detecting Claude Code automatically');
+      await tauri.setSetting(pathKey, value);
+      queryClient.setQueryData(['setting', pathKey], value);
+      toast.success(value ? `${meta.name} path saved` : `Detecting ${meta.name} automatically`);
       await onSaved();
     } catch (error) {
       toast.error('Could not save the path', { description: tauri.errorMessage(error) });
@@ -142,7 +141,7 @@ function PathRow(props: { onSaved: () => Promise<void> }) {
     <PreferencesRow
       stacked
       label="Binary path"
-      hint="Point to the claude CLI or claude-agent-acp. Leave empty to find it on your PATH."
+      hint={`${meta.pathHint} Leave empty to find it on your PATH.`}
     >
       <form
         className="flex items-center gap-2"
@@ -171,10 +170,10 @@ function PathRow(props: { onSaved: () => Promise<void> }) {
 function ModelRow(props: { purpose: ModelPurpose; label: string; hint: string }) {
   const { purpose, label, hint } = props;
   const value = useModelSetting(purpose);
-  const { data: catalog } = useModelCatalog();
+  const { data: catalog } = useModelCatalog(value.agent);
   const gone = !!catalog && !!value.model && !findModel(catalog, value.model);
 
-  const save = async (next: RunModel) => {
+  const save = async (next: RunPick) => {
     try {
       await saveModelSetting(purpose, next);
     } catch (error) {
@@ -185,23 +184,61 @@ function ModelRow(props: { purpose: ModelPurpose; label: string; hint: string })
   return (
     <PreferencesRow
       label={label}
-      hint={gone ? <span className="text-modified">{value.model} is no longer offered. Claude Code’s own setting is used.</span> : hint}
+      hint={gone ? <span className="text-modified">{value.model} is no longer offered. {agentMeta(value.agent).name}’s own setting is used.</span> : hint}
     >
       <ModelPicker value={value} onChange={(next) => void save(next)} align="end" className="-mr-1.5" />
     </PreferencesRow>
   );
 }
 
-function ModelsGroup() {
+function ModelsGroup(props: { several: boolean }) {
+  const { several } = props;
+
   return (
     <PreferencesGroup label="Models">
       <p className="pt-1.5 pb-1 text-[11.5px] leading-snug text-text-muted">
-        Starting point for each kind of run. The review and send popovers can change it, and remember the pick per project. The list comes from your Claude Code install.
+        Starting point for each kind of run. The review and send popovers can change it, and remember the pick per project.
+        {several && ' Picking a model also picks the agent that runs it. @mentions go to the agent you mention.'}
       </p>
       {MODEL_PURPOSES.map((item) => (
         <ModelRow key={item.value} purpose={item.value} label={item.label} hint={item.hint} />
       ))}
     </PreferencesGroup>
+  );
+}
+
+function AgentGroup(props: { meta: AgentMeta; agent: AgentInfo | null; loading: boolean; busy: boolean; onRedetect: () => Promise<void> }) {
+  const { meta, agent, loading, busy, onRedetect } = props;
+
+  return (
+    <PreferencesGroup label={meta.name}>
+      <div className="pt-1.5">
+        <StatusCard meta={meta} agent={agent} loading={loading} busy={busy} onRedetect={() => void onRedetect()} />
+      </div>
+      <PathRow meta={meta} onSaved={onRedetect} />
+    </PreferencesGroup>
+  );
+}
+
+/** Agents that were not found: one line each, with the path field behind a button. */
+function MissingAgentRow(props: { meta: AgentMeta; agent: AgentInfo | null; onRedetect: () => Promise<void> }) {
+  const { meta, agent, onRedetect } = props;
+  const [editing, setEditing] = useState(false);
+  const note = agent?.binaryPath && agent.note ? agent.note : null;
+
+  return (
+    <div className="py-2">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] text-text">{meta.name}</div>
+          <div className="text-[11.5px] leading-snug text-text-muted">
+            {note ?? <>Not found. Install with <code className="font-mono text-[11px] select-text">{meta.install}</code></>}
+          </div>
+        </div>
+        <SettingsButton onClick={() => setEditing(!editing)}>{editing ? 'Done' : 'Set path'}</SettingsButton>
+      </div>
+      {editing && <PathRow meta={meta} onSaved={onRedetect} />}
+    </div>
   );
 }
 
@@ -222,7 +259,7 @@ function PermissionsGroup() {
   return (
     <PreferencesGroup label="Permissions">
       <p className="pt-1.5 pb-1 text-[11.5px] leading-snug text-text-muted">
-        When Claude fixes comments or replies in a thread. Reviews and questions never edit files or run commands that change them.
+        When an agent fixes comments or replies in a thread. Reviews and questions never edit files or run commands that change them.
       </p>
       <div role="radiogroup" aria-label="Permissions" className="flex flex-col">
         {PERMISSION_OPTIONS.map((option) => {
@@ -251,24 +288,39 @@ function PermissionsGroup() {
   );
 }
 
-export function ClaudePane() {
+export function AgentsPane() {
   const { data: agents, isLoading } = useQuery({ queryKey: ['agents'], queryFn: () => tauri.listAgents() });
   const { busy, redetect } = useRedetect();
-  const claude = agents?.find((agent) => agent.id === 'claude') ?? null;
+  const info = (meta: AgentMeta) => agents?.find((agent) => agent.id === meta.id) ?? null;
+  const installed = isLoading ? AGENTS.slice(0, 1) : AGENTS.filter((meta) => info(meta)?.installed);
+  const missing = isLoading ? [] : AGENTS.filter((meta) => !info(meta)?.installed);
 
   return (
     <PreferencesPane>
-      <PreferencesGroup label="Status">
-        <div className="pt-1.5">
-          <StatusCard agent={claude} loading={isLoading} busy={busy} onRedetect={() => void redetect()} />
-        </div>
-      </PreferencesGroup>
-      <PreferencesGroup label="Location">
-        <PathRow onSaved={redetect} />
-      </PreferencesGroup>
-      <ModelsGroup />
+      {installed.length > 0 && <ModelsGroup several={installed.length > 1} />}
+      {installed.map((meta) => (
+        <AgentGroup key={meta.id} meta={meta} agent={info(meta)} loading={isLoading} busy={busy} onRedetect={redetect} />
+      ))}
+      {missing.length > 0 && (
+        <PreferencesGroup
+          label={installed.length > 0 ? 'Other agents' : 'No agent found'}
+          action={installed.length === 0 && (
+            <SettingsButton busy={busy} onClick={() => void redetect()}>
+              {!busy && <RefreshIcon className="h-3 w-3" />}
+              Re-detect
+            </SettingsButton>
+          )}
+        >
+          {installed.length === 0 && (
+            <p className="pt-1.5 text-[11.5px] leading-snug text-text-muted">Install one and sign in, or point Diffity to it.</p>
+          )}
+          {missing.map((meta) => (
+            <MissingAgentRow key={meta.id} meta={meta} agent={info(meta)} onRedetect={redetect} />
+          ))}
+        </PreferencesGroup>
+      )}
       <PermissionsGroup />
-      <PreferencesGroup label="What Claude can do here">
+      <PreferencesGroup label="What agents can do here">
         <ul className="flex flex-col gap-2.5 pt-1.5">
           {CAPABILITIES.map((item) => (
             <li key={item.title} className="flex gap-2.5">

@@ -13,6 +13,7 @@ import { openQuickOpen } from '../features/palette/quick-open';
 import { useOpening } from '../lib/opening';
 import { openRepoAt, parentPath, useRecentRepos } from '../features/welcome/recent-repos';
 import { RepoBadge } from '../features/welcome/repo-badge';
+import { AgentsCard } from '../features/welcome/agents-card';
 import { useTheme } from '../hooks/use-theme';
 import { BrandLogo } from '../components/icons/brand-logo';
 import { hasOverlayTitleBar } from '../components/layout/title-bar';
@@ -95,7 +96,7 @@ export function WelcomePage() {
             <BrandLogo className="w-9 h-9 shrink-0" />
             <div className="min-w-0">
               <h1 className="text-[17px] font-semibold text-text leading-6">diffity</h1>
-              <p className="text-[13px] text-text-secondary truncate">Review code and hand comments to Claude</p>
+              <p className="text-[13px] text-text-secondary truncate">Review code and hand comments to your coding agent</p>
             </div>
           </div>
 
@@ -132,6 +133,7 @@ export function WelcomePage() {
             </div>
           )}
 
+          <AgentsCard />
           <RecentList repos={recent.repos} loading={recent.loading} onOpen={openRepo} onRemove={recent.remove} />
           <p className="mt-6 text-center text-xs text-text-muted">Or drop a folder anywhere on this window</p>
         </div>

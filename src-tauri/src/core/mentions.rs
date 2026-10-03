@@ -1,11 +1,21 @@
-//! `@claude` mention detection for review comments.
+//! Agent mention detection (`@claude`, `@codex`) for review comments.
 
-pub const AGENT_HANDLE: &str = "claude";
+/// Mention handles, one per agent id. The first mentioned handle decides which agent answers.
+pub const AGENT_HANDLES: [&str; 2] = ["claude", "codex"];
 
-/// True when `body` mentions `@claude` (case-insensitive, whole word) outside fenced code blocks and inline code spans.
+/// True when `body` mentions an agent (case-insensitive, whole word) outside fenced code blocks and inline code spans.
 pub fn mentions_agent(body: &str) -> bool {
+    mentioned_agent(body).is_some()
+}
+
+/// The agent id of the earliest agent mention in `body`, ignoring code.
+pub fn mentioned_agent(body: &str) -> Option<&'static str> {
     let prose = strip_code(body);
-    has_mention(&prose, AGENT_HANDLE)
+    AGENT_HANDLES
+        .iter()
+        .filter_map(|handle| mention_at(&prose, handle).map(|at| (at, *handle)))
+        .min_by_key(|(at, _)| *at)
+        .map(|(_, handle)| handle)
 }
 
 fn fence_marker(line: &str) -> Option<(char, usize)> {
@@ -94,7 +104,7 @@ fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '-'
 }
 
-fn has_mention(text: &str, handle: &str) -> bool {
+fn mention_at(text: &str, handle: &str) -> Option<usize> {
     let lower = text.to_lowercase();
     let needle = format!("@{handle}");
     let mut start = 0;
@@ -112,16 +122,16 @@ fn has_mention(text: &str, handle: &str) -> bool {
             Some(c) => !is_word_char(c) && c != '@' && c != '/',
         };
         if before_ok && after_ok {
-            return true;
+            return Some(at);
         }
         start = end;
     }
-    false
+    None
 }
 
 #[cfg(test)]
 mod tests {
-    use super::mentions_agent;
+    use super::{mentioned_agent, mentions_agent};
 
     #[test]
     fn detects_plain_mentions() {
@@ -152,5 +162,15 @@ mod tests {
         assert!(!mentions_agent("~~~md\nhello @claude\n~~~\n"));
         assert!(mentions_agent("```\ncode\n```\n@claude after the fence"));
         assert!(mentions_agent("unclosed ` tick @claude"));
+    }
+
+    #[test]
+    fn picks_the_first_mentioned_agent() {
+        assert!(mentions_agent("@codex please look"));
+        assert_eq!(mentioned_agent("@codex please look"), Some("codex"));
+        assert_eq!(mentioned_agent("@claude or @codex"), Some("claude"));
+        assert_eq!(mentioned_agent("@codex then @claude"), Some("codex"));
+        assert_eq!(mentioned_agent("`@claude` but @codex"), Some("codex"));
+        assert_eq!(mentioned_agent("@codexx"), None);
     }
 }

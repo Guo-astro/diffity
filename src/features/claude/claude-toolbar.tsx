@@ -10,7 +10,8 @@ import { toast } from 'sonner';
 import { useReviewState } from '../review/review-state';
 import { SparkleIcon, StopIcon } from '../../components/ui/icon';
 import { Spinner } from '../../components/icons/spinner';
-import { runModelLabel, useModelCatalog } from './model-setting';
+import { runModelLabel, useModelCatalog, useRunPick } from './model-setting';
+import { agentMeta } from './agents';
 
 interface ClaudeToolbarProps {
   diffRef: string | null;
@@ -44,12 +45,13 @@ export function ClaudeStatus() {
   const queued = useQueuedCount(repoPath);
   const now = useNow(run !== null);
   const currentRef = useCurrentViewRef();
-  const { data: catalog } = useModelCatalog();
+  const { data: catalog } = useModelCatalog(run?.agentId ?? 'claude');
 
   if (!run) {
     return null;
   }
 
+  const name = run.agentId ? agentMeta(run.agentId).short : 'Agent';
   const elsewhere = !!run.ref && run.ref !== currentRef;
   const where = run.ref ? runViewLabel(run.context.repoPath, run.ref) : null;
   const showCount = run.commentsAdded > 0;
@@ -63,7 +65,7 @@ export function ClaudeStatus() {
         title={where ? `Working on ${where}` : undefined}
       >
         <Spinner className="text-claude" />
-        <span className="font-medium truncate @max-3xl/titlebar:hidden">{runLabel(run.action)}</span>
+        <span className="font-medium truncate @max-3xl/titlebar:hidden">{runLabel(run.action, name)}</span>
         {run.model && <span className="text-text-muted truncate max-w-[160px] @max-5xl/titlebar:hidden">{runModelLabel(catalog, run.model)}</span>}
         {elsewhere && where && (
           <span className="text-text-secondary truncate max-w-[180px] @max-4xl/titlebar:hidden">on {where}</span>
@@ -73,7 +75,7 @@ export function ClaudeStatus() {
             <button
               onClick={() => openRunResult(run)}
               className="text-text-secondary @max-2xl/titlebar:hidden underline decoration-text-muted/50 underline-offset-2 hover:text-text cursor-pointer"
-              title={where ? `Show Claude's comments on ${where}` : "Show Claude's comments"}
+              title={where ? `Show ${name}'s comments on ${where}` : `Show ${name}'s comments`}
             >
               {countLabel}
             </button>
@@ -87,7 +89,7 @@ export function ClaudeStatus() {
       <button
         onClick={() => void stopClaude(repoPath)}
         className="flex items-center gap-1 px-2 shrink-0 border-l border-control-border text-text-secondary hover:text-text hover:bg-control-hover transition-colors cursor-pointer"
-        title="Stop Claude"
+        title={`Stop ${name}`}
       >
         <StopIcon size="xs" />
         Stop
@@ -101,7 +103,9 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
-  const run = useActiveRun(useRepoPath());
+  const repoPath = useRepoPath();
+  const run = useActiveRun(repoPath);
+  const agent = agentMeta(useRunPick('review', repoPath).agent);
   const { prMode } = useReviewState();
   const requested = useAskClaudeRequest((state) => state.ref);
 
@@ -113,7 +117,7 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
     }
     useAskClaudeRequest.setState({ ref: null });
     if (run) {
-      toast.info('Claude is already working. Wait for it to finish or stop it first.');
+      toast.info(`${run.agentId ? agentMeta(run.agentId).short : 'The agent'} is already working. Wait for it to finish or stop it first.`);
       return;
     }
     setOpen(true);
@@ -132,11 +136,11 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
         ref={anchorRef}
         onClick={() => setOpen(!open)}
         className={cn(buttonClaude, open && 'bg-claude/16')}
-        title={prMode ? 'Claude reviews this pull request and leaves its comments in Diffity only (marked Claude). Use “Add to my review” on any you want to post to GitHub.' : 'Claude reviews these changes and leaves comments on the diff. Tell it what to focus on first.'}
+        title={prMode ? `${agent.short} reviews this pull request and leaves its comments in Diffity only (marked ${agent.short}). Use “Add to my review” on any you want to post to GitHub.` : `${agent.short} reviews these changes and leaves comments on the diff. Tell it what to focus on first.`}
         aria-expanded={open}
       >
         <SparkleIcon size="md" />
-        <span className="@max-3xl/titlebar:hidden">Ask Claude</span>
+        <span className="@max-3xl/titlebar:hidden">Ask {agent.short}</span>
         <span className="hidden @min-[1100px]/titlebar:inline -ml-[3px]">to review</span>
       </button>
       <AskClaudePopover open={open} onClose={close} anchorRef={anchorRef} diffRef={reviewRef} sessionId={sessionId} focusedFile={focusedFile} />

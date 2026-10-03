@@ -4,7 +4,9 @@ import { MentionTextarea } from './mention-textarea';
 import { useReviewState } from '../../features/review/review-state';
 import { modKey } from '../../lib/platform';
 import { getRepoPathOrNull } from '../../lib/api';
-import { mentionsAgent } from '../../lib/mentions';
+import { mentionedAgent, mentionsAgent } from '../../lib/mentions';
+import { agentMeta } from '../../features/claude/agents';
+import { useRunPick } from '../../features/claude/model-setting';
 import { useGitHubPr } from '../../hooks/use-repo-state';
 import { buttonGhost, buttonOutline, buttonPrimary } from '../ui/button-styles';
 
@@ -17,8 +19,8 @@ interface CommentFormProps {
   lineLabel?: string;
   reviewable?: boolean;
   threadPending?: boolean;
-  /** The thread's last comment is Claude's: a reply goes to Claude unless the user opts out. */
-  claudeReplies?: boolean;
+  /** Name of the agent that wrote the thread's last comment: a reply goes to it unless the user opts out. */
+  replyAgent?: string | null;
   /** Persists unsent text (per repo) so it survives refreshes and reloads; cleared on submit or cancel. */
   draftKey?: string;
   isReply?: boolean;
@@ -60,18 +62,18 @@ export function hasDraft(sessionId: string | null, key: string): boolean {
   return readDraft(`${sessionId ?? 'none'}:${key}`).trim().length > 0;
 }
 
-function destinationHint(input: { reviewMode: boolean; prNumber: number | null; mentions: boolean; ownPr?: number | null }): string {
-  const { reviewMode, prNumber, mentions, ownPr } = input;
+function destinationHint(input: { reviewMode: boolean; prNumber: number | null; mentioned: string | null; fallback: string; handle: string; ownPr?: number | null }): string {
+  const { reviewMode, prNumber, mentioned, fallback, handle, ownPr } = input;
   if (ownPr) {
-    return mentions ? `A note on your PR #${ownPr}, kept in Diffity · Claude will reply` : `A note for Claude on your PR #${ownPr}, kept in Diffity`;
+    return mentioned ? `A note on your PR #${ownPr}, kept in Diffity · ${mentioned} will reply` : `A note for ${fallback} on your PR #${ownPr}, kept in Diffity`;
   }
   if (reviewMode && prNumber) {
-    return mentions ? `Goes into your review on PR #${prNumber} · Claude will reply` : `Goes into your review on PR #${prNumber}, posted when you submit`;
+    return mentioned ? `Goes into your review on PR #${prNumber} · ${mentioned} will reply` : `Goes into your review on PR #${prNumber}, posted when you submit`;
   }
-  if (mentions) {
-    return 'Saved in Diffity · Claude will reply';
+  if (mentioned) {
+    return `Saved in Diffity · ${mentioned} will reply`;
   }
-  return 'Saved in Diffity only · @claude asks Claude';
+  return `Saved in Diffity only · @${handle} asks ${fallback}`;
 }
 
 const primaryClass = buttonPrimary;
@@ -89,12 +91,14 @@ export function CommentForm(props: CommentFormProps) {
     threadPending = false,
     draftKey,
     isReply = false,
-    claudeReplies = false,
+    replyAgent = null,
   } = props;
   const [sendToClaude, setSendToClaude] = useState(true);
   const reviewState = useReviewState();
   const storageKey = draftKey ? `${reviewState.sessionId ?? 'none'}:${draftKey}` : undefined;
   const [body, setBodyState] = useState(() => readDraft(storageKey));
+  const defaultAgent = agentMeta(useRunPick('fix', getRepoPathOrNull() ?? '').agent);
+  const mentioned = mentionedAgent(body);
   const setBody = (value: string) => {
     setBodyState(value);
     writeDraft(storageKey, value);
@@ -117,7 +121,7 @@ export function CommentForm(props: CommentFormProps) {
     if (!trimmed) {
       return;
     }
-    onSubmit(trimmed, { pending, askClaude: !pending && claudeReplies && sendToClaude });
+    onSubmit(trimmed, { pending, askClaude: !pending && !!replyAgent && sendToClaude });
     setBody('');
   };
 
@@ -198,7 +202,7 @@ export function CommentForm(props: CommentFormProps) {
           onClick={() => submit(true)}
           disabled={!body.trim()}
           className={primaryClass}
-          title="Save as a private draft; submit all drafts together when you are done (to Claude or a GitHub PR)"
+          title="Save as a private draft; submit all drafts together when you are done (to an agent or a GitHub PR)"
         >
           {hasPendingReview ? 'Add to review' : 'Start a review'}
         </button>
@@ -224,22 +228,22 @@ export function CommentForm(props: CommentFormProps) {
           className="block w-full px-3 py-2 text-[13px] leading-5 bg-bg text-text rounded-md border border-border focus:border-focus resize-y outline-none placeholder:text-text-muted min-h-[72px]"
         />
       </div>
-      {review.enabled && claudeReplies && !mentionsAgent(body) && (
+      {review.enabled && replyAgent && !mentionsAgent(body) && (
         <div className="px-3 pb-2 text-xs text-text-muted" title={`${modKey}Enter submits`}>
-          {sendToClaude ? 'Claude will reply' : 'Saved in Diffity only'}
+          {sendToClaude ? `${replyAgent} will reply` : 'Saved in Diffity only'}
           {' · '}
           <button
             type="button"
             onClick={() => setSendToClaude(!sendToClaude)}
             className="underline decoration-text-muted/50 underline-offset-2 hover:text-text cursor-pointer"
           >
-            {sendToClaude ? 'don’t send to Claude' : 'send to Claude'}
+            {sendToClaude ? `don’t send to ${replyAgent}` : `send to ${replyAgent}`}
           </button>
         </div>
       )}
-      {review.enabled && !(claudeReplies && !mentionsAgent(body)) && (
+      {review.enabled && !(replyAgent && !mentionsAgent(body)) && (
         <div className="px-3 pb-2 text-xs text-text-muted" title={`${modKey}Enter submits`}>
-          {destinationHint({ reviewMode, prNumber, mentions: mentionsAgent(body), ownPr: review.ownPrNumber })}
+          {destinationHint({ reviewMode, prNumber, mentioned: mentioned ? agentMeta(mentioned).short : null, fallback: defaultAgent.short, handle: defaultAgent.handle, ownPr: review.ownPrNumber })}
         </div>
       )}
       <div className="flex items-center justify-end gap-2 px-2 pb-2">

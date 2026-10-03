@@ -2,6 +2,7 @@ import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { cn } from '../../lib/cn';
 import { splitMentions } from '../../lib/mentions';
 import { SparkleIcon } from '../ui/icon';
+import { AGENTS, useInstalledAgents, type AgentMeta } from '../../features/claude/agents';
 
 interface MentionTextareaProps {
   value: string;
@@ -15,9 +16,8 @@ interface MentionTextareaProps {
 interface MentionQuery {
   start: number;
   end: number;
+  typed: string;
 }
-
-const MENTION_TARGET = 'claude';
 
 const BACKDROP_RESET = 'absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words pointer-events-none select-none text-transparent resize-none placeholder:text-transparent';
 
@@ -48,10 +48,14 @@ function findMentionQuery(value: string, caret: number): MentionQuery | null {
     return null;
   }
   const typed = match[2].toLowerCase();
-  if (!MENTION_TARGET.startsWith(typed) || typed === MENTION_TARGET) {
-    return null;
+  return { start: caret - typed.length - 1, end: caret, typed };
+}
+
+function suggestionsFor(query: MentionQuery | null, agents: AgentMeta[]): AgentMeta[] {
+  if (!query) {
+    return [];
   }
-  return { start: caret - typed.length - 1, end: caret };
+  return agents.filter((agent) => agent.handle.startsWith(query.typed) && agent.handle !== query.typed);
 }
 
 export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaProps>(function MentionTextarea(props, ref) {
@@ -59,18 +63,23 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
   const innerRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState<MentionQuery | null>(null);
+  const [active, setActive] = useState(0);
+  const installed = useInstalledAgents();
+  const suggestions = suggestionsFor(query, installed.length > 0 ? installed : AGENTS);
+  const selected = suggestions[Math.min(active, suggestions.length - 1)] ?? null;
 
   useImperativeHandle(ref, () => innerRef.current as HTMLTextAreaElement);
 
   const refreshQuery = (next: string, caret: number) => {
     setQuery(findMentionQuery(next, caret));
+    setActive(0);
   };
 
-  const accept = () => {
-    if (!query) {
+  const accept = (agent: AgentMeta | null) => {
+    if (!query || !agent) {
       return;
     }
-    const insert = `@${MENTION_TARGET} `;
+    const insert = `@${agent.handle} `;
     const next = value.slice(0, query.start) + insert + value.slice(query.end);
     onChange(next);
     setQuery(null);
@@ -86,12 +95,18 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (query && (e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey) {
+    if (selected && (e.key === 'Enter' || e.key === 'Tab') && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      accept();
+      accept(selected);
       return;
     }
-    if (query && e.key === 'Escape') {
+    if (suggestions.length > 1 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      setActive((current) => (current + step + suggestions.length) % suggestions.length);
+      return;
+    }
+    if (selected && e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
       setQuery(null);
@@ -127,20 +142,24 @@ export const MentionTextarea = forwardRef<HTMLTextAreaElement, MentionTextareaPr
         rows={rows}
         className={cn(className, 'relative bg-transparent')}
       />
-      {query && (
+      {suggestions.length > 0 && (
         <div className="absolute left-2 top-full -mt-1 z-30 w-60 py-1 bg-overlay rounded-lg ring-1 ring-overlay-border">
-          <button
-            type="button"
-            onMouseDown={(e) => {
-              e.preventDefault();
-              accept();
-            }}
-            className="flex items-center gap-2.5 w-full px-3 py-1.5 text-xs text-text bg-hover cursor-pointer text-left"
-          >
-            <SparkleIcon className="w-3.5 h-3.5 text-claude" />
-            <span className="font-semibold">@claude</span>
-            <span className="text-text-muted truncate">Ask Claude Code</span>
-          </button>
+          {suggestions.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                accept(agent);
+              }}
+              onMouseEnter={() => setActive(suggestions.indexOf(agent))}
+              className={cn('flex items-center gap-2.5 w-full px-3 py-1.5 text-xs text-text cursor-pointer text-left', agent === selected && 'bg-hover')}
+            >
+              <SparkleIcon className="w-3.5 h-3.5 text-claude" />
+              <span className="font-semibold">@{agent.handle}</span>
+              <span className="text-text-muted truncate">Ask {agent.name}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>

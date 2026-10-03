@@ -20,9 +20,8 @@ pub enum AgentKind {
 
 impl AgentKind {
     pub const ALL: [AgentKind; 3] = [AgentKind::Claude, AgentKind::Codex, AgentKind::Gemini];
-    /// Agents exposed to the app. Only Claude Code is supported for now; Codex/Gemini launch code is
-    /// kept intact — add them back here to re-enable.
-    pub const ENABLED: [AgentKind; 1] = [AgentKind::Claude];
+    /// Agents exposed to the app. Gemini launch code is kept intact — add it here to enable it.
+    pub const ENABLED: [AgentKind; 2] = [AgentKind::Claude, AgentKind::Codex];
 
     pub fn is_enabled(self) -> bool {
         Self::ENABLED.contains(&self)
@@ -31,6 +30,11 @@ impl AgentKind {
     /// Settings key holding a user-provided binary path (Settings → custom binary path).
     pub fn path_setting_key(self) -> String {
         format!("agent.{}.path", self.id())
+    }
+
+    /// Settings key caching the models the agent offers.
+    pub fn models_setting_key(self) -> String {
+        format!("agent.{}.models", self.id())
     }
 
     pub fn from_id(id: &str) -> Option<Self> {
@@ -391,9 +395,9 @@ mod tests {
     }
 
     #[test]
-    fn only_claude_enabled() {
+    fn claude_and_codex_enabled() {
         assert!(AgentKind::Claude.is_enabled());
-        assert!(!AgentKind::Codex.is_enabled());
+        assert!(AgentKind::Codex.is_enabled());
         assert!(!AgentKind::Gemini.is_enabled());
         assert_eq!(AgentKind::Claude.path_setting_key(), "agent.claude.path");
     }

@@ -111,12 +111,12 @@ export interface DisabledInput {
 export function disabledReason(input: DisabledInput): string | null {
   if (!input.postToGitHub) {
     if (!input.sendClaude && input.draftCount === 0) {
-      return 'Choose where the review goes: GitHub, Claude, or both.';
+      return 'Choose where the review goes: GitHub, an agent, or both.';
     }
     if (input.sendClaude && !input.claudeHasWork) {
       return input.draftCount === 0 && !input.hasBody
-        ? 'Add draft comments or a summary for Claude.'
-        : 'None of your draft comments mention @claude.';
+        ? 'Add draft comments or a summary for the agent.'
+        : 'None of your draft comments mention an agent.';
     }
     return input.sendClaude && input.claudeProblem ? input.claudeProblem : null;
   }

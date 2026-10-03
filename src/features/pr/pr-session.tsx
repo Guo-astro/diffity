@@ -238,7 +238,7 @@ function PrDetailsDialog(props: DetailsDialogProps) {
               {role && (
                 <span
                   className={cn('inline-flex h-5 items-center px-2 rounded-full text-[11px] font-medium', ownPr ? 'bg-claude/12 text-claude' : 'bg-fill text-text-secondary')}
-                  title={ownPr ? 'You opened this pull request: comments are notes for Claude; reviewers’ comments can be sent to Claude too' : 'Someone else’s pull request: your comments form a GitHub review'}
+                  title={ownPr ? 'You opened this pull request: comments are notes for your agent; reviewers’ comments can be sent to it too' : 'Someone else’s pull request: your comments form a GitHub review'}
                 >
                   {role}
                 </span>

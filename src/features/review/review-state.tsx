@@ -7,6 +7,8 @@ import { queryClient } from '../../lib/query-client';
 import type { GithubPendingAction, PushResult, Review, ReviewVerdict } from '../../lib/types';
 import { VERDICT_EVENT } from './review-candidates';
 import { enqueueClaude } from '../claude/claude-runner';
+import { agentMeta } from '../claude/agents';
+import { cachedRunAgent } from '../claude/model-setting';
 
 interface ReviewStateValue {
   enabled: boolean;
@@ -14,7 +16,7 @@ interface ReviewStateValue {
   pendingReview: Review | null;
   /** A GitHub pull request is checked out: comments can be drafted and posted as one review. */
   prMode: boolean;
-  /** Viewing your own PR: comments are local notes for Claude; this is the PR number for optional posting. */
+  /** Viewing your own PR: comments are local notes for the agent; this is the PR number for optional posting. */
   ownPrNumber: number | null;
 }
 
@@ -44,7 +46,7 @@ export function usePendingReview(sessionId: string | null): Review | null {
   return query.data ?? null;
 }
 
-/** `none` still answers @claude mentions; `skip` sends nothing (the caller starts its own run). */
+/** `none` still answers agent @mentions; `skip` sends nothing (the caller starts its own run). */
 export type ClaudeScope = 'all' | 'mentions' | 'none' | 'skip';
 
 export interface SubmitReviewInput {
@@ -53,9 +55,9 @@ export interface SubmitReviewInput {
   claude: ClaudeScope;
 }
 
-function successTitle(review: Review, claude: boolean): string {
-  if (claude) {
-    return 'Sent to Claude';
+function successTitle(review: Review, scope: ClaudeScope, sent: boolean): string {
+  if (sent) {
+    return scope === 'all' ? `Sent to ${agentMeta(cachedRunAgent('fix', getRepoPath())).short}` : 'Review submitted';
   }
   const count = review.commentCount;
   return count > 0 ? `Published ${count} ${count === 1 ? 'comment' : 'comments'}` : 'Note published';
@@ -68,7 +70,7 @@ export function triggerClaude(review: Review, scope: ClaudeScope): string | null
   }
   if (scope === 'all') {
     enqueueClaude({ kind: 'reviewFeedback', reviewId: review.id }, context);
-    return 'Claude is working through it';
+    return `${agentMeta(cachedRunAgent('fix', getRepoPath())).short} is working through it`;
   }
   for (const threadId of review.mentionedThreadIds) {
     enqueueClaude({ kind: 'thread', threadId }, context);
@@ -77,7 +79,7 @@ export function triggerClaude(review: Review, scope: ClaudeScope): string | null
     return null;
   }
   const count = review.mentionedThreadIds.length;
-  return `Claude will answer ${count === 1 ? '1 mention' : `${count} mentions`}`;
+  return `Answering ${count === 1 ? '1 mention' : `${count} mentions`}`;
 }
 
 export interface PostReviewInput {
@@ -135,7 +137,7 @@ export function useReviewActions(sessionId: string | null) {
       const claude = triggerClaude(result.review, result.claude);
       const count = result.review.commentCount;
       const parts = [count > 0 ? `${count} ${count === 1 ? 'comment' : 'comments'}` : null, claude].filter(Boolean);
-      toast.success(successTitle(result.review, claude !== null), { description: parts.join(' · ') || undefined });
+      toast.success(successTitle(result.review, result.claude, claude !== null), { description: parts.join(' · ') || undefined });
     },
     onError: (error) => toast.error(tauri.errorMessage(error)),
   });

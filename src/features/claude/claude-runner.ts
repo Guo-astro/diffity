@@ -9,7 +9,9 @@ import { TREE_REF } from '../../lib/types';
 import { goToThread, viewLabel } from '../../lib/thread-location';
 import type { CommentThread } from '../../components/comments/types';
 import { getPermissionSetting, runSkipsPrompts, showBypassNotice } from './permission-setting';
-import { getModelSetting, readRepoModel, type ModelPurpose } from './model-setting';
+import { getRunPick, pickForAgent, type ModelPurpose, type RunPick } from './model-setting';
+import { agentByName, agentMeta, type AgentMeta } from './agents';
+import { mentionedAgent } from '../../lib/mentions';
 
 export type ClaudeAction = Extract<
   AgentAction,
@@ -20,10 +22,10 @@ export interface ClaudeRunContext {
   repoPath: string;
   sessionId: string | null;
   ref?: string | null;
-  /** GitHub threads whose new Claude reply should be posted back to GitHub when the run ends. */
+  /** GitHub threads whose new agent reply should be posted back to GitHub when the run ends. */
   postRepliesToGitHub?: string[];
-  /** Model picked for this run; unset uses the repo's last pick, then Settings. */
-  model?: RunModel;
+  /** Agent and model picked for this run; unset uses the thread's agent (thread runs), then the repo's last pick, then Settings. */
+  pick?: RunPick;
 }
 
 export interface ClaudeRun {
@@ -38,9 +40,11 @@ export interface ClaudeRun {
   sessionId: string | null;
   /** The view (ref) the run works in; where its comments land. */
   ref: string | null;
-  /** Threads Claude started during the run, oldest first. */
+  /** Threads the agent started during the run, oldest first. */
   newThreadIds: string[];
-  /** The run edits without any permission prompts (Settings → Claude Code → Permissions). */
+  /** The agent doing the run, once it starts. */
+  agentId: string | null;
+  /** The run edits without any permission prompts (Settings → Agents → Permissions). */
   skipsPrompts: boolean;
   /** Stop was pressed before the chat started. */
   stopRequested?: boolean;
@@ -72,9 +76,7 @@ export type ThreadActivity = 'idle' | 'queued' | 'working';
 let counter = 0;
 const pumping = new Set<string>();
 
-const AGENT_ID = 'claude';
-
-/** Where Claude may edit files: Claude edits the working tree, so not on an old commit or a range away from HEAD. */
+/** Where an agent may edit files: it edits the working tree, so not on an old commit or a range away from HEAD. */
 export function canSendToClaude(diffRef: string | null | undefined): boolean {
   if (!diffRef) {
     return true;
@@ -96,14 +98,6 @@ export function modelPurpose(action: ClaudeAction): ModelPurpose {
   return action.kind === 'review' ? 'review' : 'fix';
 }
 
-async function runModelFor(run: ClaudeRun): Promise<RunModel> {
-  if (run.context.model) {
-    return run.context.model;
-  }
-  const purpose = modelPurpose(run.action);
-  return readRepoModel(purpose, run.context.repoPath) ?? (await getModelSetting(purpose));
-}
-
 function modeFor(action: ClaudeAction, ref: string | null): AgentMode {
   if (action.kind === 'review' || (ref && !canSendToClaude(ref))) {
     return 'review';
@@ -111,19 +105,19 @@ function modeFor(action: ClaudeAction, ref: string | null): AgentMode {
   return 'resolve';
 }
 
-export function runLabel(action: ClaudeAction): string {
+export function runLabel(action: ClaudeAction, name: string): string {
   switch (action.kind) {
     case 'review':
-      return 'Claude is reviewing';
+      return `${name} is reviewing`;
     case 'resolve':
       if (action.threadIds && action.threadIds.length > 0) {
-        return `Claude is working on ${action.threadIds.length} comment${action.threadIds.length === 1 ? '' : 's'}`;
+        return `${name} is working on ${action.threadIds.length} comment${action.threadIds.length === 1 ? '' : 's'}`;
       }
-      return action.threadId ? 'Claude is working on a comment' : 'Claude is resolving';
+      return action.threadId ? `${name} is working on a comment` : `${name} is resolving`;
     case 'thread':
-      return 'Claude is replying';
+      return `${name} is replying`;
     case 'reviewFeedback':
-      return 'Claude is working through your review';
+      return `${name} is working through your review`;
   }
 }
 
@@ -194,6 +188,7 @@ export function enqueueClaude(action: ClaudeAction, context: ClaudeRunContext) {
     sessionId: null,
     ref: action.kind === 'review' ? action.ref : context.ref ?? refForSession(context.sessionId),
     newThreadIds: [],
+    agentId: null,
     skipsPrompts: false,
     editsApproved: false,
     model: null,
@@ -237,17 +232,49 @@ export async function answerClaudePermission(requestId: string, optionId: string
   });
 }
 
-function agentProblem(agent: AgentInfo | undefined): string | null {
+function agentProblem(meta: AgentMeta, agent: AgentInfo | undefined): string | null {
   if (!agent) {
-    return 'Claude Code was not found.';
+    return `${meta.name} was not found.`;
   }
   if (!agent.installed) {
-    return agent.note ?? 'Claude Code is not installed. Install the `claude` CLI and try again.';
+    return agent.note ?? `${meta.name} is not installed. Install it with \`${meta.install}\` and try again.`;
   }
   if (agent.authenticated === false) {
-    return agent.note ?? 'Claude Code is not logged in. Run `claude` in a terminal to log in.';
+    return agent.note ?? `${meta.name} is not logged in. ${meta.login}`;
   }
   return null;
+}
+
+/** For a thread run, the agent of the newest comment that names one: a user's mention, or an agent's own comment. */
+async function threadAgent(action: ClaudeAction, sessionId: string): Promise<string | null> {
+  if (action.kind !== 'thread') {
+    return null;
+  }
+  const threads = await tauri.listThreads(sessionId).catch(() => []);
+  const thread = threads.find((item) => item.id === action.threadId);
+  return agentOfComments(thread?.comments ?? []);
+}
+
+export function agentOfComments(comments: { authorType: string; authorName: string; body: string }[]): string | null {
+  for (const comment of [...comments].reverse()) {
+    if (comment.authorType === 'agent') {
+      return agentByName(comment.authorName)?.id ?? null;
+    }
+    const mentioned = comment.authorType === 'user' ? mentionedAgent(comment.body) : null;
+    if (mentioned) {
+      return mentioned;
+    }
+  }
+  return null;
+}
+
+async function pickFor(run: ClaudeRun, sessionId: string): Promise<RunPick> {
+  if (run.context.pick) {
+    return run.context.pick;
+  }
+  const base = await getRunPick(modelPurpose(run.action), run.context.repoPath);
+  const agentId = await threadAgent(run.action, sessionId);
+  return agentId ? pickForAgent(base, agentId) : base;
 }
 
 async function resolveSession(run: ClaudeRun): Promise<string> {
@@ -269,7 +296,7 @@ async function resolveSession(run: ClaudeRun): Promise<string> {
     }
   }
   if (!context.sessionId) {
-    throw new Error('There are no changes here for Claude to work on. Open a diff and try again.');
+    throw new Error('There are no changes here for the agent to work on. Open a diff and try again.');
   }
   return context.sessionId;
 }
@@ -292,18 +319,19 @@ function summarize(message: string): string {
 }
 
 /** Plain message for known failures; raw output stays behind "Copy details". */
-function showFailure(title: string, failure: ClaudeFailure) {
+function showFailure(title: string, failure: ClaudeFailure, meta: AgentMeta | null) {
+  const name = meta?.name ?? 'The agent';
   if (failure.code === 'agent_auth_required') {
     toast.error(title, {
-      description: 'Claude Code is not logged in. Run `claude` in a terminal to log in.',
-      action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') },
+      description: `${name} is not logged in.${meta ? ` ${meta.login}` : ''}`,
+      action: { label: 'Agent settings', onClick: () => openSettingsAt('agents') },
     });
     return;
   }
   if (failure.code === 'agent_not_installed') {
     toast.error(title, {
-      description: 'Claude Code is not installed. Install the `claude` CLI and try again.',
-      action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') },
+      description: `${name} is not installed.${meta ? ` Install it with \`${meta.install}\` and try again.` : ''}`,
+      action: { label: 'Agent settings', onClick: () => openSettingsAt('agents') },
     });
     return;
   }
@@ -347,21 +375,21 @@ export function openRunResult(run: Pick<ClaudeRun, 'context' | 'ref' | 'newThrea
   goToThread(run.context.repoPath, { ref: run.ref, threadId });
 }
 
-function finishedMessage(run: ClaudeRun, added: number): string {
+function finishedMessage(run: ClaudeRun, added: number, name: string): string {
   const where = run.ref ? ` on ${runViewLabel(run.context.repoPath, run.ref)}` : '';
   if (run.action.kind === 'review') {
     if (added === 0) {
-      return `Claude finished reviewing${where} — no comments`;
+      return `${name} finished reviewing${where} — no comments`;
     }
-    return `Claude left ${added} comment${added === 1 ? '' : 's'}${where}`;
+    return `${name} left ${added} comment${added === 1 ? '' : 's'}${where}`;
   }
   if (run.action.kind === 'thread') {
-    return `Claude replied${where}`;
+    return `${name} replied${where}`;
   }
-  return `Claude finished${where}`;
+  return `${name} finished${where}`;
 }
 
-async function postRepliesToGitHub(sessionId: string, threadIds: string[]): Promise<number> {
+async function postRepliesToGitHub(sessionId: string, threadIds: string[], name: string): Promise<number> {
   if (threadIds.length === 0) {
     return 0;
   }
@@ -376,7 +404,7 @@ async function postRepliesToGitHub(sessionId: string, threadIds: string[]): Prom
       await tauri.githubPostComment(last.id);
       posted += 1;
     } catch (error) {
-      toast.error('Could not post Claude’s reply to GitHub', { description: tauri.errorMessage(error) });
+      toast.error(`Could not post ${name}’s reply to GitHub`, { description: tauri.errorMessage(error) });
     }
   }
   if (posted > 0) {
@@ -385,7 +413,7 @@ async function postRepliesToGitHub(sessionId: string, threadIds: string[]): Prom
   return posted;
 }
 
-async function batchOutcome(sessionId: string, threadIds: string[]): Promise<{ title: string; detail: string | null } | null> {
+async function batchOutcome(sessionId: string, threadIds: string[], name: string): Promise<{ title: string; detail: string | null } | null> {
   if (threadIds.length === 0) {
     return null;
   }
@@ -396,34 +424,37 @@ async function batchOutcome(sessionId: string, threadIds: string[]): Promise<{ t
   const untouched = worked.length - resolved - replied;
   const plural = (count: number) => `${count} comment${count === 1 ? '' : 's'}`;
   if (resolved + replied === 0) {
-    return worked.length > 0 ? { title: `Claude skipped ${plural(worked.length)}`, detail: null } : null;
+    return worked.length > 0 ? { title: `${name} skipped ${plural(worked.length)}`, detail: null } : null;
   }
   if (untouched === 0 && resolved === 0) {
-    return { title: `Claude replied to ${plural(replied)}`, detail: null };
+    return { title: `${name} replied to ${plural(replied)}`, detail: null };
   }
   if (untouched === 0 && replied === 0) {
-    return { title: `Claude resolved ${plural(resolved)}`, detail: null };
+    return { title: `${name} resolved ${plural(resolved)}`, detail: null };
   }
   const parts = [
     resolved > 0 ? `${resolved} resolved` : null,
     replied > 0 ? `${replied} replied` : null,
     untouched > 0 ? `${untouched} skipped` : null,
   ].filter(Boolean);
-  return { title: `Claude handled ${resolved + replied} of ${plural(worked.length)}`, detail: parts.join(' · ') };
+  return { title: `${name} handled ${resolved + replied} of ${plural(worked.length)}`, detail: parts.join(' · ') };
 }
 
 async function execute(run: ClaudeRun) {
+  const sessionId = await resolveSession(run);
+  const pick = await pickFor(run, sessionId);
+  const meta = agentMeta(pick.agent);
+  patchRun(run.id, { agentId: pick.agent });
   const agents = await tauri.listAgents();
-  const agent = agents.find((item) => item.id === AGENT_ID) ?? agents[0];
-  const problem = agentProblem(agent);
+  const agent = agents.find((item) => item.id === pick.agent);
+  const problem = agentProblem(meta, agent);
   if (problem || !agent) {
-    toast.error('Could not start Claude', {
+    toast.error(`Could not start ${meta.short}`, {
       description: problem ?? undefined,
-      action: { label: 'Claude settings', onClick: () => openSettingsAt('claude') },
+      action: { label: 'Agent settings', onClick: () => openSettingsAt('agents') },
     });
     return;
   }
-  const sessionId = await resolveSession(run);
   const ref = run.ref ?? refForSession(sessionId) ?? threadRef(run);
   run = { ...run, ref };
   const chat = await tauri.startChat({
@@ -434,14 +465,14 @@ async function execute(run: ClaudeRun) {
     title: chatTitle(run.action),
   });
   const skipsPrompts = runSkipsPrompts(modeFor(run.action, ref), run.action, await getPermissionSetting());
-  const model = await runModelFor(run);
+  const model: RunModel = { model: pick.model, effort: pick.effort };
   patchRun(run.id, { chatId: chat.id, sessionId, startedAt: Date.now(), ref, skipsPrompts, model });
   if (useClaude.getState().runs.find((item) => item.id === run.id)?.stopRequested) {
-    toast.info('Claude was stopped');
+    toast.info(`${meta.short} was stopped`);
     return;
   }
   if (skipsPrompts) {
-    showBypassNotice(() => openSettingsAt('claude'));
+    showBypassNotice(meta.short, () => openSettingsAt('agents'));
   }
 
   const before = await tauri.listThreads(sessionId).catch(() => []);
@@ -497,21 +528,21 @@ async function execute(run: ClaudeRun) {
     queryClient.invalidateQueries({ queryKey: ['reviews'] });
   }
   if (failed) {
-    showFailure('Claude stopped with an error', failed);
+    showFailure(`${meta.short} stopped with an error`, failed, meta);
     return;
   }
   if (cancelled) {
-    toast.info('Claude was stopped');
+    toast.info(`${meta.short} was stopped`);
     return;
   }
   const latest = useClaude.getState().runs.find((item) => item.id === run.id) ?? run;
   const finished = { ...latest, ref, newThreadIds };
   const hasTarget = !!ref && (added > 0 || finished.threadIds.length > 0);
-  const batch = run.action.kind === 'resolve' ? await batchOutcome(sessionId, finished.threadIds) : null;
-  const posted = await postRepliesToGitHub(sessionId, run.context.postRepliesToGitHub ?? []);
+  const batch = run.action.kind === 'resolve' ? await batchOutcome(sessionId, finished.threadIds, meta.short) : null;
+  const posted = await postRepliesToGitHub(sessionId, run.context.postRepliesToGitHub ?? [], meta.short);
   const postedNote = posted > 0 ? `Posted ${posted} repl${posted === 1 ? 'y' : 'ies'} to GitHub` : null;
   const description = batch ? [batch.detail, postedNote].filter(Boolean).join(' · ') : postedNote ?? undefined;
-  toast.success(batch?.title ?? finishedMessage(finished, added), {
+  toast.success(batch?.title ?? finishedMessage(finished, added, meta.short), {
     description,
     duration: hasTarget ? 12_000 : undefined,
     action: hasTarget ? { label: batch || added > 0 ? 'Show comments' : 'Show thread', onClick: () => openRunResult(finished) } : undefined,
@@ -542,7 +573,9 @@ async function pump(repoPath: string) {
       try {
         await execute(next);
       } catch (error) {
-        showFailure('Could not start Claude', toFailure(error));
+        const agentId = useClaude.getState().runs.find((run) => run.id === next.id)?.agentId;
+        const meta = agentId ? agentMeta(agentId) : null;
+        showFailure(`Could not start ${meta?.short ?? 'the agent'}`, toFailure(error), meta);
       } finally {
         removeRun(next.id);
       }
@@ -568,7 +601,12 @@ export function useThreadActivity(threadId: string): ThreadActivity {
   });
 }
 
-/** Threads that are queued or being worked on by any Claude run. */
+/** The agent of the run working on (or queued for) a thread, once it is known. */
+export function useThreadRunAgent(threadId: string): string | null {
+  return useClaude((state) => state.runs.find((run) => run.threadIds.includes(threadId))?.agentId ?? null);
+}
+
+/** Threads that are queued or being worked on by any agent run. */
 export function useBusyThreadIds(): Set<string> {
   const runs = useClaude((state) => state.runs);
   return new Set(runs.flatMap((run) => run.threadIds));
@@ -582,7 +620,7 @@ export function useQueuedCount(repoPath: string): number {
   return useClaude((state) => state.runs.filter((run) => run.state === 'queued' && run.context.repoPath === repoPath).length);
 }
 
-/** Projects with a Claude run going. */
+/** Projects with an agent run going. */
 export function useBusyRepoPaths(): Set<string> {
   const runs = useClaude((state) => state.runs);
   return new Set(runs.filter((run) => run.state === 'running').map((run) => run.context.repoPath));

@@ -1,3 +1,4 @@
+use crate::agents::detect::AgentKind;
 use crate::agents::types::{AgentAction, AgentMode};
 
 pub const READ_TOOLS: &[&str] = &["get_diff", "list_threads"];
@@ -68,15 +69,16 @@ pub enum RunPermissions {
     AskEach,
 }
 
-pub const BYPASS_MODE_ID: &str = "bypassPermissions";
-pub const DEFAULT_MODE_ID: &str = "default";
-
 impl RunPermissions {
-    /// The ACP session mode (`session/set_mode`) this turn should run in.
-    pub fn acp_mode_id(self) -> &'static str {
-        match self {
-            Self::Bypass => BYPASS_MODE_ID,
-            _ => DEFAULT_MODE_ID,
+    /// The ACP session mode (`session/set_mode`) this turn should run in. Codex starts in its "Auto
+    /// review" mode, which edits without asking, so every prompting run moves it to `read-only`, where
+    /// edits and commands come to Diffity as permission requests.
+    pub fn acp_mode_id(self, agent: AgentKind) -> &'static str {
+        match (agent, self) {
+            (AgentKind::Codex, Self::Bypass) => "agent-full-access",
+            (AgentKind::Codex, _) => "read-only",
+            (_, Self::Bypass) => "bypassPermissions",
+            _ => "default",
         }
     }
 }
@@ -225,8 +227,11 @@ mod tests {
                 );
             }
         }
-        assert_eq!(RunPermissions::Bypass.acp_mode_id(), "bypassPermissions");
-        assert_eq!(RunPermissions::AskOnce.acp_mode_id(), "default");
+        assert_eq!(RunPermissions::Bypass.acp_mode_id(AgentKind::Claude), "bypassPermissions");
+        assert_eq!(RunPermissions::AskOnce.acp_mode_id(AgentKind::Claude), "default");
+        assert_eq!(RunPermissions::Bypass.acp_mode_id(AgentKind::Codex), "agent-full-access");
+        assert_eq!(RunPermissions::AskEach.acp_mode_id(AgentKind::Codex), "read-only");
+        assert_eq!(RunPermissions::ReadOnly.acp_mode_id(AgentKind::Codex), "read-only");
     }
 
     #[test]
@@ -241,7 +246,7 @@ mod tests {
             for action in [review.clone(), resolve(), AgentAction::Chat] {
                 let run = run_permissions(mode, &action, PermissionSetting::Skip);
                 assert_eq!(run, RunPermissions::ReadOnly, "{mode:?} {action:?}");
-                assert_eq!(run.acp_mode_id(), "default");
+                assert_eq!(run.acp_mode_id(AgentKind::Claude), "default");
             }
         }
         let explain = AgentAction::Explain { path: "a.rs".into() };

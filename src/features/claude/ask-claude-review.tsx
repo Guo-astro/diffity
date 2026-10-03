@@ -12,8 +12,8 @@ import { buttonClaudeSolid, buttonGhost, inputField } from '../../components/ui/
 import { SparkleIcon } from '../../components/ui/icon';
 import { enqueueClaude } from './claude-runner';
 import { ModelPicker } from './model-picker';
-import { readRepoModel, useModelSetting, writeRepoModel } from './model-setting';
-import type { RunModel } from '../../lib/types';
+import { useRunPick, writeRepoPick, type RunPick } from './model-setting';
+import { agentMeta } from './agents';
 
 export const REVIEW_FOCUSES = ['Security', 'Performance', 'Correctness', 'Naming', 'Tests', 'Types'] as const;
 
@@ -86,9 +86,10 @@ function AskClaudePanel(props: AskClaudePanelProps) {
   const [focus, setFocus] = useState<string[]>(() => readFocus(repoPath));
   const [scope, setScope] = useState<Scope>('all');
   const [glob, setGlob] = useState('');
-  const fallbackModel = useModelSetting('review');
-  const [pickedModel, setPickedModel] = useState<RunModel | null>(() => readRepoModel('review', repoPath));
-  const model = pickedModel ?? fallbackModel;
+  const fallbackPick = useRunPick('review', repoPath);
+  const [picked, setPicked] = useState<RunPick | null>(null);
+  const pick = picked ?? fallbackPick;
+  const agent = agentMeta(pick.agent);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const { data: diff } = useQuery(diffOptions(false, diffRef));
   const files = useMemo(() => diff?.files.map((file) => getFilePath(file)) ?? [], [diff]);
@@ -114,8 +115,8 @@ function AskClaudePanel(props: AskClaudePanelProps) {
       return;
     }
     writeFocus(repoPath, focus);
-    if (pickedModel) {
-      writeRepoModel('review', repoPath, pickedModel);
+    if (picked) {
+      writeRepoPick('review', repoPath, picked);
     }
     const session = sessionId ?? (await tauri.getSession(repoPath, diffRef).catch(() => null))?.id ?? null;
     enqueueClaude(
@@ -126,7 +127,7 @@ function AskClaudePanel(props: AskClaudePanelProps) {
         instructions: text.trim() || undefined,
         paths: paths.length > 0 ? paths : undefined,
       },
-      { repoPath, sessionId: session, model },
+      { repoPath, sessionId: session, pick },
     );
     onClose();
     onStarted?.();
@@ -166,10 +167,10 @@ function AskClaudePanel(props: AskClaudePanelProps) {
     >
       <div className="flex items-center gap-2">
         <SparkleIcon size="md" className="text-claude" />
-        <h3 className="text-[13px] font-semibold text-text">Ask Claude to review</h3>
+        <h3 className="text-[13px] font-semibold text-text">Ask {agent.short} to review</h3>
       </div>
       <div>
-        <label className="block mb-1.5 text-xs font-medium text-text-secondary" htmlFor="claude-instructions">What should Claude focus on?</label>
+        <label className="block mb-1.5 text-xs font-medium text-text-secondary" htmlFor="claude-instructions">What should {agent.short} focus on?</label>
         <textarea
           id="claude-instructions"
           ref={textRef}
@@ -224,7 +225,7 @@ function AskClaudePanel(props: AskClaudePanelProps) {
         )}
       </div>
       <div className="flex items-center gap-2 pt-1">
-        <ModelPicker value={model} onChange={setPickedModel} className="-ml-1.5 mr-auto" />
+        <ModelPicker value={pick} onChange={setPicked} className="-ml-1.5 mr-auto" />
         <button type="button" onClick={onClose} className={buttonGhost}>
           Cancel
         </button>

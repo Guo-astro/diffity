@@ -1,7 +1,7 @@
 //! Live smoke test against an installed agent. Costs tokens.
 //! `cargo build --features mcp --bin diffity-mcp && cargo run --example smoke -- <claude|codex|gemini> [repo] [review|ask|edit|thread]`
-//! `resolve` leaves a plain comment asking for a fix and runs `resolve` on it; `SMOKE_PERMISSIONS=askOnce|askEach` overrides the default (skip).
-//! `thread` leaves a user comment mentioning `@claude` on math.js and runs the `thread` action (auto-approves writes).
+//! `resolve` leaves a plain comment asking for a fix and runs `resolve` on it; `SMOKE_PERMISSIONS=askOnce|askEach` overrides the default (skip); `SMOKE_MODEL` picks the model.
+//! `thread` leaves a user comment mentioning the agent (`@claude`, `@codex`) on math.js and runs the `thread` action (auto-approves writes).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -158,7 +158,7 @@ async fn main() -> anyhow::Result<()> {
             side: diffity_desktop_lib::core::types::Side::New,
             start_line: 3,
             end_line: 3,
-            body: "@claude why `<=` here? Keep it short.".into(),
+            body: format!("@{agent} why `<=` here? Keep it short."),
             severity: None,
             anchor_content: None,
             author_type: None,
@@ -195,7 +195,11 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (text, action)
     };
-    let run = manager.send_prompt(&chat.id, text, vec![], action, Default::default(), sink);
+    let model = diffity_desktop_lib::agents::RunModel {
+        model: std::env::var("SMOKE_MODEL").ok(),
+        effort: None,
+    };
+    let run = manager.send_prompt(&chat.id, text, vec![], action, model, sink);
     let outcome = tokio::time::timeout(Duration::from_secs(170), run).await;
     match outcome {
         Ok(Ok(())) => println!("\n[turn finished]"),
