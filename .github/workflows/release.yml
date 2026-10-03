@@ -110,3 +110,19 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target universal-apple-darwin --verbose
+
+  # The website shows the latest version, so rebuild it once the release is out.
+  website:
+    name: Rebuild the website
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the Cloudflare deploy hook
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.CLOUDFLARE_WEB_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "CLOUDFLARE_WEB_DEPLOY_HOOK is not set; skipping." >&2
+            exit 0
+          fi
+          curl -fsS -X POST "$DEPLOY_HOOK_URL"

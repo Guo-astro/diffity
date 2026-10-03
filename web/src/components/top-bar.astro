@@ -1,14 +1,36 @@
 ---
-import Kbd from './ui/kbd.astro';
+import Icon from './ui/icon.astro';
+import { formatStars, getRepoStats } from '@/lib/github';
+import { LINKS } from '@/lib/links';
+
+const stats = await getRepoStats();
+const chip = 'flex h-7 items-center gap-1.5 rounded-md border border-frame px-2 text-xs text-text-secondary hover:bg-fill hover:text-text';
 ---
 
 <div class="sticky top-0 z-10 box-border flex h-12 items-center justify-between gap-3 border-b border-dashed border-line bg-white/92 px-5 backdrop-blur-md">
   <div class="flex items-center gap-2 text-[13px] text-text-secondary">
     <span class="size-[7px] rounded-full bg-online"></span>
-    macOS 13.3+ <span class="text-dot">/</span> Apple Silicon and Intel
+    macOS 13.3+ <span class="text-dot max-[520px]:hidden">/</span>
+    <span class="max-[520px]:hidden">Apple Silicon and Intel</span>
   </div>
-  <div class="flex items-center gap-1.5 max-[520px]:hidden">
-    <Kbd>⌘P</Kbd><span class="mr-2 text-xs text-text-faint">files</span>
-    <Kbd>⌘K</Kbd><span class="text-xs text-text-faint">everything</span>
+  <div class="flex items-center gap-2">
+    {
+      stats.version && stats.releaseUrl && (
+        <a href={stats.releaseUrl} class={chip}>
+          <span class="font-mono text-[11px] text-text">{stats.version}</span>
+          <span class="text-dot">·</span>
+          What's new
+          <Icon name="externalLink" size={11} class="text-text-faint" />
+        </a>
+      )
+    }
+    {
+      stats.stars !== null && (
+        <a href={LINKS.repo} class={chip} aria-label={`${stats.stars} stars on GitHub`}>
+          <Icon name="gitHub" size={13} />
+          <span class="font-mono text-[11px] text-text">{formatStars(stats.stars)}</span>
+        </a>
+      )
+    }
   </div>
 </div>
