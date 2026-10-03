@@ -6,5 +6,5 @@ export const LINKS = {
   releases: `${REPO}/releases`,
   newIssue: `${REPO}/issues/new/choose`,
   license: `${REPO}/blob/main/LICENSE`,
-  author: 'https://x.com/kamrify',
+  x: 'https://x.com/nilbuild',
 };
