@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getTauriVersion, getVersion } from '@tauri-apps/api/app';
-import { isTauri } from '../../lib/platform';
+import { isDevBuild, isTauri } from '../../lib/platform';
 import { BrandLogo } from '../../components/icons/brand-logo';
 import { PreferencesGroup, PreferencesPane, PreferencesRow, SettingsButton } from './preferences';
 import { reportIssue } from '../../lib/report-issue';
@@ -16,6 +16,9 @@ async function loadVersions() {
 }
 
 function updateHint(status: UpdateStatus) {
+  if (isDevBuild) {
+    return 'The dev build does not update itself. Download a newer one from the dev release.';
+  }
   if (!canUpdate) {
     return 'Updates only reach an installed copy of Diffity.';
   }
@@ -63,7 +66,7 @@ export function AboutPane() {
       <div className="flex items-center gap-3 pt-1">
         <BrandLogo className="h-10 w-10 shrink-0" />
         <div>
-          <div className="text-[15px] font-semibold text-text">Diffity</div>
+          <div className="text-[15px] font-semibold text-text">{isDevBuild ? 'Diffity Dev' : 'Diffity'}</div>
           <div className="text-xs text-text-muted">Review code changes with Claude Code or Codex, locally.</div>
         </div>
       </div>

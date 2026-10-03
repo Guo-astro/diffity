@@ -1,5 +1,5 @@
 //! Diffity → Install 'diffity' Command: links the bundled `diffity-cli` into /usr/local/bin, asking for an
-//! administrator password when that folder is not writable.
+//! administrator password when that folder is not writable. The dev build installs `diffity-dev` instead.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -7,7 +7,16 @@ use std::process::Command;
 use tauri::{AppHandle, Runtime};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
-const LINK: &str = "/usr/local/bin/diffity";
+const BIN_DIR: &str = "/usr/local/bin";
+
+/// `diffity`, or `diffity-dev` for the dev build so it never replaces the release's command.
+pub fn command_name() -> &'static str {
+    if crate::dev_build() {
+        "diffity-dev"
+    } else {
+        "diffity"
+    }
+}
 
 fn bundled_cli() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().and_then(std::fs::canonicalize).map_err(|e| e.to_string())?;
@@ -65,16 +74,18 @@ fn link_as_admin(cli: &Path, link: &Path) -> Result<(), String> {
     Err(stderr.trim().to_string())
 }
 
-/// The first `diffity` on PATH when it is not the one just installed, e.g. the npm package.
+/// The first command of this name on PATH when it is not the one just installed, e.g. the npm package.
 fn shadowing(link: &Path) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
-    let first = std::env::split_paths(&path).map(|dir| dir.join("diffity")).find(|p| p.exists())?;
+    let first = std::env::split_paths(&path).map(|dir| dir.join(command_name())).find(|p| p.exists())?;
     (first != link).then_some(first)
 }
 
 fn install() -> Result<String, String> {
     let cli = bundled_cli()?;
-    let link = Path::new(LINK);
+    let name = command_name();
+    let link_path = Path::new(BIN_DIR).join(name);
+    let link = link_path.as_path();
     check_existing(link)?;
     if let Err(e) = link_directly(&cli, link) {
         if e.kind() != std::io::ErrorKind::PermissionDenied {
@@ -82,10 +93,13 @@ fn install() -> Result<String, String> {
         }
         link_as_admin(&cli, link)?;
     }
-    let mut message = format!("Run `diffity` in a repository to open it in Diffity. `diffity --help` lists the options.\n\nInstalled at {LINK}.");
+    let mut message = format!(
+        "Run `{name}` in a repository to open it in Diffity. `{name} --help` lists the options.\n\nInstalled at {}.",
+        link.display()
+    );
     if let Some(other) = shadowing(link) {
         message.push_str(&format!(
-            "\n\n{} comes first in your PATH, so `diffity` runs that one. Remove it or put /usr/local/bin before it.",
+            "\n\n{} comes first in your PATH, so `{name}` runs that one. Remove it or put {BIN_DIR} before it.",
             other.display()
         ));
     }
@@ -96,8 +110,8 @@ pub fn install_with_feedback<R: Runtime>(app: &AppHandle<R>) {
     let app = app.clone();
     std::thread::spawn(move || {
         let (title, message, kind) = match install() {
-            Ok(message) => ("The diffity command is installed", message, MessageDialogKind::Info),
-            Err(message) => ("Could not install the diffity command", message, MessageDialogKind::Error),
+            Ok(message) => (format!("The {} command is installed", command_name()), message, MessageDialogKind::Info),
+            Err(message) => (format!("Could not install the {} command", command_name()), message, MessageDialogKind::Error),
         };
         app.dialog().message(message).title(title).kind(kind).show(|_| {});
     });

@@ -25,6 +25,12 @@ use tauri_plugin_deep_link::DeepLinkExt;
 
 pub use state::AppState;
 
+/// The "Diffity Dev" test build: built with `DIFFITY_CHANNEL=dev` and tauri.dev.conf.json, installed next to
+/// the release with its own data, link scheme and command, and no self-updates.
+pub fn dev_build() -> bool {
+    option_env!("DIFFITY_CHANNEL") == Some("dev")
+}
+
 /// `diffity-mcp` is bundled as a Tauri `externalBin`: Tauri places it next to the main executable
 /// (`target/<profile>/` in dev, `Diffity.app/Contents/MacOS/` when bundled).
 fn mcp_binary_path() -> std::path::PathBuf {
@@ -59,13 +65,18 @@ const INSTALL_CLI_MENU_ID: &str = "install-cli";
 /// and Report an Issue….
 fn app_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(handle)?;
-    let check = MenuItem::with_id(handle, CHECK_UPDATES_MENU_ID, "Check for Updates…", true, None::<&str>)?;
     if let Some(app_submenu) = menu.items()?.first().and_then(|item| item.as_submenu().cloned()) {
-        app_submenu.insert(&check, 1)?;
+        let mut position = 1;
+        if !dev_build() {
+            let check = MenuItem::with_id(handle, CHECK_UPDATES_MENU_ID, "Check for Updates…", true, None::<&str>)?;
+            app_submenu.insert(&check, position)?;
+            position += 1;
+        }
         #[cfg(target_os = "macos")]
         {
-            let install = MenuItem::with_id(handle, INSTALL_CLI_MENU_ID, "Install ‘diffity’ Command…", true, None::<&str>)?;
-            app_submenu.insert(&install, 2)?;
+            let label = format!("Install ‘{}’ Command…", cli_install::command_name());
+            let install = MenuItem::with_id(handle, INSTALL_CLI_MENU_ID, label, true, None::<&str>)?;
+            app_submenu.insert(&install, position)?;
         }
     }
     let whats_new = MenuItem::with_id(handle, WHATS_NEW_MENU_ID, "What’s New in Diffity", true, None::<&str>)?;

@@ -36,7 +36,8 @@ fn is_pr(value: &str) -> bool {
 }
 
 pub fn parse(url: &Url) -> Option<OpenRequest> {
-    if url.scheme() != "diffity" || url.host_str() != Some("open") {
+    let scheme_ok = url.scheme() == "diffity" || url.scheme() == "diffity-dev";
+    if !scheme_ok || url.host_str() != Some("open") {
         return None;
     }
     let param = |key: &str| {
@@ -105,6 +106,8 @@ mod tests {
 
     #[test]
     fn needs_an_absolute_path() {
+        assert!(open("diffity-dev://open?path=/a").is_some());
+        assert!(open("other://open?path=/a").is_none());
         assert!(open("diffity://open").is_none());
         assert!(open("diffity://open?path=relative").is_none());
         assert!(open("diffity://other?path=/a").is_none());

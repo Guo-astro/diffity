@@ -128,7 +128,16 @@ fn link(params: &[(&str, String)]) -> String {
         .iter()
         .map(|(key, value)| format!("{key}={}", encode(value)))
         .collect();
-    format!("diffity://open?{}", query.join("&"))
+    format!("{}://open?{}", scheme(), query.join("&"))
+}
+
+/// The dev build ships a CLI that talks to "Diffity Dev" over its own scheme.
+fn scheme() -> &'static str {
+    if option_env!("DIFFITY_CHANNEL") == Some("dev") {
+        "diffity-dev"
+    } else {
+        "diffity"
+    }
 }
 
 /// The app checks out the PR in the current repository when its remote matches, else in a clone it knows.

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
-import { isTauri } from '../../lib/platform';
+import { isDevBuild, isTauri } from '../../lib/platform';
 import { errorMessage } from '../../lib/tauri';
 import { updatesSupported, worthOffering } from './update-policy';
 
@@ -24,6 +24,7 @@ export const canUpdate = updatesSupported({
   isTauri,
   dev: import.meta.env.DEV,
   tauriDebug: import.meta.env.TAURI_ENV_DEBUG,
+  devBuild: isDevBuild,
 });
 
 const TOAST_ID = 'diffity-update';

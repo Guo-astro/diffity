@@ -12,7 +12,8 @@ export function worthOffering(declined: string | null, version: string) {
 /**
  * Only an installed release updates itself. A dev or `--debug` build carries the placeholder version from
  * tauri.conf.json, so it would be offered every release and then fail to swap a bundle it was never installed as.
+ * The "Diffity Dev" test build stays on the commit it was built from.
  */
-export function updatesSupported(env: { isTauri: boolean; dev: boolean; tauriDebug: string | undefined }) {
-  return env.isTauri && !env.dev && env.tauriDebug !== 'true';
+export function updatesSupported(env: { isTauri: boolean; dev: boolean; tauriDebug: string | undefined; devBuild: boolean }) {
+  return env.isTauri && !env.dev && env.tauriDebug !== 'true' && !env.devBuild;
 }

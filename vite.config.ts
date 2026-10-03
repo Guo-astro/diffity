@@ -25,7 +25,7 @@ export default defineConfig({
       ignored: ['**/src-tauri/**'],
     },
   },
-  envPrefix: ['VITE_', 'TAURI_ENV_'],
+  envPrefix: ['VITE_', 'TAURI_ENV_', 'DIFFITY_CHANNEL'],
   build: {
     target: 'safari16',
     minify: process.env.TAURI_ENV_DEBUG ? false : 'oxc',

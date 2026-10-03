@@ -55,6 +55,7 @@ fn is_placeholder(path: &Path) -> bool {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=DIFFITY_CHANNEL");
     // The sidecar-only build (`--no-default-features --features mcp,cli`, see scripts/prepare-mcp.mjs) has no Tauri app.
     if std::env::var_os("CARGO_FEATURE_APP").is_none() {
         return;

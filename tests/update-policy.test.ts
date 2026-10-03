@@ -17,18 +17,19 @@ describe('worthOffering', () => {
 
 describe('updatesSupported', () => {
   it('is on for an installed release', () => {
-    expect(updatesSupported({ isTauri: true, dev: false, tauriDebug: 'false' })).toBe(true);
+    expect(updatesSupported({ isTauri: true, dev: false, tauriDebug: 'false', devBuild: false })).toBe(true);
   });
 
   it('is off under tauri dev', () => {
-    expect(updatesSupported({ isTauri: true, dev: true, tauriDebug: 'true' })).toBe(false);
+    expect(updatesSupported({ isTauri: true, dev: true, tauriDebug: 'true', devBuild: false })).toBe(false);
   });
 
   it('is off for a --debug bundle', () => {
-    expect(updatesSupported({ isTauri: true, dev: false, tauriDebug: 'true' })).toBe(false);
+    expect(updatesSupported({ isTauri: true, dev: false, tauriDebug: 'true', devBuild: false })).toBe(false);
   });
 
   it('is off in a browser', () => {
-    expect(updatesSupported({ isTauri: false, dev: false, tauriDebug: undefined })).toBe(false);
+    expect(updatesSupported({ isTauri: false, dev: false, tauriDebug: undefined, devBuild: false })).toBe(false);
+    expect(updatesSupported({ isTauri: true, dev: false, tauriDebug: 'false', devBuild: true })).toBe(false);
   });
 });
