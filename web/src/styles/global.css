@@ -1,0 +1,54 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-bg: #ffffff;
+  --color-panel: #fafafa;
+  --color-fill: #f4f4f4;
+  --color-frame: #e4e4e4;
+  --color-line: #e0e0e0;
+  --color-dot: #c4c4c4;
+
+  --color-text: #0a0a0a;
+  --color-text-strong: #222222;
+  --color-text-body: #4a4a4a;
+  --color-text-secondary: #555555;
+  --color-text-muted: #707070;
+  --color-text-faint: #8a8a8a;
+
+  --color-kbd: #f3f3f3;
+  --color-kbd-border: #e6e6e6;
+  --color-kbd-text: #3d3d3d;
+
+  --color-accent: #1a7f37;
+  --color-accent-tint: #f3f8f4;
+  --color-accent-soft: #eaf6ec;
+  --color-online: #2da44e;
+}
+
+/* The striped rails on both sides of the page frame. */
+@utility hatch {
+  background-image: repeating-linear-gradient(-45deg, var(--color-frame) 0 1px, transparent 1px 7px);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-bg font-sans text-text antialiased;
+  }
+
+  a:hover {
+    @apply text-accent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

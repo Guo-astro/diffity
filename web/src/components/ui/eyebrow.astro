@@ -1,0 +1,12 @@
+---
+interface Props {
+  accent?: boolean;
+  class?: string;
+}
+
+const props = Astro.props;
+---
+
+<div class:list={['font-mono text-[10.5px] tracking-[0.06em] uppercase', props.accent ? 'text-accent' : 'text-text-muted', props.class]}>
+  <slot />
+</div>

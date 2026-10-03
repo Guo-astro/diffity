@@ -1,0 +1,18 @@
+---
+import Eyebrow from './ui/eyebrow.astro';
+import { REQUIREMENTS } from '@/data/requirements';
+---
+
+<section class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2.5 border-b border-dashed border-line px-9 py-6 max-[900px]:px-5">
+  {
+    REQUIREMENTS.map((requirement) => (
+      <div class="flex flex-col gap-1.5 rounded-[10px] bg-accent-tint px-[18px] py-4">
+        <div class="flex items-center justify-between gap-2">
+          <b class="text-sm font-medium">{requirement.name}</b>
+          <Eyebrow accent>{requirement.tag}</Eyebrow>
+        </div>
+        <span class="text-[13.5px] leading-normal text-text-secondary">{requirement.text}</span>
+      </div>
+    ))
+  }
+</section>

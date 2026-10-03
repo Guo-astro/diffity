@@ -1,0 +1,27 @@
+---
+import Icon from './icon.astro';
+import type { IconName } from '@/lib/icons';
+
+interface Props {
+  href: string;
+  variant?: 'primary' | 'outline';
+  icon?: IconName;
+  block?: boolean;
+}
+
+const props = Astro.props;
+const { href, variant = 'primary', icon, block = false } = props;
+---
+
+<a
+  href={href}
+  class:list={[
+    'items-center justify-center gap-2 rounded-lg text-sm font-medium',
+    block ? 'flex h-10' : 'inline-flex h-[42px] px-[18px]',
+    variant === 'primary' && 'bg-text text-white hover:text-white hover:bg-[#262626]',
+    variant === 'outline' && 'border border-frame text-text-strong hover:bg-fill hover:text-text',
+  ]}
+>
+  {icon && <Icon name={icon} size={icon === 'pull' ? 14 : 15} />}
+  <slot />
+</a>

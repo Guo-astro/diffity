@@ -1,0 +1,28 @@
+---
+import Eyebrow from './ui/eyebrow.astro';
+import type { TerminalBlock } from '@/data/features';
+
+interface Props {
+  block: TerminalBlock;
+}
+
+const props = Astro.props;
+const { block } = props;
+---
+
+<div class="ml-8 overflow-hidden rounded-[10px] border border-frame max-[900px]:ml-0">
+  <div class="flex h-9 items-center justify-between border-b border-dashed border-line bg-panel px-3.5">
+    <Eyebrow>{block.title}</Eyebrow>
+    <Eyebrow>{block.meta}</Eyebrow>
+  </div>
+  <div class="overflow-x-auto px-4 py-3 font-mono text-[13px] leading-normal">
+    {
+      block.lines.map((line) => (
+        <div class="flex items-baseline gap-2 py-1 whitespace-nowrap">
+          <b class="min-w-[360px] font-medium text-text">{line.command}</b>
+          <span class="text-[#616161]">{line.text}</span>
+        </div>
+      ))
+    }
+  </div>
+</div>

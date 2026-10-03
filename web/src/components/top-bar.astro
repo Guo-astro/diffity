@@ -1,0 +1,14 @@
+---
+import Kbd from './ui/kbd.astro';
+---
+
+<div class="sticky top-0 z-10 box-border flex h-12 items-center justify-between gap-3 border-b border-dashed border-line bg-white/92 px-5 backdrop-blur-md">
+  <div class="flex items-center gap-2 text-[13px] text-text-secondary">
+    <span class="size-[7px] rounded-full bg-online"></span>
+    macOS 13.3+ <span class="text-dot">/</span> Apple Silicon and Intel
+  </div>
+  <div class="flex items-center gap-1.5 max-[520px]:hidden">
+    <Kbd>⌘P</Kbd><span class="mr-2 text-xs text-text-faint">files</span>
+    <Kbd>⌘K</Kbd><span class="text-xs text-text-faint">everything</span>
+  </div>
+</div>

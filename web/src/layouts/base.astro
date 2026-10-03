@@ -1,0 +1,36 @@
+---
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
+import '@/styles/global.css';
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const props = Astro.props;
+const { title, description } = props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body>
+    <div class="mx-auto flex max-w-[1200px] items-stretch">
+      <div class="hatch w-3.5 flex-none border-x border-frame max-[900px]:hidden"></div>
+      <div class="flex min-w-0 flex-1 flex-wrap items-stretch">
+        <slot />
+      </div>
+      <div class="hatch w-3.5 flex-none border-x border-frame max-[900px]:hidden"></div>
+    </div>
+  </body>
+</html>

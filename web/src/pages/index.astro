@@ -1,0 +1,26 @@
+---
+import BaseLayout from '@/layouts/base.astro';
+import ClosingCta from '@/components/closing-cta.astro';
+import FeatureSection from '@/components/feature-section.astro';
+import Hero from '@/components/hero.astro';
+import Requirements from '@/components/requirements.astro';
+import SiteFooter from '@/components/site-footer.astro';
+import SiteSidebar from '@/components/site-sidebar.astro';
+import TopBar from '@/components/top-bar.astro';
+import { FEATURES } from '@/data/features';
+---
+
+<BaseLayout
+  title="Diffity: review code changes on your Mac"
+  description="A Mac app for reviewing code changes, yours or your agent's, GitHub-style, with Claude Code or Codex in the loop."
+>
+  <SiteSidebar />
+  <main class="min-w-0 flex-[999_1_560px]">
+    <TopBar />
+    <Hero />
+    <Requirements />
+    {FEATURES.map((feature) => <FeatureSection feature={feature} />)}
+    <ClosingCta />
+    <SiteFooter />
+  </main>
+</BaseLayout>
