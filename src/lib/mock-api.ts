@@ -216,6 +216,9 @@ seedThreads();
 function buildTree(): TreeEntry[] {
   const files = new Set(Object.keys(FIXTURE_CONTENTS));
   files.add('docs/screenshot.png');
+  for (const path of Object.keys(LARGE_FIXTURES)) {
+    files.add(path);
+  }
   for (let pkg = 1; pkg <= 30; pkg++) {
     for (let file = 1; file <= 8; file++) {
       files.add(`packages/pkg-${pkg}/src/module-${file}.ts`);
@@ -234,7 +237,22 @@ function buildTree(): TreeEntry[] {
   ].sort((a, b) => a.path.localeCompare(b.path));
 }
 
+/** Large files for exercising the file viewer: a 43k-line lockfile and a one-line minified bundle. */
+const LARGE_FIXTURES: Record<string, () => string> = {
+  'pnpm-lock.yaml': () => {
+    const lines = ["lockfileVersion: '9.0'", '', 'packages:'];
+    for (let i = 0; lines.length < 43393; i++) {
+      lines.push('', `  /pkg-${i}@1.${i % 20}.${i % 7}:`, `    resolution: {integrity: sha512-${'x'.repeat(40)}${i}}`, '    engines: {node: \'>=18\'}', '    dev: true');
+    }
+    return lines.join('\n');
+  },
+  'dist/bundle.min.js': () => Array.from({ length: 20000 }, (_, i) => `var a${i}=function(b){return b+${i}};`).join(''),
+};
+
 function fileContents(path: string): string {
+  if (LARGE_FIXTURES[path]) {
+    return LARGE_FIXTURES[path]();
+  }
   if (FIXTURE_CONTENTS[path] !== undefined) {
     return FIXTURE_CONTENTS[path];
   }

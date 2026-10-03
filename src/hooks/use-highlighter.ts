@@ -136,6 +136,10 @@ function getLang(filePath: string): BundledLanguage | null {
   return LANG_MAP[ext] || null;
 }
 
+export function canHighlight(filePath: string): boolean {
+  return getLang(filePath) !== null;
+}
+
 const ALL_LANGS: BundledLanguage[] = [
   ...new Set([
     ...Object.values(LANG_MAP),

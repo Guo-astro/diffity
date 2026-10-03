@@ -19,7 +19,7 @@ import { isThreadResolved, GENERAL_THREAD_FILE_PATH } from '../comments/types';
 import type { CommentThread } from '../comments/types';
 import { TreeSidebar } from './tree-sidebar';
 import { FolderViewer } from './folder-viewer';
-import { FileViewer } from './file-viewer';
+import { FileViewer, type FileViewerHandle } from './file-viewer';
 import { FindBar } from '../../features/find/find-bar';
 import { MarkdownPreview } from './markdown-preview';
 import { SvgPreview } from './svg-preview';
@@ -125,6 +125,7 @@ export function TreePage() {
   const [previewMode, setPreviewMode] = useViewState<'preview' | 'code'>('tree:preview', 'preview');
   const searchInputRef = useRef<HTMLInputElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const fileViewerRef = useRef<FileViewerHandle>(null);
   useRestoredScroll(mainRef, `tree:scroll:${navType}:${navPath}`);
 
   useEffect(() => {
@@ -214,16 +215,20 @@ export function TreePage() {
     [handleFileClick, handleDirClick],
   );
 
-  const scrollToThreadElement = useCallback((threadId: string) => {
-    const el = document.querySelector(`[data-thread-id="${threadId}"]`);
-    if (el) {
-      el.dispatchEvent(
-        new CustomEvent('diffity:focus-thread', { bubbles: false }),
-      );
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('flash-thread');
-      setTimeout(() => el.classList.remove('flash-thread'), 1500);
+  /** File rows are virtualised, so a line thread is first scrolled to (once the viewer has its file) and then focused. */
+  const scrollToThreadElement = useCallback((threadId: string, onFileLine: boolean, attempts = 12) => {
+    if (!onFileLine) {
+      focusThreadElement(threadId, attempts);
+      return;
     }
+    const tryReveal = (left: number) => {
+      if (fileViewerRef.current?.revealThread(threadId) || left <= 0) {
+        focusThreadElement(threadId, attempts);
+        return;
+      }
+      setTimeout(() => tryReveal(left - 1), 100);
+    };
+    tryReveal(attempts);
   }, []);
 
   const handleScrollToThread = useCallback(
@@ -256,13 +261,13 @@ export function TreePage() {
         setNav(targetPath, targetType);
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            scrollToThreadElement(threadId);
+            scrollToThreadElement(threadId, !isPathComment);
           });
         });
         return;
       }
 
-      scrollToThreadElement(threadId);
+      scrollToThreadElement(threadId, !isPathComment);
     },
     [navPath, navType, queryClient, paths, scrollToThreadElement, setNav],
   );
@@ -287,14 +292,14 @@ export function TreePage() {
     const isPathComment = thread.filePath.startsWith('__path__:');
     if (!isPathComment && thread.filePath !== navPath) {
       setNav(thread.filePath, 'file');
-      focusThreadElement(thread.id, 30);
+      scrollToThreadElement(thread.id, true, 30);
       return;
     }
     const next = new URLSearchParams(searchParams);
     next.delete('thread');
     setSearchParams(next, { replace: true });
     void handleScrollToThread(thread.id, thread.filePath);
-  }, [targetThreadId, threadsFetched, threads, searchParams, setSearchParams, navPath, setNav, handleScrollToThread]);
+  }, [targetThreadId, threadsFetched, threads, searchParams, setSearchParams, navPath, setNav, handleScrollToThread, scrollToThreadElement]);
 
   const handleRefreshTree = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['tree-paths'] });
@@ -385,6 +390,8 @@ export function TreePage() {
     }
     return (
       <FileViewer
+        key={navPath}
+        ref={fileViewerRef}
         filePath={navPath}
         content={fileContent}
         theme={theme}

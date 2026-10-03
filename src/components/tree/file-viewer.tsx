@@ -1,5 +1,6 @@
-import { useMemo, useCallback, useEffect, useRef } from 'react';
-import { useHighlighter } from '../../hooks/use-highlighter';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { canHighlight, useHighlighter } from '../../hooks/use-highlighter';
 import { useLineSelection } from '../../hooks/use-line-selection';
 import type { CommentThread as CommentThreadType, CommentAuthor, LineSelection, SubmitOptions } from '../comments/types';
 import type { CommentActions } from '../../hooks/use-comment-actions';
@@ -10,16 +11,8 @@ import { cn } from '../../lib/cn';
 import { useViewState } from '../../lib/view-state';
 import { useFindSource, type FindSource } from '../../features/find/find-store';
 import { fileFindLines } from '../../lib/find';
-
-interface LineHighlight {
-  filePath: string;
-  startLine: number;
-  endLine: number;
-  annotation: string;
-  scrollTick: number;
-  baseStartLine?: number;
-  baseEndLine?: number;
-}
+import { fileSource, HIGHLIGHT_MAX_ROWS, runInSteps, tokenizeSources, type SideTokens } from '../../lib/syntax-lines';
+import type { SyntaxToken } from '../../lib/syntax-token';
 
 interface FileViewerProps {
   filePath: string;
@@ -28,12 +21,65 @@ interface FileViewerProps {
   threads: CommentThreadType[];
   commentActions: CommentActions;
   sessionId: string | null;
-  lineHighlight?: LineHighlight | null;
+}
+
+export interface FileViewerHandle {
+  /** Scrolls the thread's line into view; false when the thread is not on this file. */
+  revealThread: (threadId: string) => boolean;
 }
 
 const CURRENT_AUTHOR: CommentAuthor = { name: 'You', type: 'user' };
+const LINE_HEIGHT = 22;
+const THREAD_HEIGHT_ESTIMATE = 120;
+const FORM_HEIGHT_ESTIMATE = 160;
+const OVERSCAN = 30;
+/** Longer lines are cut off until expanded: a single huge text run is slow to lay out. */
+const LINE_DISPLAY_MAX = 2000;
+const TAB_WIDTH = 8;
 
-export function FileViewer(props: FileViewerProps) {
+/** Finished tokens per file content (one map per theme), dropped with the content they were made from. */
+const syntaxCache = new WeakMap<string[], Map<string, Map<number, SyntaxToken[]>>>();
+
+function useFileSyntax(filePath: string, content: string[], theme: 'light' | 'dark') {
+  const { tokenize, ready } = useHighlighter();
+  const highlightable = canHighlight(filePath);
+  const tooLarge = highlightable && content.length > HIGHLIGHT_MAX_ROWS;
+  const [tokens, setTokens] = useState<Map<number, SyntaxToken[]> | null>(() => syntaxCache.get(content)?.get(theme) ?? null);
+  const [, setVersion] = useState(0);
+
+  useEffect(() => {
+    if (!ready || !highlightable || tooLarge) {
+      setTokens(null);
+      return;
+    }
+    const cached = syntaxCache.get(content)?.get(theme);
+    if (cached) {
+      setTokens(cached);
+      return;
+    }
+    const into: SideTokens = { old: new Map(), new: new Map() };
+    setTokens(into.new);
+    const work = tokenizeSources([fileSource('new', content)], (code, state) => tokenize(code, filePath, theme, state), into);
+    return runInSteps(work, 0, () => setVersion((version) => version + 1), () => {
+      const byTheme = syntaxCache.get(content) ?? new Map<string, Map<number, SyntaxToken[]>>();
+      byTheme.set(theme, into.new);
+      syntaxCache.set(content, byTheme);
+      setVersion((version) => version + 1);
+    });
+  }, [ready, highlightable, tooLarge, content, filePath, theme, tokenize]);
+
+  return { tokens, highlightOff: tooLarge };
+}
+
+function displayColumns(text: string): number {
+  let tabs = 0;
+  for (let index = text.indexOf('\t'); index !== -1; index = text.indexOf('\t', index + 1)) {
+    tabs++;
+  }
+  return text.length + tabs * (TAB_WIDTH - 1);
+}
+
+export const FileViewer = forwardRef<FileViewerHandle, FileViewerProps>(function FileViewer(props, ref) {
   const {
     filePath,
     content,
@@ -41,76 +87,34 @@ export function FileViewer(props: FileViewerProps) {
     threads,
     commentActions,
     sessionId,
-    lineHighlight,
   } = props;
 
   const [pendingSelection, setPendingSelection] = useViewState<LineSelection | null>(`tree:composer:${filePath}`, null);
-  const { highlight, ready } = useHighlighter();
+  const { tokens, highlightOff } = useFileSyntax(filePath, content, theme);
   const tableRef = useRef<HTMLTableElement>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
+  const [scrollMargin, setScrollMargin] = useState(0);
+  const [expandedLines, setExpandedLines] = useState<Set<number>>(() => new Set());
 
-  const activeLineHighlight = lineHighlight && lineHighlight.filePath === filePath ? lineHighlight : null;
-  const isFullFileHighlight = activeLineHighlight
-    && activeLineHighlight.startLine <= 1
-    && activeLineHighlight.endLine >= content.length;
-
-  useEffect(() => {
-    if (!activeLineHighlight) {
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    const scroller = table?.closest('main');
+    if (!table || !scroller) {
       return;
     }
-
-    const scrollToHighlight = () => {
-      if (!tableRef.current) {
-        return;
-      }
-      const scrollParent = tableRef.current.closest('main');
-      if (scrollParent) {
-        // Reset first so getBoundingClientRect is measured from a clean state
-        scrollParent.scrollTop = 0;
-      }
-      const targetLine = Math.max(1, activeLineHighlight.startLine - 6);
-      const row = tableRef.current.querySelector(`tr:nth-child(${targetLine})`);
-      if (!row) {
-        return;
-      }
-      if (scrollParent) {
-        const rowTop = row.getBoundingClientRect().top;
-        const parentTop = scrollParent.getBoundingClientRect().top;
-        scrollParent.scrollTop = rowTop - parentTop;
-      } else {
-        row.scrollIntoView({ block: 'start' });
-      }
+    setScrollElement(scroller);
+    const update = () => {
+      const offset = table.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+      setScrollMargin(Math.round(offset));
     };
-
-    // Double rAF: first fires before paint, second fires after
-    // the browser has flushed layout with the new file content.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(scrollToHighlight);
-    });
-  }, [activeLineHighlight]);
-
-  const tokens = useMemo(() => {
-    if (!ready) {
-      return null;
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    for (const child of Array.from(scroller.children)) {
+      observer.observe(child);
     }
-    return highlight(content.join('\n'), filePath, theme);
-  }, [ready, highlight, content, filePath, theme]);
-
-  const findSource = useMemo<FindSource>(() => ({
-    label: 'file',
-    lines: fileFindLines(filePath, content),
-    reveal: () => undefined,
-  }), [filePath, content]);
-  useFindSource(findSource);
-
-  const onSelectionComplete = useCallback((selection: LineSelection) => {
-    setPendingSelection(selection);
-  }, [setPendingSelection]);
-
-  const {
-    handleLineMouseDown,
-    handleLineMouseEnter,
-    isLineInSelection,
-  } = useLineSelection({ filePath, onSelectionComplete });
+    return () => observer.disconnect();
+  }, []);
 
   const fileThreads = useMemo(() => {
     return threads.filter(t => t.filePath === filePath);
@@ -126,32 +130,83 @@ export function FileViewer(props: FileViewerProps) {
     return map;
   }, [fileThreads]);
 
-  const hasSubHighlight = activeLineHighlight && activeLineHighlight.baseStartLine != null;
+  const pendingEndLine = pendingSelection && pendingSelection.filePath === filePath ? pendingSelection.endLine : null;
 
-  const getLineHighlightType = useCallback((lineNum: number): 'focus' | 'base' | 'selected' | null => {
-    if (activeLineHighlight && !isFullFileHighlight) {
-      if (lineNum >= activeLineHighlight.startLine && lineNum <= activeLineHighlight.endLine) {
-        return 'focus';
+  const virtualizer = useVirtualizer({
+    count: content.length,
+    getScrollElement: () => scrollElement,
+    estimateSize: (index) => {
+      const lineNum = index + 1;
+      const threadCount = threadsByLine.get(lineNum)?.length ?? 0;
+      return LINE_HEIGHT + threadCount * THREAD_HEIGHT_ESTIMATE + (pendingEndLine === lineNum ? FORM_HEIGHT_ESTIMATE : 0);
+    },
+    scrollMargin,
+    overscan: OVERSCAN,
+  });
+
+  const revealLine = useCallback((lineNum: number) => {
+    const index = Math.min(Math.max(lineNum - 1, 0), content.length - 1);
+    virtualizer.scrollToIndex(index, { align: 'center' });
+  }, [virtualizer, content.length]);
+
+  useImperativeHandle(ref, () => ({
+    revealThread: (threadId: string) => {
+      const thread = fileThreads.find((t) => t.id === threadId);
+      if (!thread) {
+        return false;
       }
-      if (hasSubHighlight && lineNum >= activeLineHighlight.baseStartLine! && lineNum <= activeLineHighlight.baseEndLine!) {
-        return 'base';
-      }
+      revealLine(thread.endLine);
+      return true;
+    },
+  }), [fileThreads, revealLine]);
+
+  const findSource = useMemo<FindSource>(() => ({
+    label: 'file',
+    lines: fileFindLines(filePath, content),
+    reveal: (match) => revealLine(Number(match.key)),
+  }), [filePath, content, revealLine]);
+  useFindSource(findSource);
+
+  const maxColumns = useMemo(() => {
+    let max = 0;
+    for (let i = 0; i < content.length; i++) {
+      const text = content[i];
+      const shown = text.length > LINE_DISPLAY_MAX && !expandedLines.has(i + 1) ? LINE_DISPLAY_MAX + 40 : displayColumns(text);
+      max = Math.max(max, shown);
     }
+    return max;
+  }, [content, expandedLines]);
+
+  const expandLine = useCallback((lineNum: number) => {
+    setExpandedLines((prev) => new Set(prev).add(lineNum));
+  }, []);
+
+  const onSelectionComplete = useCallback((selection: LineSelection) => {
+    setPendingSelection(selection);
+  }, [setPendingSelection]);
+
+  const {
+    handleLineMouseDown,
+    handleLineMouseEnter,
+    isLineInSelection,
+  } = useLineSelection({ filePath, onSelectionComplete });
+
+  const isLineSelected = useCallback((lineNum: number) => {
     if (isLineInSelection(lineNum, 'new')) {
-      return 'selected';
+      return true;
     }
     if (pendingSelection && pendingSelection.filePath === filePath && pendingSelection.side === 'new') {
       if (lineNum >= pendingSelection.startLine && lineNum <= pendingSelection.endLine) {
-        return 'selected';
+        return true;
       }
     }
     for (const thread of fileThreads) {
       if (thread.status === 'open' && lineNum >= thread.startLine && lineNum <= thread.endLine) {
-        return 'selected';
+        return true;
       }
     }
-    return null;
-  }, [isLineInSelection, pendingSelection, filePath, fileThreads, activeLineHighlight, isFullFileHighlight, hasSubHighlight]);
+    return false;
+  }, [isLineInSelection, pendingSelection, filePath, fileThreads]);
 
   const handleAddThread = useCallback((body: string, options: SubmitOptions) => {
     if (!pendingSelection || !sessionId) {
@@ -185,68 +240,63 @@ export function FileViewer(props: FileViewerProps) {
     });
   }, [filePath, setPendingSelection]);
 
-  const getOriginalCode = useCallback((_side: 'old' | 'new', startLine: number, endLine: number) => {
+  const getOriginalCode = useCallback((startLine: number, endLine: number) => {
     return content.slice(startLine - 1, endLine).join('\n');
   }, [content]);
 
-  const rows: React.ReactNode[] = [];
-  for (let i = 0; i < content.length; i++) {
-    const lineNum = i + 1;
-    const lineTokens = tokens?.[i]?.tokens;
-    const highlightType = getLineHighlightType(lineNum);
-
-    if (activeLineHighlight && activeLineHighlight.annotation && lineNum === activeLineHighlight.startLine) {
-      rows.push(
-        <tr key="line-annotation">
-          <td colSpan={2} className="px-4 py-1.5">
-            <div className="inline-flex items-center px-2 py-1 bg-diff-comment-bg rounded text-[11px] font-medium text-text-secondary">
-              {activeLineHighlight.annotation}
-            </div>
-          </td>
-        </tr>
+  const renderLineCode = (lineNum: number) => {
+    const text = content[lineNum - 1];
+    if (text.length > LINE_DISPLAY_MAX && !expandedLines.has(lineNum)) {
+      return (
+        <>
+          {text.slice(0, LINE_DISPLAY_MAX)}
+          <button
+            className='ml-2 px-1.5 rounded bg-hover font-sans text-[11px] text-text-muted hover:text-text cursor-pointer'
+            onClick={() => expandLine(lineNum)}
+          >
+            … {(text.length - LINE_DISPLAY_MAX).toLocaleString()} more characters
+          </button>
+        </>
       );
     }
+    const lineTokens = tokens?.get(lineNum);
+    if (!lineTokens) {
+      return text;
+    }
+    return lineTokens.map((token, j) => (
+      <span key={j} style={{ color: token.color }}>{token.text}</span>
+    ));
+  };
 
-    rows.push(
-      <tr
-        key={`line-${lineNum}`}
-        className="group/row"
-      >
-        <CommentLineNumber
-          lineNumber={lineNum}
-          isSelected={highlightType === 'focus' || highlightType === 'selected'}
-          className={highlightType === 'base' ? 'bg-diff-comment-gutter/40' : undefined}
-          onMouseDown={() => handleLineMouseDown(lineNum, 'new')}
-          onMouseEnter={() => handleLineMouseEnter(lineNum, 'new')}
-          onCommentClick={() => handleCommentClick(lineNum)}
-          showCommentButton={true}
-        />
-        <td
-          data-find-line={lineNum}
-          className={cn(
-            'px-4 py-0 code-text whitespace-pre',
-            highlightType === 'base' && 'bg-diff-comment-bg/40',
-            highlightType === 'focus' && 'bg-diff-comment-bg',
-            highlightType === 'selected' && 'bg-diff-comment-bg',
-          )}
-        >
-          {lineTokens ? (
-            lineTokens.map((token, j) => (
-              <span key={j} style={{ color: token.color }}>{token.text}</span>
-            ))
-          ) : (
-            content[i]
-          )}
-        </td>
-      </tr>
-    );
-
+  const renderLine = (lineNum: number) => {
+    const selected = isLineSelected(lineNum);
     const lineThreads = threadsByLine.get(lineNum);
-    if (lineThreads) {
-      for (const thread of lineThreads) {
-        rows.push(
+    const showForm = pendingSelection && pendingEndLine === lineNum;
+
+    return (
+      <>
+        <tr className='group/row'>
+          <CommentLineNumber
+            lineNumber={lineNum}
+            isSelected={selected}
+            onMouseDown={() => handleLineMouseDown(lineNum, 'new')}
+            onMouseEnter={() => handleLineMouseEnter(lineNum, 'new')}
+            onCommentClick={() => handleCommentClick(lineNum)}
+            showCommentButton={true}
+          />
+          <td
+            data-find-line={lineNum}
+            className={cn(
+              'px-4 py-0 code-text whitespace-pre',
+              selected && 'bg-diff-comment-bg',
+            )}
+          >
+            {renderLineCode(lineNum)}
+          </td>
+        </tr>
+        {lineThreads?.map((thread) => (
           <CommentThread
-            key={`thread-${thread.id}`}
+            key={thread.id}
             thread={thread}
             onReply={commentActions.addReply}
             onResolve={commentActions.resolveThread}
@@ -256,44 +306,62 @@ export function FileViewer(props: FileViewerProps) {
             onDeleteThread={commentActions.deleteThread}
             currentAuthor={CURRENT_AUTHOR}
             colSpan={2}
-            currentCode={getOriginalCode('new', thread.startLine, thread.endLine)}
+            currentCode={getOriginalCode(thread.startLine, thread.endLine)}
           />
-        );
-      }
-    }
+        ))}
+        {showForm && (
+          <tr>
+            <td colSpan={2} className='px-4 py-2'>
+              <div className='max-w-[700px]'>
+                <CommentForm
+                  onSubmit={handleAddThread}
+                  onCancel={() => setPendingSelection(null)}
+                  lineLabel={pendingSelection.startLine === pendingSelection.endLine
+                    ? `Line ${pendingSelection.startLine}`
+                    : `Lines ${pendingSelection.startLine}–${pendingSelection.endLine}`}
+                  reviewable
+                />
+              </div>
+            </td>
+          </tr>
+        )}
+      </>
+    );
+  };
 
-    if (pendingSelection && lineNum === pendingSelection.endLine) {
-      const lineLabel = pendingSelection.startLine === pendingSelection.endLine
-        ? `Line ${pendingSelection.startLine}`
-        : `Lines ${pendingSelection.startLine}–${pendingSelection.endLine}`;
-
-      rows.push(
-        <tr key="pending-form">
-          <td colSpan={2} className="px-4 py-2">
-            <div className="max-w-[700px]">
-              <CommentForm
-                onSubmit={handleAddThread}
-                onCancel={() => setPendingSelection(null)}
-                lineLabel={lineLabel}
-                reviewable
-              />
-            </div>
-          </td>
-        </tr>
-      );
-    }
-  }
+  const items = virtualizer.getVirtualItems();
+  const [paddingTop, paddingBottom] = items.length > 0
+    ? [
+        items[0].start - scrollMargin,
+        virtualizer.getTotalSize() - (items[items.length - 1].end - scrollMargin),
+      ]
+    : [0, 0];
 
   return (
-    <div data-find-scope={filePath} className={cn(
-      'border border-border rounded-lg overflow-x-auto',
-      isFullFileHighlight && 'border-l-2 border-l-accent',
-    )}>
-      <table ref={tableRef} className="w-full border-collapse">
+    <div data-find-scope={filePath} className='border border-border rounded-lg overflow-x-auto'>
+      {highlightOff && (
+        <div className='sticky left-0 px-4 py-1.5 border-b border-border text-xs text-text-muted'>
+          Syntax highlighting is off for files over {HIGHLIGHT_MAX_ROWS.toLocaleString()} lines
+        </div>
+      )}
+      <table ref={tableRef} className='w-full border-collapse'>
         <tbody>
-          {rows}
+          <tr style={{ height: paddingTop }}>
+            <td className='w-12 min-w-12 p-0' />
+            <td className='code-text p-0' style={{ minWidth: `calc(${maxColumns}ch + 2rem)` }} />
+          </tr>
+        </tbody>
+        {items.map((item) => (
+          <tbody key={item.index} data-index={item.index} ref={virtualizer.measureElement}>
+            {renderLine(item.index + 1)}
+          </tbody>
+        ))}
+        <tbody>
+          <tr style={{ height: paddingBottom }}>
+            <td colSpan={2} className='p-0' />
+          </tr>
         </tbody>
       </table>
     </div>
   );
-}
+});

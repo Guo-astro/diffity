@@ -8,7 +8,7 @@ import type { CommentAuthor, CommentSide, LineSelection, SubmitOptions } from '.
 import { type ViewMode, getFilePath, buildChangeGroupPatch, extractLinesFromDiff, extractLinesFromExpandedLines, deferReason, getRowCount, sliceHunk, sliceRowCount, SLICE_ROW_THRESHOLD } from '../../lib/diff-utils';
 import { revertHunk as apiRevertHunk, revertFile as apiRevertFile, openInEditor, errorMessage, fetchFileVersions } from '../../lib/api';
 import { filePatchOptions } from '../../queries/diff';
-import { buildSyntaxMap, planSyntaxSources, tokenizeSources, type SideTokens } from '../../lib/syntax-lines';
+import { buildSyntaxMap, HIGHLIGHT_MAX_ROWS, planSyntaxSources, runInSteps, tokenizeSources, type SideTokens } from '../../lib/syntax-lines';
 import { loadHeldBackFile, useHeldBackLoaded } from '../../lib/large-diff';
 import { LazySlice } from './lazy-slice';
 import { Spinner } from '../icons/spinner';
@@ -47,10 +47,6 @@ import { useCurrentFindKey } from '../../features/find/find-store';
 import { diffLineKey } from '../../lib/find';
 import { SinceViewedBadge, SinceViewedDiff, type SinceViewedInfo } from './since-viewed';
 
-/** Files with more rows than this are not syntax highlighted at all. */
-const HIGHLIGHT_MAX_ROWS = 10000;
-/** Main-thread budget per highlighting step; the rest waits for the next task so scrolling stays smooth. */
-const HIGHLIGHT_BUDGET_MS = 8;
 /** Cards that scroll straight past are never highlighted: work starts once a card has stayed mounted this long. */
 const HIGHLIGHT_DELAY_MS = 120;
 
@@ -405,37 +401,13 @@ function FileCard(props: FileCardProps) {
     const plan = planSyntaxSources(file.hunks, versions.data ?? null, HIGHLIGHT_MAX_ROWS);
     const tokens: SideTokens = { old: new Map(), new: new Map() };
     const work = tokenizeSources(plan.sources, highlightCode, tokens);
-    const commit = () => setSyntaxMap(buildSyntaxMap(file.hunks, tokens, plan.fullNew));
-    let cancelled = false;
-    let timer = 0;
-    let lastCommit = performance.now();
-
-    const step = () => {
-      if (cancelled) {
-        return;
-      }
-      const deadline = performance.now() + HIGHLIGHT_BUDGET_MS;
-      while (performance.now() < deadline) {
-        if (work.next().done) {
-          const map = buildSyntaxMap(file.hunks, tokens, plan.fullNew);
-          rememberSyntax(cacheKey, map);
-          setSyntaxMap(map);
-          return;
-        }
-      }
-      if (performance.now() - lastCommit > 400) {
-        lastCommit = performance.now();
-        commit();
-      }
-      timer = window.setTimeout(step, 0);
-    };
-
-    timer = window.setTimeout(step, HIGHLIGHT_DELAY_MS);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
+    return runInSteps(work, HIGHLIGHT_DELAY_MS, () => {
+      setSyntaxMap(buildSyntaxMap(file.hunks, tokens, plan.fullNew));
+    }, () => {
+      const map = buildSyntaxMap(file.hunks, tokens, plan.fullNew);
+      rememberSyntax(cacheKey, map);
+      setSyntaxMap(map);
+    });
   }, [file, highlightCode, cacheKey, rendersLines, versionsSettled, versions.data]);
 
   const gaps = useMemo(() => {

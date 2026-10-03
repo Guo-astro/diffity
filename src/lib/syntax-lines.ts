@@ -168,3 +168,45 @@ export function buildSyntaxMap(hunks: DiffHunk[], tokens: SideTokens, allContext
   }
   return map;
 }
+
+/** Files with more rows than this are not syntax highlighted at all. */
+export const HIGHLIGHT_MAX_ROWS = 10000;
+/** Main-thread budget per highlighting step; the rest waits for the next task so scrolling stays smooth. */
+const HIGHLIGHT_BUDGET_MS = 8;
+/** How often finished lines are handed to the view while the rest is still being highlighted. */
+const HIGHLIGHT_COMMIT_MS = 400;
+
+/**
+ * Drives `work` in small steps over later tasks: `onProgress` now and then while it runs, `onDone` once it finishes.
+ * Returns a cancel function.
+ */
+export function runInSteps(work: Generator<void, void>, delayMs: number, onProgress: () => void, onDone: () => void): () => void {
+  let cancelled = false;
+  let timer = 0;
+  let lastCommit = performance.now();
+
+  const step = () => {
+    if (cancelled) {
+      return;
+    }
+    const deadline = performance.now() + HIGHLIGHT_BUDGET_MS;
+    while (performance.now() < deadline) {
+      if (work.next().done) {
+        onDone();
+        return;
+      }
+    }
+    if (performance.now() - lastCommit > HIGHLIGHT_COMMIT_MS) {
+      lastCommit = performance.now();
+      onProgress();
+    }
+    timer = window.setTimeout(step, 0);
+  };
+
+  timer = window.setTimeout(step, delayMs);
+
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timer);
+  };
+}
