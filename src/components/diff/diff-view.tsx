@@ -332,7 +332,8 @@ export function DiffView(props: DiffViewProps) {
 
     const scrollTop = scrollEl.scrollTop;
     for (const item of visibleItems) {
-      if (item.end > scrollTop) {
+      // A focused file sits scroll-mt-4 below the top, leaving the previous file's bottom padding in view
+      if (item.end - FILE_BLOCK_PADDING > scrollTop + 1) {
         return getFilePath(diff.files[item.index]);
       }
     }
