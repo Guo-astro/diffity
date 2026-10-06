@@ -8,6 +8,7 @@ import { contentsLabel, copyAbsolutePath, copyFileContents, copyRelativePath } f
 import { ContextMenu, MenuItem, MenuSeparator } from '../ui/popover';
 import { errorMessage, openInEditor } from '../../lib/api';
 import { useEditorName } from '../../hooks/use-editor-name';
+import { AgentReadingDot } from '../../features/claude/activity-panel';
 
 interface FileTreeItemProps {
   node: TreeNode;
@@ -234,6 +235,7 @@ export function FileTreeRow(props: FileTreeRowProps) {
           {node.name}
         </span>
         {diffIgnored && diffIgnoredHint && <span className="shrink-0 text-[11px] text-text-muted">ignored in diffs</span>}
+        <AgentReadingDot path={node.path} />
         <CommentCount count={threadCount} />
         {changedSinceViewed && <ChangedSinceViewedDot />}
         {reviewed && <span className="text-added text-[11px] shrink-0" title="Viewed">&#10003;</span>}

@@ -106,6 +106,7 @@ export const CodeIcon = lineGlyph('M7 5.5 3 10l4 4.5M13 5.5l4 4.5-4 4.5');
 export const CollapseAllIcon = lineGlyph('M6 3.5l4 4 4-4M6 16.5l4-4 4 4');
 export const ExpandAllIcon = lineGlyph('M6 7.5l4-4 4 4M6 12.5l4 4 4-4');
 export const ChevronUpDownIcon = lineGlyph('M6.5 7.5 10 4 13.5 7.5M6.5 12.5 10 16l3.5-3.5', 14);
+export const ActivityIcon = lineGlyph('M2.5 10h3.5l2.5-6 3 12 2.5-6h3.5', 14);
 
 export const ListIcon = makeGlyph(() => (
   <>

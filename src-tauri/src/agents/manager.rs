@@ -487,6 +487,7 @@ impl AgentManager {
         let user = ChatMessageContent::User(UserMessageContent {
             text: text.clone(),
             context,
+            model: Some(model.clone()),
         });
         let (store, id) = (self.store.clone(), chat_id.to_string());
         blocking(move || chats::add_message(&store, &id, ChatRole::User, &user)).await?;

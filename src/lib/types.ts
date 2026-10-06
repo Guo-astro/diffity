@@ -303,6 +303,8 @@ export type AgentEvent =
 export interface UserMessageContent {
   text: string;
   context: ContextChip[];
+  /** Model and effort the turn ran with; absent on chats saved before it was recorded. */
+  model?: RunModel;
 }
 
 export interface ChatMessage {

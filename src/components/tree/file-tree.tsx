@@ -12,6 +12,7 @@ import {
 } from '../../lib/file-tree';
 import { ChangedSinceViewedDot, CommentCount, FileTreeRow, StatusLetter, TreeItemMenu } from './file-tree-item';
 import { getFilePath } from '../../lib/diff-utils';
+import { AgentReadingDot } from '../../features/claude/activity-panel';
 import { cn } from '../../lib/cn';
 import { readViewState, useRestoredScroll, useViewState } from '../../lib/view-state';
 
@@ -203,6 +204,7 @@ export const FileTree = forwardRef<FileTreeHandle, FileTreeProps>(function FileT
           <span className={cn('shrink-0 max-w-full truncate text-text', isActive && 'font-medium', isReviewed && 'line-through decoration-text-muted/60')}>{name}</span>
           {dir && <span className="min-w-0 truncate text-xs text-text-muted" dir="rtl"><bdi>{dir}</bdi></span>}
         </span>
+        <AgentReadingDot path={entry.path} />
         <CommentCount count={commentCountsByFile.get(entry.path) ?? 0} />
         {changedSinceViewed?.has(entry.path) && <ChangedSinceViewedDot />}
         {isReviewed && <span className="text-added text-[11px] shrink-0" title="Viewed">&#10003;</span>}

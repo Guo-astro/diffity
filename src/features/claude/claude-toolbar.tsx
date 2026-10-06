@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TREE_REF } from '../../lib/types';
-import { openRunResult, runLabel, runViewLabel, stopClaude, useActiveRun, useQueuedCount } from './claude-runner';
+import { runLabel, runViewLabel, stopClaude, useActiveRun, useQueuedCount } from './claude-runner';
 import { useCurrentViewRef } from '../../hooks/use-current-view';
 import { useRepoPath } from '../../hooks/use-repo';
 import { buttonClaude } from '../../components/ui/button-styles';
@@ -8,9 +8,12 @@ import { AskClaudePopover, useAskClaudeRequest } from './ask-claude-review';
 import { cn } from '../../lib/cn';
 import { toast } from 'sonner';
 import { useReviewState } from '../review/review-state';
-import { SparkleIcon, StopIcon } from '../../components/ui/icon';
+import { ActivityIcon, SparkleIcon, StopIcon } from '../../components/ui/icon';
+import { Popover } from '../../components/ui/popover';
 import { Spinner } from '../../components/icons/spinner';
-import { runModelLabel, useModelCatalog, useRunPick } from './model-setting';
+import { useRunPick } from './model-setting';
+import { ActivityPeek, formatElapsed, useNow } from './activity-panel';
+import { toggleActivity, useRunActivity } from './run-activity';
 import { agentMeta } from './agents';
 
 interface ClaudeToolbarProps {
@@ -20,72 +23,68 @@ interface ClaudeToolbarProps {
   focusedFile?: string | null;
 }
 
-function formatElapsed(ms: number) {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
-
-function useNow(active: boolean) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [active]);
-  return now;
-}
-
 export function ClaudeStatus() {
   const repoPath = useRepoPath();
   const run = useActiveRun(repoPath);
   const queued = useQueuedCount(repoPath);
   const now = useNow(run !== null);
   const currentRef = useCurrentViewRef();
-  const { data: catalog } = useModelCatalog(run?.agentId ?? 'claude');
+  const activityOpen = useRunActivity((state) => state.open);
+  const pillRef = useRef<HTMLDivElement>(null);
+  const [peek, setPeek] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+    }
+  }, []);
 
   if (!run) {
     return null;
   }
 
+  const hover = (open: boolean) => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+    }
+    timer.current = setTimeout(() => setPeek(open && !useRunActivity.getState().open), open ? 300 : 150);
+  };
   const name = run.agentId ? agentMeta(run.agentId).short : 'Agent';
   const elsewhere = !!run.ref && run.ref !== currentRef;
   const where = run.ref ? runViewLabel(run.context.repoPath, run.ref) : null;
-  const showCount = run.commentsAdded > 0;
-  const countLabel = `${run.commentsAdded} comment${run.commentsAdded === 1 ? '' : 's'}`;
-  const canOpen = !!run.ref && (run.commentsAdded > 0 || elsewhere);
 
   return (
-    <div className="flex items-stretch h-7 rounded-md border border-control-border bg-raised overflow-hidden text-xs min-w-0">
+    <div ref={pillRef} className="flex items-stretch h-7 rounded-md border border-control-border bg-raised overflow-hidden text-xs min-w-0">
       <span
-        className="flex items-center gap-2 pl-2.5 pr-2 text-text whitespace-nowrap min-w-0 overflow-hidden"
-        title={where ? `Working on ${where}` : undefined}
+        className="flex items-center gap-2 pl-2.5 pr-2 text-text whitespace-nowrap min-w-0 overflow-hidden cursor-default"
+        title={where && elsewhere ? `Working on ${where}` : undefined}
+        onMouseEnter={() => hover(true)}
+        onMouseLeave={() => hover(false)}
       >
         <Spinner className="text-claude" />
         <span className="font-medium truncate @max-3xl/titlebar:hidden">{runLabel(run.action, name)}</span>
-        {run.model && <span className="text-text-muted truncate max-w-[160px] @max-5xl/titlebar:hidden">{runModelLabel(catalog, run.model)}</span>}
         {elsewhere && where && (
           <span className="text-text-secondary truncate max-w-[180px] @max-4xl/titlebar:hidden">on {where}</span>
-        )}
-        {showCount && (
-          canOpen ? (
-            <button
-              onClick={() => openRunResult(run.context.repoPath, run.ref, run.newThreadIds)}
-              className="text-text-secondary @max-2xl/titlebar:hidden underline decoration-text-muted/50 underline-offset-2 hover:text-text cursor-pointer"
-              title={where ? `Show ${name}'s comments on ${where}` : `Show ${name}'s comments`}
-            >
-              {countLabel}
-            </button>
-          ) : (
-            <span className="text-text-secondary @max-2xl/titlebar:hidden">{countLabel}</span>
-          )
         )}
         {run.startedAt && <span className="text-text-muted tabular-nums">{formatElapsed(now - run.startedAt)}</span>}
         {queued > 0 && <span className="text-text-muted @max-3xl/titlebar:hidden">+{queued} queued</span>}
       </span>
+      <button
+        onClick={() => {
+          setPeek(false);
+          toggleActivity();
+        }}
+        aria-pressed={activityOpen}
+        className={cn(
+          'flex items-center gap-1 px-2 shrink-0 border-l border-control-border transition-colors cursor-pointer',
+          activityOpen ? 'bg-claude/12 text-claude font-medium' : 'text-text-secondary hover:text-text hover:bg-control-hover',
+        )}
+        title={`See what ${name} is doing`}
+      >
+        <ActivityIcon size="xs" />
+        <span className="@max-2xl/titlebar:hidden">Activity</span>
+      </button>
       <button
         onClick={() => void stopClaude(repoPath)}
         className="flex items-center gap-1 px-2 shrink-0 border-l border-control-border text-text-secondary hover:text-text hover:bg-control-hover transition-colors cursor-pointer"
@@ -94,6 +93,11 @@ export function ClaudeStatus() {
         <StopIcon size="xs" />
         Stop
       </button>
+      <Popover open={peek} onClose={() => setPeek(false)} anchorRef={pillRef} align="end" width={340} className="p-0">
+        <div onMouseEnter={() => hover(true)} onMouseLeave={() => hover(false)}>
+          <ActivityPeek onOpen={() => setPeek(false)} />
+        </div>
+      </Popover>
     </div>
   );
 }

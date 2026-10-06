@@ -12,6 +12,7 @@ import { getPermissionSetting, runSkipsPrompts, showBypassNotice } from './permi
 import { getRunPick, pickForAgent, type ModelPurpose, type RunPick } from './model-setting';
 import { agentByName, agentMeta, type AgentMeta } from './agents';
 import { mentionedAgent } from '../../lib/mentions';
+import { finishActivity, recordComments, recordEvent, startActivity } from './run-activity';
 
 export type ClaudeAction = Extract<
   AgentAction,
@@ -464,8 +465,12 @@ async function execute(run: ClaudeRun) {
   });
   const skipsPrompts = runSkipsPrompts(modeFor(run.action, ref), run.action, await getPermissionSetting());
   const model: RunModel = { model: pick.model, effort: pick.effort };
-  patchRun(run.id, { chatId: chat.id, sessionId, startedAt: Date.now(), ref, skipsPrompts, model });
+  const startedAt = Date.now();
+  patchRun(run.id, { chatId: chat.id, sessionId, startedAt, ref, skipsPrompts, model });
+  const repoPath = run.context.repoPath;
+  startActivity({ runId: run.id, chatId: chat.id, repoPath, ref, agentId: agent.id, model, actionKind: run.action.kind, startedAt });
   if (useClaude.getState().runs.find((item) => item.id === run.id)?.stopRequested) {
+    finishActivity(repoPath, run.id, 'stopped');
     toast.info(`${meta.short} was stopped`);
     return;
   }
@@ -491,6 +496,14 @@ async function execute(run: ClaudeRun) {
         .map((thread) => thread.id);
       added = newThreadIds.length;
       patchRun(run.id, { commentsAdded: added, newThreadIds });
+      const fresh = new Set(newThreadIds);
+      recordComments(
+        repoPath,
+        run.id,
+        threads
+          .filter((thread) => fresh.has(thread.id))
+          .map((thread) => ({ kind: 'comment' as const, id: thread.id, filePath: thread.filePath, line: thread.startLine, body: thread.comments[0]?.body ?? '', at: Date.now() })),
+      );
     })
     .catch(() => null);
 
@@ -510,6 +523,7 @@ async function execute(run: ClaudeRun) {
         useClaude.setState((state) => ({ permissions: [...state.permissions, permission] }));
         return;
       }
+      recordEvent(repoPath, run.id, event);
       if (event.type === 'error') {
         failed = { code: event.code ?? '', message: event.message };
         return;
@@ -525,6 +539,7 @@ async function execute(run: ClaudeRun) {
     queryClient.invalidateQueries({ queryKey: ['threads', sessionId] });
     queryClient.invalidateQueries({ queryKey: ['reviews'] });
   }
+  finishActivity(repoPath, run.id, failed ? 'failed' : cancelled ? 'stopped' : 'done');
   if (failed) {
     showFailure(`${meta.short} stopped with an error`, failed, meta);
     return;

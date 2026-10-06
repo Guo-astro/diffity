@@ -239,6 +239,9 @@ pub enum ChatRole {
 pub struct UserMessageContent {
     pub text: String,
     pub context: Vec<ContextChip>,
+    /// Model and effort the turn ran with; absent on chats saved before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<RunModel>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

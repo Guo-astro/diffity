@@ -226,7 +226,7 @@ pub fn messages(store: &Store, chat_id: &str) -> Result<Vec<ChatMessage>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::types::{AgentEvent, UserMessageContent};
+    use crate::agents::types::{AgentEvent, RunModel, UserMessageContent};
 
     #[test]
     fn lists_chats_per_ref() {
@@ -265,6 +265,10 @@ mod tests {
             &ChatMessageContent::User(UserMessageContent {
                 text: "hi".into(),
                 context: vec![],
+                model: Some(RunModel {
+                    model: Some("opus".into()),
+                    effort: Some("high".into()),
+                }),
             }),
         )
         .unwrap();
@@ -279,7 +283,10 @@ mod tests {
         .unwrap();
         let msgs = messages(&store, &chat.id).unwrap();
         assert_eq!(msgs.len(), 2);
-        assert!(matches!(msgs[0].content, ChatMessageContent::User(_)));
+        let ChatMessageContent::User(user) = &msgs[0].content else {
+            panic!("expected a user message");
+        };
+        assert_eq!(user.model.as_ref().and_then(|m| m.effort.as_deref()), Some("high"));
         assert!(matches!(msgs[1].content, ChatMessageContent::Agent(_)));
 
         assert_eq!(list(&store, "/r", None).unwrap().len(), 1);

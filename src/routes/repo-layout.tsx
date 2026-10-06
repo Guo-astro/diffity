@@ -14,6 +14,7 @@ import { useTheme } from '../hooks/use-theme';
 import { ClaudeApprovalModal } from '../features/claude/claude-approval-modal';
 import { RouteErrorBoundary } from './route-error-boundary';
 import { CommentsPanel } from '../features/comments/comments-panel';
+import { ActivityPanel } from '../features/claude/activity-panel';
 import { toggleComments } from '../lib/ui-store';
 import { PullRequestsDialog } from '../features/pr/pull-requests-dialog';
 import { CheckoutGuardDialog } from '../features/pr/checkout-guard-dialog';
@@ -168,6 +169,8 @@ export function RepoLayout() {
     <>
       <RepoPrefetch />
       <RailFrame>
+        <div className="flex h-screen">
+        <div className="flex-1 min-w-0 relative">
         <RouteErrorBoundary
           resetKey={location.pathname + location.search}
           actions={(reset, error) => {
@@ -203,6 +206,9 @@ export function RepoLayout() {
             <Outlet />
           </Suspense>
         </RouteErrorBoundary>
+        </div>
+        <ActivityPanel />
+        </div>
       </RailFrame>
       <ClaudeApprovalModal />
       <CommentsPanel />
