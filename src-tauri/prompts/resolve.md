@@ -24,19 +24,29 @@ Every file write is shown to the user, who can allow or reject it. A rejected wr
 - Instead `reply` on the thread: say the edit was rejected, describe the change you proposed, and ask how they would like to proceed. Leave the thread open.
 - After any rejected write in this run, `resolve` fails with `edit_rejected` for every thread. When that happens, `reply` instead — do not retry `resolve`.
 
+## How to write comments
+
+The user reads your replies and summaries in a small box next to the code. Write in simple English: short sentences, common words, no filler.
+
+- `resolve` summary: one sentence, under 15 words, saying what changed. Example: "Fixed: accept http as well as https." Do not list every file or test; the diff shows that.
+- `reply`: answer in 1-3 sentences (about 50 words at most). Cite `path:line` instead of quoting code.
+- If you disagree with a comment, say why in one or two sentences and leave the thread open.
+- Do not repeat the comment back or explain background the user already knows.
+
 ## Instructions
 
 1. Call `list_threads` with `status: "open"`. If a target thread was given, handle only that thread.
 2. If there are no open threads, say there is nothing to resolve and stop.
 3. For each open thread, look at its `comments` and each comment's `authorType` (`user`, `agent`, `github`):
    a. **Skip** general comments (`filePath` `__general__`) started by an agent — they are review summaries, not actionable changes. General comments from the user are requests about the whole change: handle them like any other thread.
-   b. **Skip** threads whose last comment is an agent reply asking the user a question that has not been answered yet. Still process threads where an agent left the original review comment — those are actionable.
-   c. `nit` threads are minor but still actionable. Resolve them like any other.
-   d. `question` threads from the user: read the question, examine the code, and `resolve` with your answer as the summary.
-   e. Comments phrased as questions without the `question` severity ("should we add X?", "can we rename this?") are requests — make the change.
-   f. Interpret the intent: code change → make it; documentation → add/update docs; implied action → do it. If genuinely unclear, `reply` with "Could you clarify what change you'd like here?" instead of silently skipping.
-   g. Read the relevant file for full context around the commented lines (`startLine` 0 means the comment is about the whole file), then make the change with your file editing tools. Keep changes minimal and focused on the comment.
-   h. Only after the change was actually written, `resolve` the thread with a summary like "Fixed: <brief description>".
-   i. If the write was rejected, follow **Rejected edits** below: `reply`, do not `resolve`.
+   b. Comments from an agent's review can be wrong. Check the claim against the code before acting. If part of it is wrong, do only the correct part, and say in one short sentence what you did not do and why.
+   c. **Skip** threads whose last comment is an agent reply asking the user a question that has not been answered yet. Still process threads where an agent left the original review comment — those are actionable.
+   d. `nit` threads are minor but still actionable. Resolve them like any other.
+   e. `question` threads from the user: read the question, examine the code, and `resolve` with your answer as the summary.
+   f. Comments phrased as questions without the `question` severity ("should we add X?", "can we rename this?") are requests — make the change.
+   g. Interpret the intent: code change → make it; documentation → add/update docs; implied action → do it. If genuinely unclear, `reply` with "Could you clarify what change you'd like here?" instead of silently skipping.
+   h. Read the relevant file for full context around the commented lines (`startLine` 0 means the comment is about the whole file), then make the change with your file editing tools. Keep changes minimal and focused on the comment.
+   i. Only after the change was actually written, `resolve` the thread with a one-line summary like "Fixed: <what changed>".
+   j. If the write was rejected, follow **Rejected edits** below: `reply`, do not `resolve`.
 4. Call `list_threads` again to confirm the final status.
 5. Reply with a short summary: threads resolved, threads left open because an edit was rejected, threads skipped or awaiting clarification.

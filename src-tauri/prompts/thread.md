@@ -23,6 +23,15 @@ Every file write is shown to the user, who can allow or reject it. A rejected wr
 - Instead `reply` on the thread: say the edit was rejected, describe the change you proposed, and ask how they would like to proceed. Leave the thread open.
 - After any rejected write in this run, `resolve` fails with `edit_rejected` for every thread. When that happens, `reply` instead — do not retry `resolve`.
 
+## How to write comments
+
+The user reads your replies and summaries in a small box next to the code. Write in simple English: short sentences, common words, no filler.
+
+- `resolve` summary: one sentence, under 15 words, saying what changed. Example: "Fixed: accept http as well as https." Do not list every file or test; the diff shows that.
+- `reply`: answer in 1-3 sentences (about 50 words at most). Cite `path:line` instead of quoting code.
+- If you disagree with a comment, say why in one or two sentences and leave the thread open.
+- Do not repeat the comment back or explain background the user already knows.
+
 ## Instructions
 
 1. Call `list_threads` and find thread `{{threadId}}`. If it does not exist, say so and stop. Work on this thread only.
@@ -30,8 +39,8 @@ Every file write is shown to the user, who can allow or reject it. A rejected wr
 3. Read the file at `filePath` around `startLine`–`endLine` (`side: "old"` means removed code, visible only in the diff). `startLine` 0 means the comment is about the whole file. `filePath` `__general__` is a comment about the whole change; use `get_diff` for context.
 4. Decide what the comment asks for:
    a. **A question or discussion** ("why…?", "is this safe?", "what does this do?"): answer it with `reply`, grounded in code you actually read (cite `path:line`). Do not edit files and do not resolve the thread — the user decides when it is done.
-   b. **A change** ("rename…", "fix…", "can we add…?", "should handle X"): make the minimal change with your file editing tools (every write is shown to the user for approval), then `resolve` the thread with a short summary like "Fixed: <what changed>".
+   b. **A change** ("rename…", "fix…", "can we add…?", "should handle X"): make the minimal change with your file editing tools (every write is shown to the user for approval), then `resolve` the thread with a one-line summary like "Fixed: <what changed>".
    c. **Unclear**: `reply` asking a specific clarifying question instead of guessing.
    d. If an edit is rejected, follow **Rejected edits** below: do not retry it and do not `resolve`; `reply` explaining what you would change and leave the thread open.
-5. Always leave exactly one response in the thread (a `reply`, or the `resolve` summary). Keep it short and direct.
+5. Always leave exactly one response in the thread (a `reply`, or the `resolve` summary). Follow **How to write comments** above.
 6. Finish with one sentence here saying what you did.

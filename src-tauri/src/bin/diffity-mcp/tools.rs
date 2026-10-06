@@ -49,7 +49,7 @@ pub fn all() -> Vec<Tool> {
                     "startLine": { "type": "integer", "minimum": 0, "description": "First line (1-based) on the chosen side. Use 0 for a file-level comment." },
                     "endLine": { "type": "integer", "minimum": 0, "description": "Last line of the range. Defaults to startLine." },
                     "side": { "type": "string", "enum": ["new", "old"], "description": "\"new\" (default) for added or unchanged code, \"old\" for removed code." },
-                    "body": { "type": "string", "description": "Markdown comment. Lead with the problem; be specific and actionable." },
+                    "body": { "type": "string", "description": "Markdown comment in simple English: the problem and the fix in 1-3 short sentences." },
                     "severity": {
                         "type": "string",
                         "enum": ["must-fix", "suggestion", "nit", "question"],
@@ -77,7 +77,7 @@ pub fn all() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "threadId": { "type": "string", "description": THREAD_ID },
-                    "body": { "type": "string", "description": "Markdown reply." }
+                    "body": { "type": "string", "description": "Markdown reply in simple English, 1-3 short sentences." }
                 },
                 "required": ["threadId", "body"]
             }),
@@ -90,7 +90,7 @@ pub fn all() -> Vec<Tool> {
                 "type": "object",
                 "properties": {
                     "threadId": { "type": "string", "description": THREAD_ID },
-                    "summary": { "type": "string", "description": "What was done, e.g. \"Fixed: added a null check before ...\"." }
+                    "summary": { "type": "string", "description": "One short sentence on what changed, e.g. \"Fixed: added a null check.\"" }
                 },
                 "required": ["threadId"]
             }),

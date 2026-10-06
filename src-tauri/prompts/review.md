@@ -64,6 +64,8 @@ Skip style concerns, linter-catchable issues and pre-existing problems in unchan
 
 Re-read the surrounding code; grep to confirm "missing import"/"undefined" claims; read actual call sites for broken-caller claims; confirm a rule is scoped to the file; check for tests elsewhere before flagging missing tests. For a pattern repeated across files, comment on the first occurrence and mention the pattern in the general summary.
 
+Before you say a check is not needed, a value is safe, or an input cannot happen, try to break your own claim. Look for a counter-example (for example, `javascript://host/` has a hostname), and run a quick read-only snippet when that settles it. If you cannot confirm the claim, do not post it, or post it as a `question`. Another agent may act on your comment, so a wrong claim turns into a wrong fix.
+
 ## Step 3: Leave comments
 
 1. Post comments ordered by severity: all `must-fix` first, then `suggestion`, then `nit`, then `question`; file order within each.
@@ -72,13 +74,22 @@ Re-read the surrounding code; grep to confirm "missing import"/"undefined" claim
    - `suggestion` — concrete improvements with a clear reason (including missing tests and incomplete changes). Not style preferences.
    - `nit` — minor but still worth changing.
    - `question` — something unclear that needs the author's clarification.
-3. Use `add_comment` with `side: "new"` for added/modified code and `side: "old"` for removed code; set `endLine` when the issue spans lines. Lead with the problem, be specific and actionable. Include a code suggestion for small self-contained fixes; describe the approach for larger ones. Quote the exact rule for instruction violations. If a tool call is rejected because the line is not in the diff, pick a line that is.
+3. Use `add_comment` with `side: "new"` for added/modified code and `side: "old"` for removed code; set `endLine` when the issue spans lines. If a tool call is rejected because the line is not in the diff, pick a line that is. Follow **How to write comments** below.
 4. Then decide on a general comment (`add_general_comment`):
    - No findings → "No issues found. Checked for bugs and project-rule compliance."
    - 1-2 findings → skip unless there is a cross-cutting concern.
    - 3+ findings → summarize the themes.
    - Large diffs → always note the scope reviewed and group findings by area.
-   - No severity labels in the general comment. Lead with the verdict; no compliments, no filler, no narrating the code.
+   - No severity labels in the general comment. Lead with the verdict in one sentence, then at most 3 short bullets; no compliments, no filler, no narrating the code.
+
+## How to write comments
+
+Comments show in a small box next to the code, and the reader is busy. Write in simple English: short sentences, common words, no filler.
+
+- Say what is wrong and what to do, in 1-3 sentences (about 50 words at most). Lead with the problem.
+- Add a code suggestion only for a small fix, and only when it is clearer than words. For larger fixes, name the approach in one sentence.
+- Cite `path:line` instead of quoting code or walking through it. Do not explain things the author already knows.
+- For a project-rule violation, quote the rule in a few words.
 
 ## Step 4: Report
 
