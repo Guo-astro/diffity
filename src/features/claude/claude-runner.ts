@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import * as tauri from '../../lib/tauri';
 import { queryClient } from '../../lib/query-client';
 import { openComments, openSettingsAt } from '../../lib/ui-store';
-import type { AgentAction, AgentInfo, AgentMode, PermissionDiff, PermissionOption, RepoThread, RunModel } from '../../lib/types';
+import type { AgentAction, AgentInfo, AgentMode, PermissionDiff, PermissionOption, RepoThread, RunModel, Thread } from '../../lib/types';
 import { parseCommitRef, refForSession } from '../../lib/api';
 import { TREE_REF } from '../../lib/types';
 import { goToThread, viewLabel } from '../../lib/thread-location';
@@ -361,18 +361,17 @@ function refForThread(repoPath: string, threadId: string): string | null {
   return refForSession(cachedThreads().find((item) => item.id === threadId)?.sessionId);
 }
 
-/** Opens the run's view, scrolled to its first new thread (or the thread it worked on). */
-export function openRunResult(run: Pick<ClaudeRun, 'context' | 'ref' | 'newThreadIds' | 'threadIds'>) {
-  if (!run.ref) {
+/** Opens the run's view at the first of `threadIds` still on the diff; with several, the Comments panel lists them all. */
+export function openRunResult(repoPath: string, ref: string | null, threadIds: string[]) {
+  if (!ref) {
     return;
   }
-  const threadId = run.newThreadIds[0] ?? run.threadIds[0] ?? null;
-  const anchor = threadId ? cachedRepoThreads(run.context.repoPath).find((thread) => thread.id === threadId)?.anchor : undefined;
-  if (anchor && anchor !== 'current') {
+  const repoThreads = cachedRepoThreads(repoPath);
+  const onDiff = threadIds.filter((id) => (repoThreads.find((thread) => thread.id === id)?.anchor ?? 'current') === 'current');
+  if (threadIds.length > 1 || onDiff.length < threadIds.length) {
     openComments();
-    return;
   }
-  goToThread(run.context.repoPath, { ref: run.ref, threadId });
+  goToThread(repoPath, { ref, threadId: onDiff[0] ?? null });
 }
 
 function finishedMessage(run: ClaudeRun, added: number, name: string): string {
@@ -413,11 +412,10 @@ async function postRepliesToGitHub(sessionId: string, threadIds: string[], name:
   return posted;
 }
 
-async function batchOutcome(sessionId: string, threadIds: string[], name: string): Promise<{ title: string; detail: string | null } | null> {
+function batchOutcome(threads: Thread[], threadIds: string[], name: string): { title: string; detail: string | null } | null {
   if (threadIds.length === 0) {
     return null;
   }
-  const threads = await tauri.listThreads(sessionId).catch(() => []);
   const worked = threads.filter((thread) => threadIds.includes(thread.id));
   const resolved = worked.filter((thread) => thread.status !== 'open').length;
   const replied = worked.filter((thread) => thread.status === 'open' && thread.comments[thread.comments.length - 1]?.authorType === 'agent').length;
@@ -537,15 +535,19 @@ async function execute(run: ClaudeRun) {
   }
   const latest = useClaude.getState().runs.find((item) => item.id === run.id) ?? run;
   const finished = { ...latest, ref, newThreadIds };
-  const hasTarget = !!ref && (added > 0 || finished.threadIds.length > 0);
-  const batch = run.action.kind === 'resolve' ? await batchOutcome(sessionId, finished.threadIds, meta.short) : null;
+  const after = await tauri.listThreads(sessionId).catch(() => []);
+  // Only threads still open need the user; resolved ones are done and would just bury them.
+  const touched = new Set([...newThreadIds, ...finished.threadIds]);
+  const needsYou = after.filter((thread) => touched.has(thread.id) && thread.status === 'open').map((thread) => thread.id);
+  const hasTarget = !!ref && needsYou.length > 0;
+  const batch = run.action.kind === 'resolve' ? batchOutcome(after, finished.threadIds, meta.short) : null;
   const posted = await postRepliesToGitHub(sessionId, run.context.postRepliesToGitHub ?? [], meta.short);
   const postedNote = posted > 0 ? `Posted ${posted} repl${posted === 1 ? 'y' : 'ies'} to GitHub` : null;
   const description = batch ? [batch.detail, postedNote].filter(Boolean).join(' · ') : postedNote ?? undefined;
   toast.success(batch?.title ?? finishedMessage(finished, added, meta.short), {
     description,
     duration: hasTarget ? 12_000 : undefined,
-    action: hasTarget ? { label: batch || added > 0 ? 'Show comments' : 'Show thread', onClick: () => openRunResult(finished) } : undefined,
+    action: hasTarget ? { label: needsYou.length === 1 ? 'Show comment' : `Show ${needsYou.length} open`, onClick: () => openRunResult(run.context.repoPath, ref, needsYou) } : undefined,
   });
 }
 

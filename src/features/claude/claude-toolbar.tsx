@@ -73,7 +73,7 @@ export function ClaudeStatus() {
         {showCount && (
           canOpen ? (
             <button
-              onClick={() => openRunResult(run)}
+              onClick={() => openRunResult(run.context.repoPath, run.ref, run.newThreadIds)}
               className="text-text-secondary @max-2xl/titlebar:hidden underline decoration-text-muted/50 underline-offset-2 hover:text-text cursor-pointer"
               title={where ? `Show ${name}'s comments on ${where}` : `Show ${name}'s comments`}
             >
