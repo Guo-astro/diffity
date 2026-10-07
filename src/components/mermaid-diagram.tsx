@@ -21,8 +21,10 @@ function initMermaid(theme: 'light' | 'dark') {
 }
 
 let idCounter = 0;
+let renderCounter = 0;
 
-export function MermaidDiagram(props: { chart: string }) {
+/** `frameClassName` sizes the inline preview (200px tall unless set); the full diagram opens in a dialog. */
+export function MermaidDiagram(props: { chart: string; frameClassName?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,8 +42,9 @@ export function MermaidDiagram(props: { chart: string }) {
 
     let cancelled = false;
 
+    // A fresh id per render: reusing one while an earlier render of it is still running leaves an empty diagram.
     mermaid
-      .render(idRef.current, props.chart)
+      .render(`${idRef.current}-${++renderCounter}`, props.chart)
       .then(({ svg }) => {
         if (cancelled) {
           return;
@@ -75,11 +78,15 @@ export function MermaidDiagram(props: { chart: string }) {
       <div className="my-3 relative group">
         <div
           ref={containerRef}
-          className="flex justify-center overflow-hidden [&_svg]:max-w-full max-h-[200px]"
+          className={`flex justify-center overflow-hidden [&_svg]:max-w-full ${props.frameClassName ?? 'max-h-[200px]'}`}
         />
         {svgContent && (
           <button
-            onClick={() => dialogRef.current?.showModal()}
+            onClick={() => {
+              // Focus the dialog, not its close button, so the button does not open with a focus ring.
+              dialogRef.current?.showModal();
+              dialogRef.current?.focus();
+            }}
             className="absolute inset-0 flex items-end justify-center bg-gradient-to-t from-bg/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
           >
             <span className="mb-3 px-3 py-1.5 text-xs font-medium rounded-md bg-bg border border-border text-text">
@@ -91,7 +98,8 @@ export function MermaidDiagram(props: { chart: string }) {
 
       <dialog
         ref={dialogRef}
-        className="bg-overlay text-text ring-1 ring-overlay-border rounded-xl w-[90vw] max-h-[90vh] overflow-auto backdrop:bg-black/60 backdrop:backdrop-blur-sm p-0 m-auto fixed inset-0 h-fit"
+        tabIndex={-1}
+        className="outline-none bg-overlay text-text ring-1 ring-overlay-border rounded-xl w-[90vw] max-h-[90vh] overflow-auto backdrop:bg-black/60 backdrop:backdrop-blur-sm p-0 m-auto fixed inset-0 h-fit"
         onClick={(e) => {
           if (e.target === dialogRef.current) {
             dialogRef.current?.close();
@@ -107,7 +115,7 @@ export function MermaidDiagram(props: { chart: string }) {
             <XIcon className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-6 flex justify-center [&_svg]:!w-full [&_svg]:h-auto">
+        <div className="p-6 flex justify-center [&_svg]:!w-full [&_svg]:h-auto [&_svg]:block [&_svg]:mx-auto">
           {svgContent && (
             <div
               className="w-full"

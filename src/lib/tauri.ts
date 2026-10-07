@@ -18,6 +18,7 @@ import type {
   DiffResult,
   FileContent,
   FileVersions,
+  Guide,
   GitOpResult,
   GitStatus,
   GithubAuthStatus,
@@ -139,6 +140,8 @@ export const submitReview = (sessionId: string, body?: string | null, verdict?: 
   invoke<Review>('submit_review', { sessionId, body: body ?? null, verdict: verdict ?? null });
 export const discardReview = (sessionId: string) => invoke<void>('discard_review', { sessionId });
 export const listViewed = (sessionId: string) => invoke<ViewedFile[]>('list_viewed', { sessionId });
+export const getGuide = (sessionId: string) => invoke<Guide | null>('get_guide', { sessionId });
+export const deleteGuide = (sessionId: string) => invoke<void>('delete_guide', { sessionId });
 export const setViewed = (sessionId: string, filePath: string, contentHash: string, viewed: boolean, ref: string | null) =>
   invoke<void>('set_viewed', { sessionId, filePath, contentHash, viewed, ref });
 export const viewedChanges = (sessionId: string, filePath: string, ref: string | null) => invoke<string>('viewed_changes', { sessionId, filePath, ref });

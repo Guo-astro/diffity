@@ -44,6 +44,8 @@ function storeWidth(key: string, width: number | null) {
 
 interface SidebarFrameProps {
   view: RepoView;
+  /** Offer the Guide tab: the diff on screen is big enough for one, or has one. */
+  showGuide?: boolean;
   collapsible?: boolean;
   storageKey?: string;
   defaultWidth?: number;
@@ -51,7 +53,7 @@ interface SidebarFrameProps {
 }
 
 export function SidebarFrame(props: SidebarFrameProps) {
-  const { view, collapsible = true, storageKey = WIDTH_KEY, defaultWidth = DEFAULT_WIDTH, children } = props;
+  const { view, showGuide = false, collapsible = true, storageKey = WIDTH_KEY, defaultWidth = DEFAULT_WIDTH, children } = props;
   const collapsedSetting = useUi((state) => state.sidebarCollapsed);
   const collapsed = collapsible && collapsedSetting;
   const [width, setWidth] = useState(() => readStoredWidth(storageKey, defaultWidth));
@@ -102,7 +104,7 @@ export function SidebarFrame(props: SidebarFrameProps) {
   if (collapsed) {
     return (
       <div className="w-12 min-w-12 shrink-0 border-r border-border bg-sidebar flex flex-col items-center pt-2">
-        <ViewTabs current={view} vertical />
+        <ViewTabs current={view} vertical showGuide={showGuide} />
       </div>
     );
   }
@@ -113,7 +115,7 @@ export function SidebarFrame(props: SidebarFrameProps) {
       style={{ width }}
     >
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-        <ViewTabs current={view} />
+        <ViewTabs current={view} showGuide={showGuide} />
         {children}
       </div>
       <div

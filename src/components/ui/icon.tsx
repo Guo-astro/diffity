@@ -106,7 +106,6 @@ export const CodeIcon = lineGlyph('M7 5.5 3 10l4 4.5M13 5.5l4 4.5-4 4.5');
 export const CollapseAllIcon = lineGlyph('M6 3.5l4 4 4-4M6 16.5l4-4 4 4');
 export const ExpandAllIcon = lineGlyph('M6 7.5l4-4 4 4M6 12.5l4 4 4-4');
 export const ChevronUpDownIcon = lineGlyph('M6.5 7.5 10 4 13.5 7.5M6.5 12.5 10 16l3.5-3.5', 14);
-export const ActivityIcon = lineGlyph('M2.5 10h3.5l2.5-6 3 12 2.5-6h3.5', 14);
 
 export const ListIcon = makeGlyph(() => (
   <>
@@ -262,6 +261,13 @@ export const FileTextIcon = softGlyph((id) => (
   </>
 ));
 
+export const BookIcon = softGlyph(() => (
+  <>
+    <path d="M2.5 5.6c0-.88.74-1.58 1.62-1.52 2.85.2 5.25.98 7.13 2.3V20.4c-1.9-1.22-4.3-1.92-7.18-2.08A1.6 1.6 0 0 1 2.5 16.73z" />
+    <path d="M21.5 5.6c0-.88-.74-1.58-1.62-1.52-2.85.2-5.25.98-7.13 2.3V20.4c1.9-1.22 4.3-1.92 7.18-2.08a1.6 1.6 0 0 0 1.57-1.6z" />
+  </>
+));
+
 export const FolderSimpleIcon = softGlyph(() => <path d="M2.5 7a3 3 0 0 1 3-3h3.7a2.2 2.2 0 0 1 1.6.7l1.3 1.4a2.2 2.2 0 0 0 1.6.7h4.8a3 3 0 0 1 3 3V17a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3z" />);
 
 export const FolderOpenIcon = softGlyph((id) => (
@@ -406,6 +412,14 @@ export const EllipsisIcon = softGlyph(() => (
     <circle cx="5" cy="12" r="2.2" fill="currentColor" stroke="none" />
     <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
     <circle cx="19" cy="12" r="2.2" fill="currentColor" stroke="none" />
+  </>
+));
+
+export const EllipsisVerticalIcon = softGlyph(() => (
+  <>
+    <circle cx="12" cy="5" r="2.2" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="19" r="2.2" fill="currentColor" stroke="none" />
   </>
 ));
 

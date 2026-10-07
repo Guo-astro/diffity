@@ -1,26 +1,30 @@
 import { useRepoNav } from '../../hooks/use-repo';
 import { cn } from '../../lib/cn';
 import { segmentActive, segmentInactive } from '../ui/button-styles';
-import { ChangesIcon, FilesIcon, type GlyphProps } from '../ui/icon';
+import { BookIcon, ChangesIcon, FilesIcon, type GlyphProps } from '../ui/icon';
 import type { ComponentType } from 'react';
 
-export type RepoView = 'diff' | 'tree' | 'overview';
+/** `guide` is the diff page reading the change chapter by chapter. */
+export type RepoView = 'diff' | 'guide' | 'tree' | 'overview';
 
 const TABS: { value: RepoView; label: string; hint: string; icon: ComponentType<GlyphProps> }[] = [
   { value: 'tree', label: 'Files', hint: 'Browse and comment on any file', icon: FilesIcon },
-  { value: 'diff', label: 'Changes', hint: 'Review changes', icon: ChangesIcon },
+  { value: 'diff', label: 'Diff', hint: 'Every changed file (G toggles the guide)', icon: ChangesIcon },
+  { value: 'guide', label: 'Guide', hint: 'The change chapter by chapter, explained by an agent (G)', icon: BookIcon },
 ];
 
-export function ViewTabs(props: { current: RepoView; vertical?: boolean }) {
-  const { current, vertical = false } = props;
+/** `showGuide`: the diff on screen is big enough for a guide, or has one. */
+export function ViewTabs(props: { current: RepoView; vertical?: boolean; showGuide?: boolean }) {
+  const { current, vertical = false, showGuide = false } = props;
   const nav = useRepoNav();
+  const tabs = showGuide ? TABS : TABS.filter((tab) => tab.value !== 'guide');
 
   const go = (view: RepoView) => {
     if (view === current) {
       return;
     }
-    if (view === 'diff') {
-      nav.toLastDiff();
+    if (view === 'diff' || view === 'guide') {
+      nav.toLastDiff(view === 'guide' ? 'guide' : 'files');
       return;
     }
     if (view === 'tree') {
@@ -33,7 +37,7 @@ export function ViewTabs(props: { current: RepoView; vertical?: boolean }) {
   if (vertical) {
     return (
       <nav className="flex flex-col items-center gap-1" aria-label="Views">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = tab.value === current;
           return (
@@ -57,7 +61,7 @@ export function ViewTabs(props: { current: RepoView; vertical?: boolean }) {
 
   return (
     <nav className="flex items-center gap-0.5 mx-3 mt-3 mb-2 p-0.5 rounded-lg bg-fill shrink-0" aria-label="Views">
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const Icon = tab.icon;
         const active = tab.value === current;
         return (

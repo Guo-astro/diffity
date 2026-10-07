@@ -53,7 +53,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
   {
-    title: 'Changes',
+    title: 'Diff',
     shortcuts: [
       { id: 'file-next', label: 'Next file', keys: ['J'] },
       { id: 'file-prev', label: 'Previous file', keys: ['K'] },
@@ -68,6 +68,14 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
       { label: 'Next or previous match', keys: [chord('G'), chord('G', { shift: true })] },
       { id: 'copy-path', label: 'Copy the focused file’s path', keys: [chord('C', { alt: true })] },
       { id: 'copy-contents', label: 'Copy the focused file’s contents', keys: [chord('C', { alt: true, shift: true })] },
+    ],
+  },
+  {
+    title: 'Guide',
+    shortcuts: [
+      { id: 'guide', label: 'Switch between the diff and the guide', keys: ['G'] },
+      { label: 'Next or previous chapter', keys: [']', '['] },
+      { label: 'Next or previous file, in reading order', keys: ['J', 'K'] },
     ],
   },
   {

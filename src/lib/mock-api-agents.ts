@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   ContextChip,
   GithubAuthStatus,
+  Guide,
   NewThread,
   PullRequest,
   ReviewSession,
@@ -22,6 +23,65 @@ export interface AgentMockDeps {
   insertThread: (input: NewThread) => Thread;
   touch: (thread: Thread) => Thread;
   threads: Map<string, Thread>;
+  guides: Map<string, Guide>;
+  /** Fingerprint of the mock diff for a ref. */
+  fingerprintFor: (ref: string) => string;
+}
+
+/** What the mock agent writes for the fixture diff (tiny-serve gains an in-memory cache). */
+function fixtureGuide(sessionId: string, ref: string, fingerprint: string): Guide {
+  return {
+    sessionId,
+    ref,
+    fingerprint,
+    agentName: 'Claude Code',
+    createdAt: new Date().toISOString(),
+    summary:
+      'The server now keeps the files it serves in an **in-memory cache**, so repeat requests skip the disk. Errors are split into *not found* and *internal error*, and a small health report is added for monitoring.',
+    before: 'Every request read the file from disk, and any failure answered `404`.',
+    after: 'Repeat requests are answered from memory (up to 500 files), and only a missing file answers `404`; other failures answer `500`.',
+    diagram:
+      'flowchart LR\n  req["Request"] --> handle["handle()"]\n  handle --> cached{"getCached()"}:::added\n  cached -- hit --> respond["Respond"]\n  cached -- miss --> disk["readFile()"]\n  disk --> store["setCached()"]:::added\n  store --> respond\n  handle -. error .-> status["404 or 500"]:::changed',
+    chapters: [
+      {
+        title: 'Cache file reads',
+        summary:
+          '`src/cache.ts` (renamed from `legacy-cache.ts`) holds up to 500 file bodies and drops the oldest entry when it is full. `handle()` in `src/server.ts` asks the cache first and stores what it reads from disk.',
+        focus: ['Eviction removes the oldest entry, not the least recently used'],
+        attention: 'high',
+        files: ['src/cache.ts', 'src/server.ts'],
+        notes: [
+          { path: 'src/cache.ts', line: 9, side: 'new', text: '`Map` keeps insertion order, so the first key is the oldest one *added*, not the least recently read.', critical: false },
+          { path: 'src/server.ts', line: 45, side: 'new', text: 'Nothing clears this entry when the file changes on disk, so edits are not served until the server restarts.', critical: true },
+          { path: 'src/server.ts', side: 'new', text: 'The cache is on by default (`cache: true` in `DEFAULT_OPTIONS`).', critical: false },
+        ],
+      },
+      {
+        title: 'Report server health',
+        summary: 'A new `healthReport()` reads heap use and uptime, and `handleHealth()` answers `200` or `503` with the report as JSON. Nothing calls it yet.',
+        focus: ['The 512 MB limit is hard-coded'],
+        attention: 'normal',
+        files: ['src/health.ts'],
+        notes: [],
+      },
+      {
+        title: 'Format sizes and plurals',
+        summary: '`formatBytes()` now rounds exact kilobytes up a unit and prints whole bytes, and `pluralize()` returns the count with the word.',
+        focus: [],
+        attention: 'normal',
+        files: ['src/utils/format.ts'],
+        notes: [{ path: 'src/utils/format.ts', line: 26, side: 'new', text: '`pluralize()` now returns the count too, so callers that print the count themselves will show it twice.', critical: false }],
+      },
+      {
+        title: 'Docs, config and assets',
+        summary: 'The README documents `--no-cache` and the cache flow, the old `config.json` is removed and a logo is added.',
+        focus: [],
+        attention: 'low',
+        files: ['README.md', 'config.json', 'docs/logo.svg'],
+        notes: [],
+      },
+    ],
+  };
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -189,6 +249,14 @@ export function createAgentMockHandlers(deps: AgentMockDeps): Record<string, (ar
     });
     if (stop()) {
       return 'cancelled';
+    }
+
+    if (action.kind === 'guide') {
+      const session = chat ? chat.sessionId : deps.sessionFor(deps.repoPath, action.ref).id;
+      emit({ type: 'toolCall', id: 'g1', title: 'set_guide', kind: 'other', status: 'in_progress', locations: [] });
+      await wait(700);
+      deps.guides.set(session, fixtureGuide(session, action.ref, deps.fingerprintFor(action.ref)));
+      emit({ type: 'toolCallUpdate', id: 'g1', status: 'completed' });
     }
 
     if (action.kind === 'review') {

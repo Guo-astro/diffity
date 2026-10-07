@@ -22,7 +22,7 @@ import { openShortcuts } from '../../lib/ui-store';
 import { useDiffStaleness } from '../../hooks/use-diff-staleness';
 import { type ViewMode, getFilePath, getAutoCollapsedPaths, deferReason } from '../../lib/diff-utils';
 import { buildFirstOpenThreadByFile, buildThreadCountsByFile } from '../../lib/comment-navigation';
-import { focusThreadElement, getHunkHeaders, scrollToElement } from '../../lib/dom-utils';
+import { focusFileElement, focusThreadElement, getHunkHeaders, scrollToElement } from '../../lib/dom-utils';
 import { setFocusThread, useUi } from '../../lib/ui-store';
 import { orderLikeSidebar } from '../../lib/file-tree';
 import { contentsLabel, copyFileContents, copyFileDiff, copyRelativePath, handleCopyShortcut } from '../../lib/file-copy';
@@ -36,7 +36,7 @@ import { useUncommittedPaths } from '../layout/diff-context-bar';
 import type { CommentThread, LineSelection } from '../comments/types';
 import { DiffBar, hiddenFilesLabel } from './view-options';
 import { repoBase } from '../../hooks/use-repo';
-import { getRepoPath } from '../../lib/api';
+import { errorMessage, getRepoPath } from '../../lib/api';
 import { enterLargeDiffScope } from '../../lib/large-diff';
 import { readViewMemory, writeViewMemory } from '../../lib/view-memory';
 import { readViewState, useViewState, writeViewState } from '../../lib/view-state';
@@ -48,13 +48,22 @@ import type { SinceViewedInfo } from './since-viewed';
 import { useGitHubPr, useOwnPr } from '../../hooks/use-repo-state';
 import { prDiffRef, uncommittedTwin } from '../layout/ref-menu';
 import { openCommitDialog } from '../../features/pr/commit-dialog';
-import { ChevronDownIcon, ChevronUpIcon, CollapseAllIcon, CopyIcon, ExpandAllIcon, EyeOffIcon, GitHubIcon, GitPullRequestIcon, PushIcon, RefreshIcon, SendIcon, SparkleIcon, SplitViewIcon, UnifiedViewIcon } from '../ui/icon';
+import { BookIcon, ChangesIcon, ChevronDownIcon, ChevronUpIcon, CollapseAllIcon, CopyIcon, ExpandAllIcon, EyeOffIcon, GitHubIcon, GitPullRequestIcon, PushIcon, RefreshIcon, SendIcon, SparkleIcon, SplitViewIcon, UnifiedViewIcon } from '../ui/icon';
 import { shortcutHint } from '../../lib/shortcuts';
 import { FindBar } from '../../features/find/find-bar';
 import { useFind, useFindSource, type FindSource } from '../../features/find/find-store';
 import { diffFindLines } from '../../lib/find';
 import { filePatchOptions } from '../../queries/diff';
 import { loadHeldBackFile } from '../../lib/large-diff';
+import { useHotkeys } from 'react-hotkeys-hook';
+import { GuideSidebar, GuideSidebarEmpty } from '../../features/guide/guide-sidebar';
+import { GuideReader } from '../../features/guide/guide-reader';
+import { GuideStart } from '../../features/guide/guide-start';
+import { isGuideStale, isGuideWorthy, readingChapters, stepLabel } from '../../features/guide/guide-model';
+import { deleteGuide, OVERVIEW_STEP, startGuide, useGuide, useGuideRun, type GuideStep } from '../../features/guide/use-guide';
+import { setGuideOnScreen } from '../../features/guide/guide-on-screen';
+import { useRunPick } from '../../features/claude/model-setting';
+import { GENERAL_THREAD_FILE_PATH } from '../comments/types';
 
 const NO_THREADS: CommentThread[] = [];
 
@@ -169,6 +178,68 @@ export function DiffPage(props: DiffPageProps) {
   const changedSinceViewed = useMemo(() => new Set(changedFiles.keys()), [changedFiles]);
   const changedSeenRef = useRef<Set<string>>(new Set());
 
+  const repoPath = getRepoPath();
+  const [mode, setMode] = useViewState<'files' | 'guide'>(`diff:${refParam}:mode`, 'files');
+  const [guideStep, setGuideStep] = useViewState<GuideStep>(`diff:${refParam}:guideStep`, OVERVIEW_STEP);
+  const { data: guide } = useGuide(reviewsEnabled ? sessionId : null);
+  const guideRun = useGuideRun(repoPath, refParam);
+  const reviewPick = useRunPick('review', repoPath);
+  const chapters = useMemo(() => (guide && diff ? readingChapters(guide, diff.files) : []), [guide, diff]);
+  const guideStale = !!guide && isGuideStale(guide, showIgnored ? undefined : rawDiff?.fingerprint, chapters);
+  // A guide pays off on bigger changes; on a few small files the diff reads fine as it is.
+  const guideEligible = reviewsEnabled && (!!guide || !!guideRun || isGuideWorthy(diff?.files.length ?? 0, (diff?.stats.totalAdditions ?? 0) + (diff?.stats.totalDeletions ?? 0)));
+  const guideMode = mode === 'guide' && guideEligible;
+  // The guide sits beside a story column, so it keeps its own unified/split choice, unified by default.
+  const [guideViewMode, setGuideViewMode] = useViewState<ViewMode>('guide:viewMode', 'unified');
+  const shownViewMode = guideMode ? guideViewMode : viewMode;
+  const setShownViewMode = guideMode ? setGuideViewMode : setViewMode;
+  const guideOpen = guideMode && !!guide && chapters.length > 0;
+  const step = chapters.some((chapter) => chapter.key === guideStep) ? guideStep : OVERVIEW_STEP;
+  const guidePr = githubDetails && refParam === prDiffRef(githubDetails) ? { title: githubDetails.pr.title, body: githubDetails.pr.body } : null;
+  const rewriteGuide = guideRun ? null : () => startGuide(repoPath, refParam, sessionId, reviewPick, guidePr);
+
+  /** Opens the chapter holding `path` and scrolls to the file (opening it when `expand`), or to one of its comments. */
+  const revealInGuide = useCallback((path: string, threadId?: string, expand = false) => {
+    if (path === GENERAL_THREAD_FILE_PATH) {
+      setGuideStep(OVERVIEW_STEP);
+      if (threadId) {
+        focusThreadElement(threadId, 20);
+      }
+      return;
+    }
+    const chapter = chapters.find((item) => item.files.some((file) => getFilePath(file) === path));
+    if (!chapter) {
+      return;
+    }
+    setGuideStep(chapter.key);
+    setActiveFile(path);
+    if (expand) {
+      setCollapsedFiles((prev) => {
+        if (!prev.has(path)) {
+          return prev;
+        }
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
+    }
+    if (threadId) {
+      focusThreadElement(threadId, 20);
+      return;
+    }
+    focusFileElement(path);
+  }, [chapters, setGuideStep, setActiveFile]);
+
+  useEffect(() => {
+    if (!guideMode) {
+      return;
+    }
+    setGuideOnScreen(repoPath, refParam);
+    return () => setGuideOnScreen(null, null);
+  }, [guideMode, repoPath, refParam]);
+
+  useHotkeys('g', () => setMode(guideMode ? 'files' : 'guide'), { preventDefault: true, enabled: guideEligible }, [guideMode]);
+
   useEffect(() => {
     localStorage.setItem('diffity-view-mode', viewMode);
   }, [viewMode]);
@@ -275,11 +346,23 @@ export function DiffPage(props: DiffPageProps) {
     if (!diff) {
       return;
     }
+    if (guideOpen) {
+      const order = chapters.flatMap((chapter) => chapter.files.map((file) => getFilePath(file)));
+      const shown = chapters.find((chapter) => chapter.key === step);
+      const inShown = !!activeFile && !!shown?.files.some((file) => getFilePath(file) === activeFile);
+      // Start from the chapter on screen when the last file visited is elsewhere.
+      const current = inShown ? order.indexOf(activeFile) : shown ? order.indexOf(getFilePath(shown.files[0])) - 1 : -1;
+      const target = order[Math.max(0, Math.min(order.length - 1, current + direction))];
+      if (target) {
+        revealInGuide(target);
+      }
+      return;
+    }
     const nextIdx = Math.max(0, Math.min(diff.files.length - 1, currentFileIdx.current + direction));
     currentFileIdx.current = nextIdx;
     const path = getFilePath(diff.files[nextIdx]);
     diffViewRef.current?.scrollToFile(path);
-  }, [diff]);
+  }, [diff, guideOpen, chapters, step, activeFile, revealInGuide]);
 
   const navigateHunk = useCallback((direction: number) => {
     const hunks = getHunkHeaders();
@@ -336,8 +419,8 @@ export function DiffPage(props: DiffPageProps) {
         navigateFile(1);
       }
     },
-    onUnifiedView: () => setViewMode('unified'),
-    onSplitView: () => setViewMode('split'),
+    onUnifiedView: () => setShownViewMode('unified'),
+    onSplitView: () => setShownViewMode('split'),
     onFocusSearch: () => {
       const input = document.querySelector(
         'input[placeholder="Filter files"]',
@@ -386,9 +469,13 @@ export function DiffPage(props: DiffPageProps) {
   }, []);
 
   const handleSidebarFileClick = useCallback((path: string) => {
+    if (guideOpen) {
+      revealInGuide(path);
+      return;
+    }
     setActiveFile(path);
     diffViewRef.current?.scrollToFile(path);
-  }, [setActiveFile]);
+  }, [setActiveFile, guideOpen, revealInGuide]);
 
   const handleScrollToThread = useCallback((threadId: string, filePath: string) => {
     setActiveFile(filePath);
@@ -400,12 +487,27 @@ export function DiffPage(props: DiffPageProps) {
       next.delete(filePath);
       return next;
     });
+    if (guideOpen) {
+      revealInGuide(filePath, threadId);
+      return;
+    }
     diffViewRef.current?.scrollToThread(threadId, filePath);
-  }, []);
+  }, [guideOpen, revealInGuide]);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const targetThreadId = searchParams.get('thread');
   const targetFile = searchParams.get('file');
+  const viewParam = searchParams.get('view');
+
+  useEffect(() => {
+    if (viewParam !== 'guide' && viewParam !== 'files') {
+      return;
+    }
+    setMode(viewParam);
+    const next = new URLSearchParams(searchParams);
+    next.delete('view');
+    setSearchParams(next, { replace: true });
+  }, [viewParam, searchParams, setSearchParams, setMode]);
 
   useEffect(() => {
     if (!targetThreadId && !targetFile) {
@@ -429,12 +531,12 @@ export function DiffPage(props: DiffPageProps) {
       return;
     }
     setFocusThread(thread.id);
-    if (!diffViewRef.current) {
+    if (!diffViewRef.current && !guideOpen) {
       focusThreadElement(thread.id);
       return;
     }
     requestAnimationFrame(() => handleScrollToThread(thread.id, thread.filePath));
-  }, [targetThreadId, targetFile, diff, threads, threadsFetched, reviewsEnabled, searchParams, setSearchParams, handleScrollToThread]);
+  }, [targetThreadId, targetFile, diff, threads, threadsFetched, reviewsEnabled, searchParams, setSearchParams, handleScrollToThread, guideOpen]);
 
   const handleSidebarCommentedFileClick = useCallback((path: string) => {
     const threadId = firstOpenThreadByFile.get(path);
@@ -460,14 +562,23 @@ export function DiffPage(props: DiffPageProps) {
 
   const paletteActions = useMemo<PaletteAction[]>(() => {
     const list: PaletteAction[] = [
-      { id: 'view-unified', title: 'Unified diff', group: 'View', hint: shortcutHint('view-unified'), icon: <UnifiedViewIcon size="sm" />, run: () => setViewMode('unified') },
-      { id: 'view-split', title: 'Split diff', group: 'View', hint: shortcutHint('view-split'), icon: <SplitViewIcon size="sm" />, run: () => setViewMode('split') },
+      { id: 'view-unified', title: 'Unified diff', group: 'View', hint: shortcutHint('view-unified'), icon: <UnifiedViewIcon size="sm" />, run: () => setShownViewMode('unified') },
+      { id: 'view-split', title: 'Split diff', group: 'View', hint: shortcutHint('view-split'), icon: <SplitViewIcon size="sm" />, run: () => setShownViewMode('split') },
       { id: 'view-whitespace', title: hideWhitespace ? 'Show whitespace changes' : 'Hide whitespace changes', group: 'View', icon: <EyeOffIcon size="sm" />, run: () => setHideWhitespace(!hideWhitespace) },
       { id: 'view-collapse', title: 'Collapse all files', group: 'View', hint: shortcutHint('view-collapse'), icon: <CollapseAllIcon size="sm" />, run: () => setCollapsedFiles(new Set(diff?.files.map((file) => getFilePath(file)) ?? [])) },
       { id: 'view-expand', title: 'Expand all files', group: 'View', icon: <ExpandAllIcon size="sm" />, run: () => setCollapsedFiles(new Set()) },
       { id: 'file-next', title: 'Next file', group: 'View', hint: shortcutHint('file-next'), keywords: 'down', icon: <ChevronDownIcon size="sm" />, run: () => navigateFile(1) },
       { id: 'file-prev', title: 'Previous file', group: 'View', hint: shortcutHint('file-prev'), keywords: 'up', icon: <ChevronUpIcon size="sm" />, run: () => navigateFile(-1) },
       { id: 'claude-review', title: 'Ask Claude to review…', group: 'Actions', keywords: 'ai review', icon: <SparkleIcon size="sm" className="text-claude" />, run: () => requestAskClaude(refParam) },
+      ...(guideEligible ? [{
+        id: 'guide',
+        title: guideMode ? 'Show the diff' : guide ? 'Open the guide' : 'Write a guide…',
+        group: 'View',
+        hint: shortcutHint('guide'),
+        keywords: 'walkthrough chapters story explain tour ai',
+        icon: guideMode ? <ChangesIcon size="sm" /> : <BookIcon size="sm" />,
+        run: () => setMode(guideMode ? 'files' : 'guide'),
+      }] : []),
       { id: 'claude-send', title: 'Send comments to Claude…', group: 'Actions', keywords: 'ai resolve fix', icon: <SendIcon size="sm" className="text-claude" />, run: requestSendToClaude },
     ];
     if (activeFile) {
@@ -492,7 +603,7 @@ export function DiffPage(props: DiffPageProps) {
       list.push({ id: 'commit-push', title: `Commit & push to PR #${githubDetails.prNumber}`, group: 'Actions', icon: <PushIcon size="sm" />, run: () => openCommitDialog(githubDetails.prNumber) });
     }
     return list;
-  }, [hideWhitespace, diff, navigateFile, refParam, ownPr, githubDetails, activeFile]);
+  }, [hideWhitespace, diff, navigateFile, refParam, ownPr, githubDetails, activeFile, guideEligible, guideMode, guide, setMode, setShownViewMode]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -543,10 +654,14 @@ export function DiffPage(props: DiffPageProps) {
         if (deferReason(file)) {
           loadHeldBackFile(match.scope);
         }
+        if (guideOpen) {
+          revealInGuide(match.scope);
+          return;
+        }
         diffViewRef.current?.revealFile(match.scope);
       },
     };
-  }, [diff, omittedFiles, omittedPatches]);
+  }, [diff, omittedFiles, omittedPatches, guideOpen, revealInGuide]);
   useFindSource(findSource);
 
   const handleActiveFileFromScroll = useCallback((path: string) => {
@@ -603,6 +718,26 @@ export function DiffPage(props: DiffPageProps) {
       <Workspace>
       <PrSession diffRef={refParam} threads={allThreads} />
       <div className="flex flex-1 min-h-0 overflow-hidden">
+        {guideOpen && guide && !isEmpty ? (
+          <GuideSidebar
+            guide={guide}
+            chapters={chapters}
+            step={step}
+            onStep={setGuideStep}
+            reviewedFiles={reviewedFiles}
+            onReviewedChange={handleReviewedChange}
+            onFileClick={(path) => revealInGuide(path, undefined, true)}
+            onRewrite={rewriteGuide}
+            onDelete={() => {
+              if (sessionId) {
+                setMode('files');
+                void deleteGuide(sessionId).catch((err) => toast.error(errorMessage(err)));
+              }
+            }}
+          />
+        ) : guideMode && !isEmpty ? (
+          <GuideSidebarEmpty writing={!!guideRun} />
+        ) : (
         <Sidebar
           files={diff.files}
           activeFile={isEmpty ? null : activeFile}
@@ -613,7 +748,9 @@ export function DiffPage(props: DiffPageProps) {
           onCommentedFileClick={handleSidebarCommentedFileClick}
           stats={isEmpty ? undefined : diff.stats}
           stateKey={`diff:${refParam}:sidebar`}
+          showGuide={guideEligible}
         />
+        )}
         {isEmpty ? (
           <div className="flex flex-1 min-w-0 flex-col overflow-y-auto">
             <DiffEmptyState
@@ -641,32 +778,71 @@ export function DiffPage(props: DiffPageProps) {
         ) : (
           <div className="relative flex flex-1 min-w-0 flex-col">
             <FindBar className="top-12" />
-            <DiffBar
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-              hideWhitespace={hideWhitespace}
-              onHideWhitespaceChange={setHideWhitespace}
-              ignored={{ hiddenCount: diff.hiddenFiles?.length ?? 0, showing: showIgnored, onShowingChange: setShowIgnored }}
-              onExpandAll={() => setCollapsedFiles(new Set())}
-              onCollapseAll={() => setCollapsedFiles(new Set(allPaths))}
-              commentNav={
-                <CommentToolbarActions
-                  threads={threads}
-                  onScrollToThread={handleScrollToThread}
-                  onDeleteAllComments={commentActions.deleteAllThreads}
-                  formatForCopy={() => formatThreadsForCopy(threads, diff, refParam)}
-                  extras={false}
-                />
-              }
-              comments={{
-                count: threads.length,
-                formatForCopy: () => formatThreadsForCopy(threads, diff, refParam),
-                onDeleteAll: commentActions.deleteAllThreads,
-              }}
-            />
+            {(!guideMode || guideOpen) && (
+              <DiffBar
+                viewMode={shownViewMode}
+                onViewModeChange={setShownViewMode}
+                hideWhitespace={hideWhitespace}
+                onHideWhitespaceChange={setHideWhitespace}
+                leading={guideOpen ? <span className="mr-1 text-xs text-text-secondary tabular-nums shrink-0">{stepLabel(chapters, step)}</span> : undefined}
+                ignored={{ hiddenCount: diff.hiddenFiles?.length ?? 0, showing: showIgnored, onShowingChange: setShowIgnored }}
+                onExpandAll={() => setCollapsedFiles(new Set())}
+                onCollapseAll={() => setCollapsedFiles(new Set(allPaths))}
+                commentNav={
+                  <CommentToolbarActions
+                    threads={threads}
+                    onScrollToThread={handleScrollToThread}
+                    onDeleteAllComments={commentActions.deleteAllThreads}
+                    formatForCopy={() => formatThreadsForCopy(threads, diff, refParam)}
+                    extras={false}
+                  />
+                }
+                comments={{
+                  count: threads.length,
+                  formatForCopy: () => formatThreadsForCopy(threads, diff, refParam),
+                  onDeleteAll: commentActions.deleteAllThreads,
+                }}
+              />
+            )}
             {composerMoved && pendingSelection && (
               <MovedComposer selection={pendingSelection} onSubmit={handleAddThread} onCancel={() => setPendingSelection(null)} />
             )}
+            {guideMode && !guideOpen && (
+              <GuideStart diffRef={refParam} sessionId={sessionId} fileCount={diff.files.length} pr={guidePr} />
+            )}
+            {guideOpen && guide && (
+              <GuideReader
+                guide={guide}
+                chapters={chapters}
+                step={step}
+                onStep={setGuideStep}
+                stale={guideStale}
+                onRewrite={rewriteGuide}
+                rewriting={!!guideRun}
+                diffRef={refParam}
+                viewMode={shownViewMode}
+                collapsedFiles={collapsedFiles}
+                onToggleCollapse={handleToggleCollapse}
+                reviewedFiles={reviewedFiles}
+                onReviewedChange={handleReviewedChange}
+                sinceViewedFiles={sinceViewedFiles}
+                baseRef={refParam}
+                canRevert={canRevert}
+                onRevert={handleRevert}
+                scrollRef={(node) => {
+                  mainRef.current = node;
+                }}
+                threads={threads}
+                commentsEnabled={reviewsEnabled}
+                commentActions={commentActions}
+                onAddThread={handleAddThread}
+                pendingSelection={pendingSelection}
+                onPendingSelectionChange={setPendingSelection}
+                hideWhitespace={hideWhitespace}
+                onFileClick={(path) => revealInGuide(path, undefined, true)}
+              />
+            )}
+            {!guideMode && (
             <DiffView
               diff={diff}
               viewMode={viewMode}
@@ -697,6 +873,7 @@ export function DiffPage(props: DiffPageProps) {
               hideWhitespace={hideWhitespace}
               memoryKey={`diff:${refParam}:${hideWhitespace}`}
             />
+            )}
           </div>
         )}
       </div>

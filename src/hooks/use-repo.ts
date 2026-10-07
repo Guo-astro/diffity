@@ -23,9 +23,10 @@ export function useRepoNav() {
     navigate(`${base}/diff?ref=${encodeURIComponent(ref)}`);
   }, [navigate, base]);
 
-  /** Changes as you left it: the same ref (commit, PR, compare), falling back to uncommitted changes. */
-  const toLastDiff = useCallback(() => {
-    navigate(lastViewLocationFor(repoPath, 'diff') ?? `${base}/diff?ref=work`);
+  /** Changes as you left it: the same ref (commit, PR, compare), falling back to uncommitted changes. `view` opens its diff or its guide. */
+  const toLastDiff = useCallback((view?: 'files' | 'guide') => {
+    const location = lastViewLocationFor(repoPath, 'diff') ?? `${base}/diff?ref=work`;
+    navigate(view ? `${location}${location.includes('?') ? '&' : '?'}view=${view}` : location);
   }, [navigate, repoPath, base]);
 
   /** Without a path, Files opens where you left it. */

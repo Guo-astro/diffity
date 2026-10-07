@@ -18,6 +18,8 @@ interface DiffBarProps {
   onExpandAll: () => void;
   onCollapseAll: () => void;
   commentNav?: ReactNode;
+  /** Shown first, e.g. where the reader is in the guide. */
+  leading?: ReactNode;
   /** Copy / delete-all for the comments in this view, shown in ⋯ when there are any. */
   comments?: { count: number; formatForCopy: () => string; onDeleteAll: () => void };
 }
@@ -59,7 +61,7 @@ function IgnoredFilesChip(props: { hiddenCount: number; showing: boolean; onShow
 }
 
 export function DiffBar(props: DiffBarProps) {
-  const { viewMode, onViewModeChange, hideWhitespace, onHideWhitespaceChange, ignored, onExpandAll, onCollapseAll, commentNav, comments } = props;
+  const { viewMode, onViewModeChange, hideWhitespace, onHideWhitespaceChange, ignored, onExpandAll, onCollapseAll, commentNav, leading, comments } = props;
   const menu = useMenu();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const run = (action: () => void) => () => {
@@ -69,6 +71,7 @@ export function DiffBar(props: DiffBarProps) {
 
   return (
     <div className="flex items-center gap-2 h-10 shrink-0 px-5 border-b border-border-muted bg-bg">
+      {leading}
       {commentNav}
       <span className="flex-1" />
       {ignored && <IgnoredFilesChip {...ignored} />}

@@ -8,6 +8,7 @@ import { HunkHeader, type ExpandControls } from './hunk-header';
 import { CommentThread } from '../comments/comment-thread';
 import { CommentFormRow } from '../comments/comment-form-row';
 import { UndoIcon } from '../ui/icon';
+import { GuideLineNotes } from '../../features/guide/guide-notes';
 
 interface HunkBlockProps {
   hunk: DiffHunk;
@@ -64,6 +65,10 @@ export function renderLineWithComments(
       onCommentClick={props.onCommentClick}
     />
   );
+
+  if (activeLine !== null) {
+    result.push(<GuideLineNotes key={`notes-${key}`} filePath={props.filePath} side={side} line={activeLine} colSpan={4} />);
+  }
 
   if (activeLine !== null && props.threads) {
     const lineThreads = props.threads.filter(t => t.endLine === activeLine && t.side === side);

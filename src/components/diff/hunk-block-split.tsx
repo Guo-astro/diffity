@@ -10,6 +10,7 @@ import { CommentLineNumber } from '../comments/comment-line-number';
 import { CommentThread } from '../comments/comment-thread';
 import { CommentFormRow } from '../comments/comment-form-row';
 import { UndoIcon } from '../ui/icon';
+import { GuideLineNotes } from '../../features/guide/guide-notes';
 
 interface HunkBlockSplitProps {
   hunk: DiffHunk;
@@ -197,6 +198,13 @@ export function renderSplitRows(
     );
 
     const threadRows: React.ReactNode[] = [];
+
+    if (leftNum !== null) {
+      threadRows.push(<GuideLineNotes key={`notes-old-${leftNum}`} filePath={props.filePath} side="old" line={leftNum} colSpan={2} splitSide="old" />);
+    }
+    if (rightNum !== null) {
+      threadRows.push(<GuideLineNotes key={`notes-new-${rightNum}`} filePath={props.filePath} side="new" line={rightNum} colSpan={2} splitSide="new" />);
+    }
 
     if (leftNum !== null && props.threads) {
       const leftThreads = props.threads.filter(t => t.endLine === leftNum && t.side === 'old');

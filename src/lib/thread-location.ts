@@ -21,6 +21,11 @@ export function threadPath(repoPath: string, target: ThreadTarget): string {
   return `${base}/${page}${query ? `?${query}` : ''}`;
 }
 
+/** Opens a diff view in its guide. */
+export function goToGuide(repoPath: string, ref: string) {
+  window.location.hash = `${threadPath(repoPath, { ref })}${ref === TREE_REF ? '' : '&view=guide'}`;
+}
+
 /** Navigates from outside React (toasts, background runs). */
 export function goToThread(repoPath: string, target: ThreadTarget) {
   window.location.hash = threadPath(repoPath, target);

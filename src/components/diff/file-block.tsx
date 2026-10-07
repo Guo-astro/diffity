@@ -50,7 +50,7 @@ import { SinceViewedBadge, SinceViewedDiff, type SinceViewedInfo } from './since
 /** Cards that scroll straight past are never highlighted: work starts once a card has stayed mounted this long. */
 const HIGHLIGHT_DELAY_MS = 120;
 
-interface FileBlockProps {
+export interface FileBlockProps {
   file: DiffFile;
   viewMode: ViewMode;
   collapsed: boolean;

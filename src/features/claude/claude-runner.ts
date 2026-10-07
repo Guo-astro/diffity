@@ -6,17 +6,18 @@ import { openComments, openSettingsAt } from '../../lib/ui-store';
 import type { AgentAction, AgentInfo, AgentMode, PermissionDiff, PermissionOption, RepoThread, RunModel, Thread } from '../../lib/types';
 import { parseCommitRef, refForSession } from '../../lib/api';
 import { TREE_REF } from '../../lib/types';
-import { goToThread, viewLabel } from '../../lib/thread-location';
+import { goToGuide, goToThread, viewLabel } from '../../lib/thread-location';
 import type { CommentThread } from '../../components/comments/types';
 import { getPermissionSetting, runSkipsPrompts, showBypassNotice } from './permission-setting';
 import { getRunPick, pickForAgent, type ModelPurpose, type RunPick } from './model-setting';
 import { agentByName, agentMeta, type AgentMeta } from './agents';
 import { mentionedAgent } from '../../lib/mentions';
 import { finishActivity, recordComments, recordEvent, startActivity } from './run-activity';
+import { isGuideOnScreen } from '../guide/guide-on-screen';
 
 export type ClaudeAction = Extract<
   AgentAction,
-  { kind: 'review' } | { kind: 'resolve' } | { kind: 'thread' } | { kind: 'reviewFeedback' }
+  { kind: 'review' } | { kind: 'guide' } | { kind: 'resolve' } | { kind: 'thread' } | { kind: 'reviewFeedback' }
 >;
 
 export interface ClaudeRunContext {
@@ -96,11 +97,11 @@ export function canSendToClaude(diffRef: string | null | undefined): boolean {
 }
 
 export function modelPurpose(action: ClaudeAction): ModelPurpose {
-  return action.kind === 'review' ? 'review' : 'fix';
+  return action.kind === 'review' || action.kind === 'guide' ? 'review' : 'fix';
 }
 
 function modeFor(action: ClaudeAction, ref: string | null): AgentMode {
-  if (action.kind === 'review' || (ref && !canSendToClaude(ref))) {
+  if (action.kind === 'review' || action.kind === 'guide' || (ref && !canSendToClaude(ref))) {
     return 'review';
   }
   return 'resolve';
@@ -110,6 +111,8 @@ export function runLabel(action: ClaudeAction, name: string): string {
   switch (action.kind) {
     case 'review':
       return `${name} is reviewing`;
+    case 'guide':
+      return `${name} is writing a guide`;
     case 'resolve':
       if (action.threadIds && action.threadIds.length > 0) {
         return `${name} is working on ${action.threadIds.length} comment${action.threadIds.length === 1 ? '' : 's'}`;
@@ -126,6 +129,8 @@ function chatTitle(action: ClaudeAction): string {
   switch (action.kind) {
     case 'review':
       return action.focus ? `Review (${action.focus}) · ${action.ref}` : `Review · ${action.ref}`;
+    case 'guide':
+      return `Guide · ${action.ref}`;
     case 'resolve':
       return action.threadId ? `Resolve thread ${action.threadId.slice(0, 8)}` : 'Resolve all comments';
     case 'thread':
@@ -187,7 +192,7 @@ export function enqueueClaude(action: ClaudeAction, context: ClaudeRunContext) {
     commentsAdded: 0,
     chatId: null,
     sessionId: null,
-    ref: action.kind === 'review' ? action.ref : context.ref ?? refForSession(context.sessionId),
+    ref: action.kind === 'review' || action.kind === 'guide' ? action.ref : context.ref ?? refForSession(context.sessionId),
     newThreadIds: [],
     agentId: null,
     skipsPrompts: false,
@@ -196,6 +201,11 @@ export function enqueueClaude(action: ClaudeAction, context: ClaudeRunContext) {
   };
   useClaude.setState((state) => ({ runs: [...state.runs, run] }));
   void pump(context.repoPath);
+}
+
+/** Drops a run that has not started yet; a running one keeps going. */
+export function cancelQueuedRun(runId: string) {
+  useClaude.setState((state) => ({ runs: state.runs.filter((run) => run.id !== runId || run.state !== 'queued') }));
 }
 
 /** Stops the project's running run and drops the ones queued behind it. */
@@ -280,7 +290,7 @@ async function pickFor(run: ClaudeRun, sessionId: string): Promise<RunPick> {
 
 async function resolveSession(run: ClaudeRun): Promise<string> {
   const { action, context } = run;
-  if (action.kind === 'review') {
+  if (action.kind === 'review' || action.kind === 'guide') {
     const session = await tauri.getSession(context.repoPath, action.ref);
     return session.id;
   }
@@ -538,6 +548,7 @@ async function execute(run: ClaudeRun) {
     unlisten?.();
     queryClient.invalidateQueries({ queryKey: ['threads', sessionId] });
     queryClient.invalidateQueries({ queryKey: ['reviews'] });
+    queryClient.invalidateQueries({ queryKey: ['guide', sessionId] });
   }
   finishActivity(repoPath, run.id, failed ? 'failed' : cancelled ? 'stopped' : 'done');
   if (failed) {
@@ -546,6 +557,20 @@ async function execute(run: ClaudeRun) {
   }
   if (cancelled) {
     toast.info(`${meta.short} was stopped`);
+    return;
+  }
+  if (run.action.kind === 'guide') {
+    const guide = await tauri.getGuide(sessionId).catch(() => null);
+    if (!guide || Date.parse(guide.createdAt) < startedAt) {
+      toast.error(`${meta.short} finished without saving a guide`, { description: 'Open the activity to see what it did, then try again.' });
+      return;
+    }
+    const chapters = `${guide.chapters.length} chapter${guide.chapters.length === 1 ? '' : 's'}`;
+    const elsewhere = !!ref && !isGuideOnScreen(run.context.repoPath, ref);
+    toast.success(`${meta.short} wrote a guide · ${chapters}`, {
+      description: elsewhere && ref ? runViewLabel(run.context.repoPath, ref) : undefined,
+      action: elsewhere && ref ? { label: 'Open guide', onClick: () => goToGuide(run.context.repoPath, ref) } : undefined,
+    });
     return;
   }
   const latest = useClaude.getState().runs.find((item) => item.id === run.id) ?? run;

@@ -46,3 +46,30 @@ export function focusThreadElement(threadId: string, attempts = 12): () => void 
     }
   };
 }
+
+/** Scrolls a file's card (`#file-…`) to the top of its scroller, retrying while it mounts. */
+export function focusFileElement(path: string, attempts = 12): () => void {
+  let disposed = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const tryFocus = (left: number) => {
+    if (disposed) {
+      return;
+    }
+    const element = document.getElementById(`file-${encodeURIComponent(path)}`);
+    if (element) {
+      scrollToElement(element);
+      return;
+    }
+    if (left <= 0) {
+      return;
+    }
+    timer = setTimeout(() => tryFocus(left - 1), 100);
+  };
+  requestAnimationFrame(() => tryFocus(attempts));
+  return () => {
+    disposed = true;
+    if (timer) {
+      clearTimeout(timer);
+    }
+  };
+}

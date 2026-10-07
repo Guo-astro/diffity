@@ -7,6 +7,7 @@ import type {
   Commit,
   DiffFileSummary,
   DiffResult,
+  Guide,
   NewThread,
   Review,
   ReviewSession,
@@ -33,6 +34,7 @@ const sessions = new Map<string, ReviewSession>();
 const threads = new Map<string, Thread>();
 const reviews = new Map<string, Review>();
 const viewed = new Map<string, Map<string, string>>();
+const guides = new Map<string, Guide>();
 const settings = new Map<string, string>([['theme', 'system']]);
 
 /** `main` and `main...HEAD` share one review, like the backend's `shared_session_ref`. */
@@ -566,6 +568,11 @@ const handlers: Record<string, (args: Args) => unknown> = {
     void emit('threads-changed', { sessionId });
     return null;
   },
+  get_guide: (args) => guides.get(String(args.sessionId)) ?? null,
+  delete_guide: (args) => {
+    guides.delete(String(args.sessionId));
+    return null;
+  },
   list_viewed: (args) =>
     [...(viewed.get(String(args.sessionId)) ?? new Map()).entries()].map(([filePath, contentHash]) => ({ filePath, contentHash })),
   set_viewed: (args) => {
@@ -619,7 +626,17 @@ const handlers: Record<string, (args: Args) => unknown> = {
 };
 
 export function installMockApi() {
-  Object.assign(handlers, createAgentMockHandlers({ repoPath: REPO_PATH, now, newId, sessionFor, insertThread, touch, threads }));
+  Object.assign(handlers, createAgentMockHandlers({
+    repoPath: REPO_PATH,
+    now,
+    newId,
+    sessionFor,
+    insertThread,
+    touch,
+    threads,
+    guides,
+    fingerprintFor: (ref) => diffFor(ref).fingerprint,
+  }));
   mockWindows('main');
   mockIPC(
     (cmd, payload) => {

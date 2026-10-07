@@ -227,7 +227,10 @@ function chatLabel(chat: Chat) {
 }
 
 function actionTitle(kind: string) {
-  return kind === 'review' ? 'Review activity' : 'Agent activity';
+  if (kind === 'review') {
+    return 'Review activity';
+  }
+  return kind === 'guide' ? 'Guide activity' : 'Agent activity';
 }
 
 function outcomeTitle(activity: ShownRun['activity'], name: string) {
@@ -238,7 +241,10 @@ function outcomeTitle(activity: ShownRun['activity'], name: string) {
   if (activity.outcome === 'stopped') {
     return `${name} was stopped${took}`;
   }
-  return activity.actionKind === 'review' ? `Review finished${took}` : `${name} finished${took}`;
+  if (activity.actionKind === 'review') {
+    return `Review finished${took}`;
+  }
+  return activity.actionKind === 'guide' ? `Guide written${took}` : `${name} finished${took}`;
 }
 
 function toMarkdown(activity: ShownRun['activity'], repoPath: string) {

@@ -195,6 +195,49 @@ export interface Review {
   submittedAt: string | null;
 }
 
+/** How much of the reviewer's attention a guide chapter needs: high is the core logic, low is what to skim. */
+export type GuideAttention = 'high' | 'normal' | 'low';
+
+/** An explanation pinned to a file, or to one line of it (`line` set), shown in the diff where the code is. */
+export interface GuideNote {
+  path: string;
+  line?: number;
+  side: Side;
+  /** Markdown. */
+  text: string;
+  /** Take extra care here: security, data loss, hard to revert. */
+  critical: boolean;
+}
+
+export interface GuideChapter {
+  title: string;
+  /** Markdown. */
+  summary: string;
+  /** What to check while reading. */
+  focus: string[];
+  attention: GuideAttention;
+  /** Most important first. */
+  files: string[];
+  notes: GuideNote[];
+}
+
+/** A reading guide an agent wrote for a review session's diff. */
+export interface Guide {
+  sessionId: string;
+  ref: string;
+  /** Fingerprint of the diff the guide was written for. */
+  fingerprint: string;
+  agentName: string;
+  createdAt: string;
+  /** Markdown. */
+  summary: string;
+  before?: string;
+  after?: string;
+  /** Mermaid flowchart; nodes are marked `:::added` or `:::changed`. */
+  diagram?: string;
+  chapters: GuideChapter[];
+}
+
 export interface ViewedFile {
   filePath: string;
   contentHash: string;
@@ -250,6 +293,8 @@ export type AgentAction =
   | { kind: 'resolve'; threadId?: string; threadIds?: string[]; note?: string }
   | { kind: 'explain'; path: string }
   | { kind: 'summarize'; ref: string }
+  /** Write a reading guide for a diff. */
+  | { kind: 'guide'; ref: string; title?: string; description?: string }
   /** Address one thread (e.g. after an `@claude` mention). Requires a chat in `resolve` mode. */
   | { kind: 'thread'; threadId: string }
   /** Address every thread of a submitted review + its summary. Requires a chat in `resolve` mode. */
