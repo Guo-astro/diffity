@@ -8,7 +8,7 @@ import { AskClaudePopover, useAskClaudeRequest } from './ask-claude-review';
 import { cn } from '../../lib/cn';
 import { toast } from 'sonner';
 import { useReviewState } from '../review/review-state';
-import { ActivityIcon, SparkleIcon, StopIcon } from '../../components/ui/icon';
+import { SparkleIcon, StopIcon } from '../../components/ui/icon';
 import { Popover } from '../../components/ui/popover';
 import { Spinner } from '../../components/icons/spinner';
 import { useRunPick } from './model-setting';
@@ -56,11 +56,19 @@ export function ClaudeStatus() {
 
   return (
     <div ref={pillRef} className="flex items-stretch h-7 rounded-md border border-control-border bg-raised overflow-hidden text-xs min-w-0">
-      <span
-        className="flex items-center gap-2 pl-2.5 pr-2 text-text whitespace-nowrap min-w-0 overflow-hidden cursor-default"
-        title={where && elsewhere ? `Working on ${where}` : undefined}
+      <button
+        onClick={() => {
+          setPeek(false);
+          toggleActivity();
+        }}
         onMouseEnter={() => hover(true)}
         onMouseLeave={() => hover(false)}
+        aria-pressed={activityOpen}
+        className={cn(
+          'flex items-center gap-2 pl-2.5 pr-2 whitespace-nowrap min-w-0 overflow-hidden transition-colors cursor-pointer',
+          activityOpen ? 'bg-claude/12 text-claude' : 'text-text hover:bg-control-hover',
+        )}
+        title={where && elsewhere ? `Working on ${where} · click to see what ${name} is doing` : `See what ${name} is doing`}
       >
         <Spinner className="text-claude" />
         <span className="font-medium truncate @max-3xl/titlebar:hidden">{runLabel(run.action, name)}</span>
@@ -69,21 +77,6 @@ export function ClaudeStatus() {
         )}
         {run.startedAt && <span className="text-text-muted tabular-nums">{formatElapsed(now - run.startedAt)}</span>}
         {queued > 0 && <span className="text-text-muted @max-3xl/titlebar:hidden">+{queued} queued</span>}
-      </span>
-      <button
-        onClick={() => {
-          setPeek(false);
-          toggleActivity();
-        }}
-        aria-pressed={activityOpen}
-        className={cn(
-          'flex items-center gap-1 px-2 shrink-0 border-l border-control-border transition-colors cursor-pointer',
-          activityOpen ? 'bg-claude/12 text-claude font-medium' : 'text-text-secondary hover:text-text hover:bg-control-hover',
-        )}
-        title={`See what ${name} is doing`}
-      >
-        <ActivityIcon size="xs" />
-        <span className="@max-2xl/titlebar:hidden">Activity</span>
       </button>
       <button
         onClick={() => void stopClaude(repoPath)}

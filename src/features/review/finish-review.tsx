@@ -24,7 +24,7 @@ import type { GitHubDetails } from '../../lib/api';
 import { openSettingsAt } from '../../lib/ui-store';
 import { getRepoPath } from '../../lib/api';
 import { mentionsAgent } from '../../lib/mentions';
-import { canSendToClaude, enqueueClaude, useBusyThreadIds } from '../claude/claude-runner';
+import { canSendToClaude, enqueueClaude, useActiveRun, useBusyThreadIds } from '../claude/claude-runner';
 import { GENERAL_THREAD_FILE_PATH, type CommentThread } from '../../components/comments/types';
 import { toast } from 'sonner';
 import { MentionTextarea } from '../../components/comments/mention-textarea';
@@ -79,8 +79,9 @@ export function FinishReview(props: FinishReviewProps) {
   const { githubDetails, threads = [], diffRef } = props;
   const { enabled } = useReviewState();
   const ownPr = useOwnPr();
+  const agentRunning = useActiveRun(getRepoPath()) !== null;
 
-  if (!enabled) {
+  if (!enabled || agentRunning) {
     return null;
   }
   const send = canSendToClaude(diffRef) ? <SendToClaude threads={threads} includeGitHub={ownPr} /> : null;
