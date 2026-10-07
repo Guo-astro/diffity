@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(async move {
         while let Some((id, option)) = perm_rx.recv().await {
             println!("[auto-permission] {id} -> {option:?}");
-            let _ = responder.respond_permission(&id, option, false).await;
+            let _ = responder.respond_permission(&id, option, false, false).await;
         }
     });
 
