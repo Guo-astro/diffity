@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseDiff } from '../src/lib/diff-parser';
-import { computeViewedState, fileHash, viewedSummary } from '../src/lib/viewed-state';
+import { computeViewedState, fileHash } from '../src/lib/viewed-state';
 
 const patch = (line: string) => `diff --git a/a.ts b/a.ts
 --- a/a.ts
@@ -45,13 +45,5 @@ describe('fileHash', () => {
     const other = parseDiff(patch('newer')).files[0];
     expect(fileHash(one)).toBe(fileHash(same));
     expect(fileHash(one)).not.toBe(fileHash(other));
-  });
-});
-
-describe('viewedSummary', () => {
-  it('counts files changed since viewed', () => {
-    expect(viewedSummary(2, 0, 5)).toBe('2 of 5 files viewed');
-    expect(viewedSummary(5, 0, 5)).toBe('All files viewed');
-    expect(viewedSummary(1, 2, 5)).toBe('1 of 5 files viewed · 2 changed since viewed');
   });
 });

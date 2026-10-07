@@ -646,9 +646,6 @@ export function DiffPage(props: DiffPageProps) {
               onViewModeChange={setViewMode}
               hideWhitespace={hideWhitespace}
               onHideWhitespaceChange={setHideWhitespace}
-              fileCount={diff.files.length}
-              viewedCount={allPaths.filter((path) => reviewedFiles.has(path)).length}
-              changedSinceViewedCount={changedFiles.size}
               ignored={{ hiddenCount: diff.hiddenFiles?.length ?? 0, showing: showIgnored, onShowingChange: setShowIgnored }}
               onExpandAll={() => setCollapsedFiles(new Set())}
               onCollapseAll={() => setCollapsedFiles(new Set(allPaths))}

@@ -43,11 +43,3 @@ export function computeViewedState(entries: ViewedFile[], hashes: Map<string, st
   }
   return { reviewed, changed };
 }
-
-export function viewedSummary(viewed: number, changed: number, total: number): string {
-  const base = viewed === total && total > 0 ? 'All files viewed' : `${viewed} of ${total} files viewed`;
-  if (changed === 0) {
-    return base;
-  }
-  return `${base} · ${changed} changed since viewed`;
-}

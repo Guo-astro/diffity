@@ -3,7 +3,6 @@ import { cn } from '../../lib/cn';
 import type { ViewMode } from '../../lib/diff-utils';
 import { SegmentedToggle } from '../ui/segmented-toggle';
 import { buttonIconOutline } from '../ui/button-styles';
-import { viewedSummary } from '../../lib/viewed-state';
 import { CollapseAllIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, ExpandAllIcon, SplitViewIcon, TrashIcon, UnifiedViewIcon, XIcon } from '../ui/icon';
 import { MenuItem, MenuSeparator, Popover, useMenu } from '../ui/popover';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -14,10 +13,6 @@ interface DiffBarProps {
   onViewModeChange: (mode: ViewMode) => void;
   hideWhitespace: boolean;
   onHideWhitespaceChange: (hide: boolean) => void;
-  fileCount: number;
-  viewedCount: number;
-  /** Files marked viewed that changed since. */
-  changedSinceViewedCount?: number;
   /** Files `.diffityignore` hides, and whether they are temporarily shown. */
   ignored?: { hiddenCount: number; showing: boolean; onShowingChange: (showing: boolean) => void };
   onExpandAll: () => void;
@@ -63,24 +58,8 @@ function IgnoredFilesChip(props: { hiddenCount: number; showing: boolean; onShow
   );
 }
 
-function ViewedProgress(props: { viewed: number; total: number; changed: number }) {
-  const { viewed, total, changed } = props;
-  const percent = total === 0 ? 0 : Math.round((viewed / total) * 100);
-
-  return (
-    <div className="flex items-center gap-2 min-w-0 text-xs text-text-secondary tabular-nums" title="Mark files as viewed with the checkbox on each file, or press R">
-      <span className="relative w-16 h-1.5 rounded-full bg-fill overflow-hidden shrink-0">
-        <span className="absolute inset-y-0 left-0 rounded-full bg-added transition-[width] duration-300" style={{ width: `${percent}%` }} />
-      </span>
-      <span className="truncate">
-        {viewedSummary(viewed, changed, total)}
-      </span>
-    </div>
-  );
-}
-
 export function DiffBar(props: DiffBarProps) {
-  const { viewMode, onViewModeChange, hideWhitespace, onHideWhitespaceChange, fileCount, viewedCount, changedSinceViewedCount = 0, ignored, onExpandAll, onCollapseAll, commentNav, comments } = props;
+  const { viewMode, onViewModeChange, hideWhitespace, onHideWhitespaceChange, ignored, onExpandAll, onCollapseAll, commentNav, comments } = props;
   const menu = useMenu();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const run = (action: () => void) => () => {
@@ -90,7 +69,6 @@ export function DiffBar(props: DiffBarProps) {
 
   return (
     <div className="flex items-center gap-2 h-10 shrink-0 px-5 border-b border-border-muted bg-bg">
-      <ViewedProgress viewed={viewedCount} total={fileCount} changed={changedSinceViewedCount} />
       {commentNav}
       <span className="flex-1" />
       {ignored && <IgnoredFilesChip {...ignored} />}
