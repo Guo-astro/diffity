@@ -114,6 +114,16 @@ pub enum AgentAction {
         #[serde(rename = "ref")]
         r#ref: String,
     },
+    /// Write a reading guide for a diff and save it with `set_guide`.
+    Guide {
+        #[serde(rename = "ref")]
+        r#ref: String,
+        /// The pull request the diff belongs to, when there is one: its intent hints at the chapters.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+    },
     /// Address one thread (e.g. after an `@claude` mention): answer via `reply`, or change code and `resolve`.
     Thread {
         thread_id: String,

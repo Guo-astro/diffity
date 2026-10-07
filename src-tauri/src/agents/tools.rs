@@ -4,8 +4,10 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::core::store::now;
 use crate::core::types::{
-    AuthorType, NewThread, Severity, Side, Thread, ThreadStatus, GENERAL_FILE_PATH,
+    AuthorType, DiffResult, Guide, GuideAttention, GuideChapter, GuideContent, GuideNote, NewThread, Severity, Side,
+    Thread, ThreadStatus, GENERAL_FILE_PATH,
 };
 use crate::core::{AppError, Result};
 
@@ -87,6 +89,126 @@ struct ThreadArgs {
     summary: Option<String>,
     reason: Option<String>,
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GuideNoteArgs {
+    path: String,
+    line: Option<u32>,
+    side: Option<String>,
+    text: String,
+    #[serde(default)]
+    critical: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GuideChapterArgs {
+    title: String,
+    summary: String,
+    #[serde(default)]
+    focus: Vec<String>,
+    attention: Option<String>,
+    files: Vec<String>,
+    #[serde(default)]
+    notes: Vec<GuideNoteArgs>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct DiffArgs {
+    /// Only the file list, with each file's hunk context, instead of the patch.
+    #[serde(default)]
+    summary: bool,
+    /// Only the patch of these files.
+    #[serde(default)]
+    files: Vec<String>,
+}
+
+/// Lockfiles and build output: listed, but their patch is left out of the manifest's reading list.
+pub fn is_generated(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    const LOCKFILES: &[&str] = &[
+        "pnpm-lock.yaml", "yarn.lock", "package-lock.json", "Cargo.lock", "go.sum", "composer.lock", "Gemfile.lock",
+        "poetry.lock", "bun.lockb", "flake.lock",
+    ];
+    LOCKFILES.contains(&name)
+        || name.ends_with(".lock")
+        || name.contains(".generated.")
+        || name.ends_with(".min.js")
+        || name.ends_with(".map")
+        || name.ends_with(".snap")
+        || path.split('/').any(|dir| dir == "dist" || dir == "__snapshots__")
+}
+
+/// The text after the second `@@` of each hunk header in a file's section, up to three distinct ones.
+fn hunk_contexts(section: &str) -> Vec<String> {
+    let mut contexts: Vec<String> = Vec::new();
+    for line in section.lines().filter(|l| l.starts_with("@@ ")) {
+        let context = line.splitn(3, "@@").nth(2).map(str::trim).unwrap_or_default();
+        if !context.is_empty() && !contexts.iter().any(|c| c == context) {
+            contexts.push(context.to_string());
+            if contexts.len() == 3 {
+                break;
+            }
+        }
+    }
+    contexts
+}
+
+/// The changed files grouped by folder, each with its status, size and the functions its hunks are in.
+fn manifest(diff: &DiffResult, paths: &[String]) -> String {
+    let mut out = String::new();
+    let mut current_dir = None;
+    let mut files: Vec<_> = diff.files.iter().filter(|f| paths.is_empty() || paths.contains(&f.path)).collect();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+    for f in files {
+        let (dir, name) = match f.path.rsplit_once('/') {
+            Some((dir, name)) => (format!("{dir}/"), name),
+            None => (String::new(), f.path.as_str()),
+        };
+        if current_dir.as_deref() != Some(dir.as_str()) {
+            if !dir.is_empty() {
+                out.push_str(&dir);
+                out.push('\n');
+            }
+            current_dir = Some(dir.clone());
+        }
+        let status = serde_json::to_value(f.status)
+            .ok()
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_default();
+        let renamed = f.old_path.as_deref().map(|p| format!(" (from {p})")).unwrap_or_default();
+        let tag = if is_generated(&f.path) {
+            "  [generated]".to_string()
+        } else if f.binary {
+            "  [binary]".to_string()
+        } else {
+            let contexts = hunk_contexts(&filter_patch(&diff.patch, std::slice::from_ref(&f.path)));
+            if contexts.is_empty() {
+                String::new()
+            } else {
+                format!("  {}", contexts.iter().map(|c| format!("@@ {c}")).collect::<Vec<_>>().join(" / "))
+            }
+        };
+        let indent = if dir.is_empty() { "" } else { "  " };
+        out.push_str(&format!("{indent}{name}{renamed}  {status}  +{}/-{}{tag}\n", f.additions, f.deletions));
+    }
+    out
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GuideArgs {
+    summary: String,
+    before: Option<String>,
+    after: Option<String>,
+    diagram: Option<String>,
+    chapters: Vec<GuideChapterArgs>,
+}
+
+/// Title of the chapter that collects the diff's files the agent left out of its guide.
+pub const LEFTOVER_CHAPTER: &str = "Everything else";
 
 fn args<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T> {
     let value = if value.is_null() { json!({}) } else { value };
@@ -269,6 +391,177 @@ async fn add_comment(backend: &dyn ReviewBackend, b: &Binding, a: CommentArgs) -
     Ok(json!({ "created": thread_json(&thread) }))
 }
 
+fn parse_attention(raw: Option<&str>) -> Result<GuideAttention> {
+    match raw.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+        None | Some("") | Some("normal") => Ok(GuideAttention::Normal),
+        Some("high") => Ok(GuideAttention::High),
+        Some("low") => Ok(GuideAttention::Low),
+        Some(other) => Err(AppError::invalid(format!(
+            "invalid attention `{other}`; use high, normal or low"
+        ))),
+    }
+}
+
+fn non_empty(text: Option<String>) -> Option<String> {
+    text.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
+}
+
+/// Largest patch handed to a guide run up front; a bigger one is read through `get_diff` as needed.
+pub const GUIDE_INLINE_LIMIT: usize = 150_000;
+
+/// The file list and the patch (generated files left out) as a prompt section, when the patch is small enough
+/// that sending it saves the agent its `get_diff` calls.
+pub fn guide_inline_diff(diff: &DiffResult) -> Option<String> {
+    let readable: Vec<String> = diff
+        .files
+        .iter()
+        .filter(|f| !f.binary && !is_generated(&f.path))
+        .map(|f| f.path.clone())
+        .collect();
+    let patch = filter_patch(&diff.patch, &readable);
+    if patch.len() > GUIDE_INLINE_LIMIT {
+        return None;
+    }
+    let fence = if patch.contains("```") { "````" } else { "```" };
+    Some(format!(
+        "\n## The diff\n\nEvery changed file, then the whole patch ({} files; generated and binary files are listed but their patch is left out). \
+         You do not need to call `get_diff`.\n\n{}\n{fence}diff\n{}{fence}\n",
+        diff.files.len(),
+        manifest(diff, &[]),
+        patch
+    ))
+}
+
+/// Checks a guide against the diff: every listed file must be in it, each file is kept in its first chapter only,
+/// and files the agent left out go to a last, low-attention chapter. Returns the guide and the files added there.
+fn build_guide(a: GuideArgs, diff: &DiffResult) -> Result<(GuideContent, Vec<String>)> {
+    let patches = patch::parse(&diff.patch);
+    let summary = a.summary.trim().to_string();
+    if summary.is_empty() {
+        return Err(AppError::invalid("summary is required"));
+    }
+    if a.chapters.is_empty() {
+        return Err(AppError::invalid("add at least one chapter"));
+    }
+    let resolve = |raw: &str| -> Option<String> {
+        let file = raw.trim().trim_start_matches("./");
+        diff.files
+            .iter()
+            .find(|f| f.path == file || f.old_path.as_deref() == Some(file))
+            .map(|f| f.path.clone())
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut unknown = Vec::new();
+    let mut chapters = Vec::new();
+    for chapter in a.chapters {
+        let title = chapter.title.trim().to_string();
+        if title.is_empty() {
+            return Err(AppError::invalid("every chapter needs a title"));
+        }
+        let mut files = Vec::new();
+        for raw in &chapter.files {
+            match resolve(raw) {
+                Some(path) => {
+                    if seen.insert(path.clone()) {
+                        files.push(path);
+                    }
+                }
+                None => unknown.push(raw.trim().to_string()),
+            }
+        }
+        if files.is_empty() {
+            continue;
+        }
+        let mut notes = Vec::new();
+        for note in chapter.notes {
+            let text = note.text.trim().to_string();
+            if text.is_empty() {
+                continue;
+            }
+            let Some(path) = resolve(&note.path).filter(|p| files.contains(p)) else {
+                return Err(AppError::invalid(format!(
+                    "the note on `{}` in chapter \"{title}\" must be on one of that chapter's files: {}",
+                    note.path.trim(),
+                    files.join(", ")
+                )));
+            };
+            let side = parse_side(note.side.as_deref())?;
+            // A line the diff does not show cannot carry the note, so it stays on the file.
+            let line = note.line.filter(|&line| {
+                line > 0 && patches.iter().find(|f| f.matches(&path)).and_then(|f| f.anchor(side, line, line)).is_some()
+            });
+            notes.push(GuideNote { path, line, side, text, critical: note.critical });
+        }
+        chapters.push(GuideChapter {
+            title,
+            summary: chapter.summary.trim().to_string(),
+            focus: chapter
+                .focus
+                .into_iter()
+                .map(|f| f.trim().to_string())
+                .filter(|f| !f.is_empty())
+                .collect(),
+            attention: parse_attention(chapter.attention.as_deref())?,
+            files,
+            notes,
+        });
+    }
+    if !unknown.is_empty() {
+        let listed: Vec<&str> = diff.files.iter().map(|f| f.path.as_str()).take(80).collect();
+        return Err(AppError::invalid(format!(
+            "these files are not in the diff: {}. Use paths exactly as `get_diff` lists them: {}",
+            unknown.join(", "),
+            listed.join(", ")
+        )));
+    }
+    if chapters.is_empty() {
+        return Err(AppError::invalid("every chapter must list at least one file from the diff"));
+    }
+    let leftover: Vec<String> = diff
+        .files
+        .iter()
+        .map(|f| f.path.clone())
+        .filter(|path| !seen.contains(path))
+        .collect();
+    if !leftover.is_empty() {
+        chapters.push(GuideChapter {
+            title: LEFTOVER_CHAPTER.to_string(),
+            summary: "Files the guide does not walk through.".to_string(),
+            focus: Vec::new(),
+            attention: GuideAttention::Low,
+            files: leftover.clone(),
+            notes: Vec::new(),
+        });
+    }
+    Ok((
+        GuideContent {
+            summary,
+            before: non_empty(a.before),
+            after: non_empty(a.after),
+            diagram: non_empty(a.diagram),
+            chapters,
+        },
+        leftover,
+    ))
+}
+
+async fn set_guide(backend: &dyn ReviewBackend, b: &Binding, a: GuideArgs) -> Result<Value> {
+    let diff = backend.diff(&b.repo_path, &b.r#ref).await?;
+    let (content, leftover) = build_guide(a, &diff)?;
+    let chapters = content.chapters.len();
+    backend
+        .save_guide(Guide {
+            session_id: b.session_id.clone(),
+            r#ref: b.r#ref.clone(),
+            fingerprint: diff.fingerprint,
+            agent_name: b.agent_name.clone(),
+            created_at: now(),
+            content,
+        })
+        .await?;
+    Ok(json!({ "saved": true, "chapters": chapters, "filesAddedToEverythingElse": leftover }))
+}
+
 pub async fn call(
     backend: &dyn ReviewBackend,
     b: &Binding,
@@ -277,7 +570,32 @@ pub async fn call(
 ) -> Result<Value> {
     match tool {
         "get_diff" => {
+            let a: DiffArgs = args(raw)?;
             let diff = backend.diff(&b.repo_path, &b.r#ref).await?;
+            if a.summary {
+                let total = diff.files.iter().filter(|f| in_scope(b, &f.path)).count();
+                return Ok(Value::String(format!(
+                    "Changed files for `{}` ({total} files). Status, +added/-removed, and the code each change is in (from the hunk headers). \
+                     Call get_diff with `files` to read the patches you need.\n\n{}",
+                    diff.resolved.label,
+                    manifest(&diff, &b.paths)
+                )));
+            }
+            let requested: Vec<String> = a.files.iter().map(|f| f.trim().trim_start_matches("./").to_string()).filter(|f| !f.is_empty()).collect();
+            let diff = if requested.is_empty() {
+                diff
+            } else {
+                let unknown: Vec<&String> = requested.iter().filter(|p| !diff.files.iter().any(|f| &f.path == *p || f.old_path.as_ref() == Some(*p))).collect();
+                if !unknown.is_empty() {
+                    return Err(AppError::invalid(format!(
+                        "not in the diff: {}. Call get_diff with summary: true for the file list",
+                        unknown.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
+                    )));
+                }
+                let files: Vec<_> = diff.files.iter().filter(|f| requested.iter().any(|p| p == &f.path || f.old_path.as_ref() == Some(p))).cloned().collect();
+                let paths: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+                DiffResult { patch: filter_patch(&diff.patch, &paths), files, ..diff }
+            };
             let files: Vec<String> = diff
                 .files
                 .iter()
@@ -332,6 +650,7 @@ pub async fn call(
             Ok(json!({ "threads": list }))
         }
         "add_comment" => add_comment(backend, b, args(raw)?).await,
+        "set_guide" => set_guide(backend, b, args(raw)?).await,
         "add_general_comment" => {
             let a: GeneralArgs = args(raw)?;
             if a.body.trim().is_empty() {
@@ -442,6 +761,129 @@ mod tests {
         .await
         .unwrap_err();
         assert!(err.message.contains("outside the files"), "{}", err.message);
+    }
+
+    fn diff_with(paths: &[&str]) -> DiffResult {
+        let files: Vec<crate::core::types::DiffFileSummary> = paths
+            .iter()
+            .map(|p| {
+                serde_json::from_value::<crate::core::types::DiffFileSummary>(json!({
+                    "path": p, "oldPath": null, "status": "modified", "additions": 1, "deletions": 0, "binary": false
+                }))
+                .unwrap()
+            })
+            .collect();
+        serde_json::from_value(json!({
+            "patch": "",
+            "files": files,
+            "fingerprint": "fp",
+            "resolved": { "ref": "work", "label": "Uncommitted changes", "canRevert": false }
+        }))
+        .unwrap_or_else(|e| panic!("fixture: {e}"))
+    }
+
+    fn chapter(title: &str, files: &[&str]) -> GuideChapterArgs {
+        GuideChapterArgs {
+            title: title.into(),
+            summary: "s".into(),
+            focus: vec![" ".into(), "Check x".into()],
+            attention: None,
+            files: files.iter().map(|f| f.to_string()).collect(),
+            notes: Vec::new(),
+        }
+    }
+
+    fn note(path: &str, line: Option<u32>) -> GuideNoteArgs {
+        GuideNoteArgs { path: path.into(), line, side: None, text: format!("about {path}"), critical: line.is_some() }
+    }
+
+    const PATCH: &str = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1,2 +1,3 @@ export function load()\n x\n+y\n z\n";
+
+    #[test]
+    fn guide_notes_keep_lines_the_diff_shows_and_fall_back_to_the_file() {
+        let mut diff = diff_with(&["src/a.ts", "src/b.ts"]);
+        diff.patch = PATCH.into();
+        let mut core = chapter("Core", &["src/a.ts"]);
+        core.notes = vec![note("src/a.ts", Some(2)), note("src/a.ts", Some(40)), note("src/a.ts", None)];
+        let (guide, _) = build_guide(
+            GuideArgs { summary: "x".into(), before: None, after: None, diagram: None, chapters: vec![core] },
+            &diff,
+        )
+        .unwrap();
+        let lines: Vec<Option<u32>> = guide.chapters[0].notes.iter().map(|n| n.line).collect();
+        assert_eq!(lines, vec![Some(2), None, None]);
+        assert!(guide.chapters[0].notes[0].critical);
+
+        let mut wrong = chapter("Core", &["src/a.ts"]);
+        wrong.notes = vec![note("src/b.ts", None)];
+        let err = build_guide(
+            GuideArgs { summary: "x".into(), before: None, after: None, diagram: None, chapters: vec![wrong] },
+            &diff,
+        )
+        .unwrap_err();
+        assert!(err.message.contains("that chapter's files"), "{}", err.message);
+    }
+
+    #[test]
+    fn small_diffs_go_into_the_guide_prompt_without_generated_patches() {
+        let mut diff = diff_with(&["src/a.ts", "pnpm-lock.yaml"]);
+        diff.patch = format!("{PATCH}diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml\n@@ -1 +1 @@\n-a\n+lockfile-body\n");
+        let section = guide_inline_diff(&diff).unwrap();
+        assert!(section.contains("@@ export function load()"), "{section}");
+        assert!(section.contains("+y"));
+        assert!(!section.contains("lockfile-body"));
+        diff.patch = format!("diff --git a/src/a.ts b/src/a.ts\n@@ -1 +1 @@\n+{}\n", "x".repeat(GUIDE_INLINE_LIMIT));
+        assert!(guide_inline_diff(&diff).is_none());
+    }
+
+    #[test]
+    fn manifest_lists_hunk_context_and_marks_generated_files() {
+        let mut diff = diff_with(&["src/a.ts", "pnpm-lock.yaml"]);
+        diff.patch = PATCH.into();
+        let text = manifest(&diff, &[]);
+        assert!(text.contains("src/\n  a.ts  modified  +1/-0  @@ export function load()"), "{text}");
+        assert!(text.contains("pnpm-lock.yaml  modified  +1/-0  [generated]"), "{text}");
+    }
+
+    #[test]
+    fn guide_keeps_each_file_once_and_collects_leftovers() {
+        let diff = diff_with(&["src/a.ts", "src/b.ts", "package-lock.json"]);
+        let (guide, leftover) = build_guide(
+            GuideArgs {
+                summary: " Adds b ".into(),
+                before: Some("  ".into()),
+                after: Some("After".into()),
+                diagram: None,
+                chapters: vec![chapter("Core", &["./src/b.ts", "src/a.ts"]), chapter("Again", &["src/a.ts"])],
+            },
+            &diff,
+        )
+        .unwrap();
+        assert_eq!(guide.summary, "Adds b");
+        assert_eq!(guide.before, None);
+        assert_eq!(guide.chapters.len(), 2, "the chapter left with no new files is dropped");
+        assert_eq!(guide.chapters[0].files, vec!["src/b.ts", "src/a.ts"]);
+        assert_eq!(guide.chapters[0].focus, vec!["Check x"]);
+        assert_eq!(guide.chapters[1].title, LEFTOVER_CHAPTER);
+        assert_eq!(guide.chapters[1].attention, GuideAttention::Low);
+        assert_eq!(leftover, vec!["package-lock.json"]);
+    }
+
+    #[test]
+    fn guide_rejects_files_outside_the_diff() {
+        let diff = diff_with(&["src/a.ts"]);
+        let err = build_guide(
+            GuideArgs {
+                summary: "x".into(),
+                before: None,
+                after: None,
+                diagram: None,
+                chapters: vec![chapter("Core", &["src/a.ts", "src/nope.ts"])],
+            },
+            &diff,
+        )
+        .unwrap_err();
+        assert!(err.message.contains("src/nope.ts"), "{}", err.message);
     }
 
     #[test]

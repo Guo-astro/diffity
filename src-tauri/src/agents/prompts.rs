@@ -7,6 +7,7 @@ const RESOLVE: &str = include_str!("../../prompts/resolve.md");
 const ASK: &str = include_str!("../../prompts/ask.md");
 const EXPLAIN: &str = include_str!("../../prompts/explain.md");
 const SUMMARIZE: &str = include_str!("../../prompts/summarize.md");
+const GUIDE: &str = include_str!("../../prompts/guide.md");
 const THREAD: &str = include_str!("../../prompts/thread.md");
 const REVIEW_FEEDBACK: &str = include_str!("../../prompts/review-feedback.md");
 
@@ -74,6 +75,28 @@ fn review_scope(paths: &[String]) -> String {
         "\n## Scope\n\nReview only these files. `get_diff` already returns just them, and comments on any other file are \
 rejected. You may read other files for context, but do not comment on them.\n\n{list}\n"
     )
+}
+
+/// Longest PR description passed on; the rest is rarely about intent (checklists, screenshots).
+const PR_DESCRIPTION_LIMIT: usize = 4000;
+
+fn guide_pull_request(title: Option<&str>, description: Option<&str>) -> String {
+    let title = title.map(str::trim).filter(|t| !t.is_empty());
+    let description = description.map(str::trim).filter(|d| !d.is_empty());
+    if title.is_none() && description.is_none() {
+        return String::new();
+    }
+    let mut out = String::from("\n## The pull request\n\nWhat the author says the change is for. Use it as a hint for the chapters, but describe what the code does.\n");
+    if let Some(title) = title {
+        out.push_str(&format!("\nTitle: {title}\n"));
+    }
+    if let Some(description) = description {
+        let cut: String = description.chars().take(PR_DESCRIPTION_LIMIT).collect();
+        let more = if cut.len() < description.len() { "\n> …" } else { "" };
+        let quoted = cut.lines().map(|line| format!("> {line}")).collect::<Vec<_>>().join("\n");
+        out.push_str(&format!("\nDescription:\n\n{quoted}{more}\n"));
+    }
+    out
 }
 
 pub fn render(template: &str, vars: &[(&str, &str)]) -> String {
@@ -146,6 +169,11 @@ fn action_template(
         }
         AgentAction::Explain { path } => Some(render(EXPLAIN, &[("path", path)])),
         AgentAction::Summarize { r#ref } => Some(render(SUMMARIZE, &[("ref", r#ref)])),
+        AgentAction::Guide { r#ref, title, description } => {
+            let mut rendered = render(GUIDE, &[("ref", r#ref)]);
+            rendered.push_str(&guide_pull_request(title.as_deref(), description.as_deref()));
+            Some(rendered)
+        }
         AgentAction::Chat => {
             if !first_turn {
                 return None;
@@ -254,6 +282,11 @@ mod tests {
             AgentAction::Summarize {
                 r#ref: "HEAD~1".into(),
             },
+            AgentAction::Guide {
+                r#ref: "main...HEAD".into(),
+                title: Some("Add a cache".into()),
+                description: Some("Speeds up reads".into()),
+            },
             AgentAction::Chat,
             AgentAction::Thread {
                 thread_id: "abcd1234-full".into(),
@@ -273,10 +306,25 @@ mod tests {
 
     #[test]
     fn every_template_restricts_agents_to_diffity_mcp_tools() {
-        for template in [REVIEW, RESOLVE, ASK, EXPLAIN, SUMMARIZE, THREAD, REVIEW_FEEDBACK, EDIT_PREAMBLE] {
+        for template in [REVIEW, RESOLVE, ASK, EXPLAIN, SUMMARIZE, GUIDE, THREAD, REVIEW_FEEDBACK, EDIT_PREAMBLE] {
             assert!(template.contains("mcp__diffity__"), "{template}");
             assert!(template.contains("CLI") || template.contains("command-line"), "{template}");
         }
+    }
+
+    #[test]
+    fn guide_prompt_quotes_the_pull_request() {
+        let action = AgentAction::Guide {
+            r#ref: "main...HEAD".into(),
+            title: Some("Add a cache".into()),
+            description: Some("Reads were slow.\n\nThis keeps files in memory.".into()),
+        };
+        let p = build_prompt(AgentMode::Review, &action, "work", true, "", &[], None);
+        assert!(p.contains("`main...HEAD`"));
+        assert!(p.contains("Title: Add a cache"));
+        assert!(p.contains("> Reads were slow."));
+        let bare = AgentAction::Guide { r#ref: "work".into(), title: None, description: Some("  ".into()) };
+        assert!(!build_prompt(AgentMode::Review, &bare, "work", true, "", &[], None).contains("## The pull request"));
     }
 
     #[test]

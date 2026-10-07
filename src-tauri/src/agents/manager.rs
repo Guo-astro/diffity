@@ -243,7 +243,9 @@ impl AgentManager {
         action: &AgentAction,
     ) -> Result<(String, String)> {
         let action_ref = match action {
-            AgentAction::Review { r#ref, .. } | AgentAction::Summarize { r#ref } => {
+            AgentAction::Review { r#ref, .. }
+            | AgentAction::Summarize { r#ref }
+            | AgentAction::Guide { r#ref, .. } => {
                 Some(r#ref.clone())
             }
             _ => None,
@@ -325,6 +327,15 @@ impl AgentManager {
             return Err(AppError::invalid("none of the selected files are in this diff"));
         }
         Ok(kept)
+    }
+
+    /// A guide run on a small enough diff gets it in the prompt; on failure it falls back to reading it with `get_diff`.
+    async fn guide_inline_diff(&self, repo_path: &str, session_ref: &str, action: &AgentAction) -> Option<String> {
+        if !matches!(action, AgentAction::Guide { .. }) {
+            return None;
+        }
+        let diff = self.backend.diff(repo_path, session_ref).await.ok()?;
+        crate::agents::tools::guide_inline_diff(&diff)
     }
 
     async fn review_brief(&self, action: &AgentAction) -> Result<Option<prompts::ReviewBrief>> {
@@ -453,6 +464,7 @@ impl AgentManager {
         }
         let (session_id, session_ref) = self.binding_session(&rec, &action).await?;
         let review = self.review_brief(&action).await?;
+        let inline_diff = self.guide_inline_diff(&rec.chat.repo_path, &session_ref, &action).await;
         let paths = self.review_paths(&rec.chat.repo_path, &session_ref, &action).await?;
         let binding = Binding {
             repo_path: rec.chat.repo_path.clone(),
@@ -481,6 +493,10 @@ impl AgentManager {
         if prompt.trim().is_empty() {
             return Err(AppError::invalid("prompt is empty"));
         }
+        let prompt = match inline_diff {
+            Some(section) => format!("{prompt}\n{section}"),
+            None => prompt,
+        };
 
         let rt = self.runtime(&rec, binding).await?;
 

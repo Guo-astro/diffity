@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::core::types::{
-    AuthorType, NewThread, RepoThread, Review, ReviewSession, ReviewVerdict, Thread, ThreadStatus, ViewedFile, TREE_REF,
+    AuthorType, Guide, NewThread, RepoThread, Review, ReviewSession, ReviewVerdict, Thread, ThreadStatus, ViewedFile, TREE_REF,
 };
 use crate::core::{diff, repo_threads};
 use crate::core::AppError;
@@ -112,6 +112,16 @@ pub async fn set_thread_status(
     let thread = state.store.set_thread_status(&thread_id, status, summary.as_deref())?;
     emit_threads_changed(&app, &thread.session_id);
     Ok(thread)
+}
+
+#[tauri::command]
+pub async fn get_guide(state: State<'_, AppState>, session_id: String) -> Result<Option<Guide>, AppError> {
+    state.store.get_guide(&session_id)
+}
+
+#[tauri::command]
+pub async fn delete_guide(state: State<'_, AppState>, session_id: String) -> Result<(), AppError> {
+    state.store.delete_guide(&session_id)
 }
 
 #[tauri::command]

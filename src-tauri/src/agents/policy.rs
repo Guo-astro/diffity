@@ -8,6 +8,7 @@ pub const WRITE_TOOLS: &[&str] = &[
     "reply",
     "resolve",
     "dismiss",
+    "set_guide",
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

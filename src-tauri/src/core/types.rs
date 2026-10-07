@@ -3,10 +3,11 @@ use serde::{Deserialize, Serialize};
 pub const GENERAL_FILE_PATH: &str = "__general__";
 pub const TREE_REF: &str = "__tree__";
 
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum Side {
     Old,
+    #[default]
     New,
 }
 
@@ -217,6 +218,86 @@ pub struct ReviewSession {
     /// The branch a HEAD-relative view (`origin/main...HEAD`, `main`) belongs to; empty for other views.
     #[serde(default)]
     pub scope: String,
+}
+
+/// How much of the reviewer's attention a guide chapter needs.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum GuideAttention {
+    /// The core of the change: read every line.
+    High,
+    #[default]
+    Normal,
+    /// Tests, generated files, lockfiles, config: skim.
+    Low,
+}
+
+/// An explanation the agent pinned to a file, or to one line of it, shown in the diff where the code is.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GuideNote {
+    pub path: String,
+    /// Unset for a note about the whole file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default)]
+    pub side: Side,
+    /// Markdown, 1-2 sentences.
+    pub text: String,
+    /// The reviewer should take extra care here: security, data loss, hard to revert, easy to get wrong.
+    #[serde(default)]
+    pub critical: bool,
+}
+
+/// One idea of a change, with the files that carry it, in reading order.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GuideChapter {
+    pub title: String,
+    /// Markdown: what this part does and why, in plain words.
+    pub summary: String,
+    /// What to check while reading these files.
+    #[serde(default)]
+    pub focus: Vec<String>,
+    #[serde(default)]
+    pub attention: GuideAttention,
+    /// Repository-relative paths, most important first.
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub notes: Vec<GuideNote>,
+}
+
+/// What an agent wrote to walk a reviewer through a diff.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GuideContent {
+    /// Markdown: what the change does and why.
+    pub summary: String,
+    /// How things worked before the change, in a sentence or two.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    /// How they work after it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    /// Mermaid flowchart of the changed flow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagram: Option<String>,
+    pub chapters: Vec<GuideChapter>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct Guide {
+    pub session_id: String,
+    /// The view the guide was written for.
+    #[serde(rename = "ref")]
+    pub r#ref: String,
+    /// Fingerprint of the diff the guide describes; a different one means the changes moved on since.
+    pub fingerprint: String,
+    pub agent_name: String,
+    pub created_at: String,
+    #[serde(flatten)]
+    pub content: GuideContent,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

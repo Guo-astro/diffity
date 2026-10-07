@@ -8,7 +8,7 @@ use crate::core::error::{AppError, Result};
 use crate::core::git;
 use crate::core::mentions;
 use crate::core::types::{
-    AuthorType, Comment, NewThread, ProjectData, RecentRepo, Review, ReviewSession, ReviewState, ReviewVerdict, Severity, Side,
+    AuthorType, Comment, Guide, GuideContent, NewThread, ProjectData, RecentRepo, Review, ReviewSession, ReviewState, ReviewVerdict, Severity, Side,
     Thread, ThreadStatus, ViewedFile, TREE_REF,
 };
 
@@ -272,7 +272,19 @@ fn merge_sessions(conn: &Connection, from: &str, into: &str) -> Result<()> {
     Ok(())
 }
 
-const SCHEMA_VERSION: i64 = 5;
+/// Guides an agent wrote for a review session, one per session.
+const MIGRATION_V6: &str = r#"
+CREATE TABLE IF NOT EXISTS guides (
+  session_id TEXT PRIMARY KEY REFERENCES review_sessions(id) ON DELETE CASCADE,
+  ref TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  agent_name TEXT NOT NULL,
+  content_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+"#;
+
+const SCHEMA_VERSION: i64 = 6;
 
 pub struct Store {
     conn: Mutex<Connection>,
@@ -325,6 +337,9 @@ impl Store {
             }
             if version < 5 {
                 migrate_v5(conn)?;
+            }
+            if version < 6 {
+                conn.execute_batch(MIGRATION_V6)?;
             }
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             Ok(())
@@ -1297,6 +1312,59 @@ impl Store {
         Ok(outcome)
     }
 
+    // ---- guides ----
+
+    /// Replaces the session's guide.
+    pub fn save_guide(&self, guide: &Guide) -> Result<()> {
+        let content = serde_json::to_string(&guide.content)
+            .map_err(|e| AppError::internal(format!("encode guide: {e}")))?;
+        self.conn()?.execute(
+            "INSERT INTO guides (session_id, ref, fingerprint, agent_name, content_json, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(session_id) DO UPDATE SET ref = excluded.ref, fingerprint = excluded.fingerprint,
+               agent_name = excluded.agent_name, content_json = excluded.content_json, created_at = excluded.created_at",
+            params![guide.session_id, guide.r#ref, guide.fingerprint, guide.agent_name, content, guide.created_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_guide(&self, session_id: &str) -> Result<Option<Guide>> {
+        let row = self
+            .conn()?
+            .query_row(
+                "SELECT ref, fingerprint, agent_name, content_json, created_at FROM guides WHERE session_id = ?1",
+                [session_id],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, String>(4)?,
+                    ))
+                },
+            )
+            .optional()?;
+        let Some((r#ref, fingerprint, agent_name, content, created_at)) = row else {
+            return Ok(None);
+        };
+        let content: GuideContent = serde_json::from_str(&content)
+            .map_err(|e| AppError::internal(format!("decode guide: {e}")))?;
+        Ok(Some(Guide {
+            session_id: session_id.to_string(),
+            r#ref,
+            fingerprint,
+            agent_name,
+            created_at,
+            content,
+        }))
+    }
+
+    pub fn delete_guide(&self, session_id: &str) -> Result<()> {
+        self.conn()?.execute("DELETE FROM guides WHERE session_id = ?1", [session_id])?;
+        Ok(())
+    }
+
     // ---- viewed files ----
 
     pub fn list_viewed(&self, session_id: &str) -> Result<Vec<ViewedFile>> {
@@ -1462,7 +1530,46 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(n, 9);
+        assert_eq!(n, 10);
+    }
+
+    #[test]
+    fn saves_replaces_and_deletes_a_guide() {
+        use crate::core::types::{GuideAttention, GuideChapter};
+        let store = Store::open_in_memory().unwrap();
+        let session = store.get_or_create_session("/repo", "work").unwrap();
+        assert!(store.get_guide(&session.id).unwrap().is_none());
+        let mut guide = Guide {
+            session_id: session.id.clone(),
+            r#ref: "work".into(),
+            fingerprint: "f1".into(),
+            agent_name: "Claude Code".into(),
+            created_at: now(),
+            content: GuideContent {
+                summary: "Adds a cache".into(),
+                before: None,
+                after: Some("Reads hit memory first".into()),
+                diagram: None,
+                chapters: vec![GuideChapter {
+                    title: "Cache".into(),
+                    summary: "Keeps files in memory".into(),
+                    focus: vec!["Eviction order".into()],
+                    attention: GuideAttention::High,
+                    files: vec!["src/cache.ts".into()],
+                    notes: Vec::new(),
+                }],
+            },
+        };
+        store.save_guide(&guide).unwrap();
+        assert_eq!(store.get_guide(&session.id).unwrap().unwrap().content, guide.content);
+        guide.fingerprint = "f2".into();
+        guide.content.chapters.clear();
+        store.save_guide(&guide).unwrap();
+        let saved = store.get_guide(&session.id).unwrap().unwrap();
+        assert_eq!(saved.fingerprint, "f2");
+        assert!(saved.content.chapters.is_empty());
+        store.delete_guide(&session.id).unwrap();
+        assert!(store.get_guide(&session.id).unwrap().is_none());
     }
 
     #[test]

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::core::store::Store;
 use crate::core::types::{
-    AuthorType, DiffResult, NewThread, Review, ReviewSession, Side, Thread, ThreadStatus,
+    AuthorType, DiffResult, Guide, NewThread, Review, ReviewSession, Side, Thread, ThreadStatus,
 };
 use crate::core::{AppError, Result};
 
@@ -26,6 +26,11 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
 }
 
 impl ReviewBackend for CoreBackend {
+    fn save_guide(&self, guide: Guide) -> BoxFut<'_, ()> {
+        let store = self.store.clone();
+        Box::pin(blocking(move || store.save_guide(&guide)))
+    }
+
     fn session(&self, session_id: &str) -> BoxFut<'_, ReviewSession> {
         let (store, id) = (self.store.clone(), session_id.to_string());
         Box::pin(blocking(move || store.get_session_by_id(&id)))

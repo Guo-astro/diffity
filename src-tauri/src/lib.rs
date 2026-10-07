@@ -223,6 +223,8 @@ pub fn run() {
             commands::comments::delete_all_threads,
             commands::comments::set_thread_status,
             commands::comments::list_viewed,
+            commands::comments::get_guide,
+            commands::comments::delete_guide,
             commands::comments::set_viewed,
             commands::comments::viewed_changes,
             commands::comments::get_pending_review,

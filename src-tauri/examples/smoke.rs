@@ -1,6 +1,7 @@
 //! Live smoke test against an installed agent. Costs tokens.
 //! `cargo build --features mcp --bin diffity-mcp && cargo run --example smoke -- <claude|codex|gemini> [repo] [review|ask|edit|thread]`
 //! `resolve` leaves a plain comment asking for a fix and runs `resolve` on it; `SMOKE_PERMISSIONS=askOnce|askEach` overrides the default (skip); `SMOKE_MODEL` picks the model.
+//! `guide` writes a reading guide for `SMOKE_REF` (default `work`) and prints it; `SMOKE_TIMEOUT` (seconds) gives it longer.
 //! `thread` leaves a user comment mentioning the agent (`@claude`, `@codex`) on math.js and runs the `thread` action (auto-approves writes).
 
 use std::path::{Path, PathBuf};
@@ -69,6 +70,8 @@ async fn main() -> anyhow::Result<()> {
     let mode_arg = args.next();
     let thread_mode = mode_arg.as_deref() == Some("thread");
     let resolve_mode = mode_arg.as_deref() == Some("resolve");
+    let guide_mode = mode_arg.as_deref() == Some("guide");
+    let session_ref = std::env::var("SMOKE_REF").unwrap_or_else(|_| "work".into());
     let mode = match mode_arg.as_deref() {
         Some("ask") => AgentMode::Ask,
         Some("edit") => AgentMode::Edit,
@@ -94,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
     for info in manager.list_agents(false).await? {
         println!("[agent] {info:?}");
     }
-    let session = store.get_or_create_session(&repo_path, "work")?;
+    let session = store.get_or_create_session(&repo_path, if guide_mode { &session_ref } else { "work" })?;
     let chat = manager
         .start_chat(StartChat {
             repo_path: repo_path.clone(),
@@ -168,6 +171,15 @@ async fn main() -> anyhow::Result<()> {
         })?;
         println!("[thread] created {} mentionsAgent={}", thread.id, thread.comments[0].mentions_agent);
         (String::new(), AgentAction::Thread { thread_id: thread.id })
+    } else if guide_mode {
+        (
+            String::new(),
+            AgentAction::Guide {
+                r#ref: session_ref.clone(),
+                title: std::env::var("SMOKE_PR_TITLE").ok(),
+                description: std::env::var("SMOKE_PR_BODY").ok(),
+            },
+        )
     } else if resolve_mode {
         let thread = store.create_thread(&diffity_desktop_lib::core::types::NewThread {
             session_id: session.id.clone(),
@@ -200,7 +212,8 @@ async fn main() -> anyhow::Result<()> {
         effort: None,
     };
     let run = manager.send_prompt(&chat.id, text, vec![], action, model, sink);
-    let outcome = tokio::time::timeout(Duration::from_secs(170), run).await;
+    let timeout = std::env::var("SMOKE_TIMEOUT").ok().and_then(|t| t.parse().ok()).unwrap_or(170);
+    let outcome = tokio::time::timeout(Duration::from_secs(timeout), run).await;
     match outcome {
         Ok(Ok(())) => println!("\n[turn finished]"),
         Ok(Err(e)) => println!("\n[turn error] {e}"),
@@ -227,6 +240,12 @@ async fn main() -> anyhow::Result<()> {
             first.map(|c| c.author_name.as_str()).unwrap_or(""),
             first.map(|c| c.body.as_str()).unwrap_or("")
         );
+    }
+    if guide_mode {
+        match store.get_guide(&session.id)? {
+            Some(guide) => println!("[guide]\n{}", serde_json::to_string_pretty(&guide)?),
+            None => println!("[guide] none saved"),
+        }
     }
     if let Ok(contents) = std::fs::read_to_string(repo.join("math.js")) {
         println!("[math.js]\n{contents}");

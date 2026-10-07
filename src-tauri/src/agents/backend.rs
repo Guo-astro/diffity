@@ -2,7 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::core::types::{
-    AuthorType, DiffResult, NewThread, Review, ReviewSession, Side, Thread, ThreadStatus,
+    AuthorType, DiffResult, Guide, NewThread, Review, ReviewSession, Side, Thread, ThreadStatus,
 };
 use crate::core::Result;
 
@@ -39,6 +39,8 @@ pub trait ReviewBackend: Send + Sync + 'static {
         author_type: AuthorType,
         author_name: &str,
     ) -> BoxFut<'_, Thread>;
+    /// Replaces the session's guide.
+    fn save_guide(&self, guide: Guide) -> BoxFut<'_, ()>;
     fn set_thread_status(
         &self,
         thread_id: &str,

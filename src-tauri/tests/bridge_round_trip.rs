@@ -139,7 +139,7 @@ async fn mcp_tool_call_reaches_bridge_and_creates_thread() {
     let (_child, mut client) = start_client(&socket, &token).await;
 
     let list = client.request("tools/list", json!({})).await;
-    assert_eq!(tool_names(&list).len(), 7, "{list}");
+    assert_eq!(tool_names(&list).len(), 8, "{list}");
 
     let diff = client
         .request("tools/call", json!({ "name": "get_diff", "arguments": {} }))
