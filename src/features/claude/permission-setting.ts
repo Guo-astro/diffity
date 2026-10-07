@@ -14,7 +14,7 @@ export const PERMISSION_OPTIONS: { value: PermissionSetting; label: string; hint
   {
     value: 'skip',
     label: 'Skip all permission prompts',
-    hint: 'The agent edits files and runs commands without asking when it fixes comments. Reviews stay read-only.',
+    hint: 'The agent edits files and runs commands without asking when it fixes comments. Reviews stay read-only and read or fetch without asking.',
   },
   {
     value: 'askOnce',

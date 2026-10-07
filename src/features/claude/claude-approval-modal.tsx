@@ -78,7 +78,7 @@ export function ClaudeApprovalModal() {
     if (dontAsk) {
       void savePermissionSetting('skip');
     }
-    void answerClaudePermission(permission.requestId, allowOnce.id, forRun || dontAsk);
+    void answerClaudePermission(permission.requestId, allowOnce.id, forRun || dontAsk, dontAsk);
   };
 
   useEffect(() => {

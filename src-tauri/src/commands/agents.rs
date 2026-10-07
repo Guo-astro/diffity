@@ -80,10 +80,16 @@ pub async fn respond_permission(
     request_id: String,
     option_id: Option<String>,
     for_run: Option<bool>,
+    skip_prompts: Option<bool>,
 ) -> Result<(), AppError> {
     state
         .agents
-        .respond_permission(&request_id, option_id, for_run.unwrap_or(false))
+        .respond_permission(
+            &request_id,
+            option_id,
+            for_run.unwrap_or(false),
+            skip_prompts.unwrap_or(false),
+        )
         .await
 }
 

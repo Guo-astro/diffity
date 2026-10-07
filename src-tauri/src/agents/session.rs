@@ -31,11 +31,13 @@ pub type EventSink = Arc<dyn Fn(AgentEvent) + Send + Sync>;
 
 const STDERR_LINES: usize = 40;
 
-/// The user's answer to a permission request. `for_run` means "Allow for this run".
+/// The user's answer to a permission request. `for_run` means "Allow for this run"; `skip_prompts`
+/// means "Don't ask again", which also stops prompts for the rest of the current run.
 #[derive(Debug, Default)]
 struct Choice {
     option: Option<String>,
     for_run: bool,
+    skip_prompts: bool,
 }
 
 #[derive(Default)]
@@ -53,7 +55,13 @@ impl PermissionBroker {
         (id, rx)
     }
 
-    pub fn respond(&self, request_id: &str, option_id: Option<String>, for_run: bool) -> bool {
+    pub fn respond(
+        &self,
+        request_id: &str,
+        option_id: Option<String>,
+        for_run: bool,
+        skip_prompts: bool,
+    ) -> bool {
         let tx = self
             .pending
             .lock()
@@ -64,6 +72,7 @@ impl PermissionBroker {
                 .send(Choice {
                     option: option_id,
                     for_run,
+                    skip_prompts,
                 })
                 .is_ok(),
             None => false,
@@ -72,7 +81,7 @@ impl PermissionBroker {
 
     fn cancel_all(&self, ids: &[String]) {
         for id in ids {
-            self.respond(id, None, false);
+            self.respond(id, None, false, false);
         }
     }
 }
@@ -272,8 +281,14 @@ impl Shared {
             .unwrap_or(RunPermissions::AskEach)
     }
 
-    fn auto_allow(&self, is_edit: bool) -> bool {
-        policy::auto_allow(self.run(), is_edit, self.run_approved.load(Ordering::SeqCst))
+    fn auto_allow(&self, kind: &str, is_edit: bool) -> bool {
+        policy::auto_allow(self.run(), kind, is_edit, self.run_approved.load(Ordering::SeqCst))
+    }
+
+    fn skip_prompts(&self) {
+        if let Ok(mut run) = self.run.lock() {
+            *run = run.skipping_prompts_if(true);
+        }
     }
 
     fn record_allow(&self, is_edit: bool, for_run: bool) {
@@ -405,7 +420,7 @@ async fn handle_permission(
         write_paths.push(shared.resolve_path(Path::new(&d.path)));
     }
     let is_edit = diff.is_some() || policy::is_edit_kind(&kind);
-    if shared.auto_allow(is_edit) {
+    if shared.auto_allow(&kind, is_edit) {
         let allow = req
             .options
             .iter()
@@ -452,6 +467,9 @@ async fn handle_permission(
             .as_ref()
             .and_then(|id| options.iter().find(|(oid, _)| oid == id))
             .is_some_and(|(_, kind)| kind.starts_with("allow"));
+        if allowed && answer.skip_prompts {
+            shared.skip_prompts();
+        }
         if allowed && policy::can_write_files(shared.mode) {
             shared.approve_writes(write_paths);
             shared.record_allow(is_edit, answer.for_run);
@@ -517,7 +535,7 @@ async fn handle_write(
         ));
     }
     let path = shared.resolve_path(&req.path);
-    if shared.take_approved_write(&path) || shared.auto_allow(true) {
+    if shared.take_approved_write(&path) || shared.auto_allow("edit", true) {
         return match write_file(&path, &req.content).await {
             Ok(r) => responder.respond(r),
             Err(e) => responder.respond_with_error(e),
@@ -560,6 +578,9 @@ async fn handle_write(
                 -32001,
                 "The user rejected this write.",
             ));
+        }
+        if answer.skip_prompts {
+            shared.skip_prompts();
         }
         shared.record_allow(true, answer.for_run);
         match write_file(&path, &req.content).await {
@@ -872,7 +893,9 @@ impl AgentSession {
             self.shared.edit_rejected.store(false, Ordering::SeqCst);
             self.shared.run_approved.store(false, Ordering::SeqCst);
             if let Ok(mut current) = self.shared.run.lock() {
-                *current = if policy::can_write_files(self.shared.mode) {
+                *current = if policy::can_write_files(self.shared.mode)
+                    || run == RunPermissions::ReadOnlyQuiet
+                {
                     run
                 } else {
                     RunPermissions::ReadOnly
@@ -1188,11 +1211,11 @@ mod tests {
     fn broker_carries_run_scope() {
         let broker = PermissionBroker::default();
         let (id, mut rx) = broker.register();
-        assert!(broker.respond(&id, Some("allow".into()), true));
+        assert!(broker.respond(&id, Some("allow".into()), true, false));
         let choice = rx.try_recv().unwrap();
         assert_eq!(choice.option.as_deref(), Some("allow"));
         assert!(choice.for_run);
-        assert!(!broker.respond(&id, None, false), "answered requests are gone");
+        assert!(!broker.respond(&id, None, false, false), "answered requests are gone");
     }
 
     #[test]

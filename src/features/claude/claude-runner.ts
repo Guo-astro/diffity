@@ -219,7 +219,7 @@ export async function stopClaude(repoPath: string) {
   await tauri.cancelPrompt(running.chatId).catch(() => undefined);
 }
 
-export async function answerClaudePermission(requestId: string, optionId: string | null, forRun = false) {
+export async function answerClaudePermission(requestId: string, optionId: string | null, forRun = false, skipPrompts = false) {
   const permission = useClaude.getState().permissions.find((item) => item.requestId === requestId);
   if (!permission) {
     return;
@@ -228,7 +228,7 @@ export async function answerClaudePermission(requestId: string, optionId: string
   if (optionId && forRun && permission.diff) {
     patchRun(permission.runId, { editsApproved: true });
   }
-  await tauri.respondPermission(permission.requestId, optionId, forRun).catch((error) => {
+  await tauri.respondPermission(permission.requestId, optionId, forRun, skipPrompts).catch((error) => {
     toast.error(tauri.errorMessage(error));
   });
 }

@@ -59,8 +59,11 @@ impl PermissionSetting {
 /// How one turn handles permission requests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunPermissions {
-    /// Review / ask: file mutations and shell commands are denied without asking.
+    /// Review / ask: file mutations and shell commands are denied without asking; everything else asks.
     ReadOnly,
+    /// Review / ask under "Skip all permission prompts": mutations are still denied, but reading,
+    /// searching and fetching go through without asking.
+    ReadOnlyQuiet,
     /// No prompts; the adapter runs in `bypassPermissions` when it offers it.
     Bypass,
     /// Ask for the first edit; allowing it approves the rest of the run's edits. Shell commands still ask.
@@ -70,6 +73,15 @@ pub enum RunPermissions {
 }
 
 impl RunPermissions {
+    /// What "Don't ask again" turns this run into: no prompts for anything the run may do.
+    pub fn skipping_prompts_if(self, skip: bool) -> Self {
+        match (self, skip) {
+            (_, false) => self,
+            (Self::ReadOnly | Self::ReadOnlyQuiet, true) => Self::ReadOnlyQuiet,
+            (_, true) => Self::Bypass,
+        }
+    }
+
     /// The ACP session mode (`session/set_mode`) this turn should run in. Codex starts in its "Auto
     /// review" mode, which edits without asking, so every prompting run moves it to `read-only`, where
     /// edits and commands come to Diffity as permission requests.
@@ -100,7 +112,7 @@ pub fn run_permissions(
     setting: PermissionSetting,
 ) -> RunPermissions {
     if !can_write_files(mode) {
-        return RunPermissions::ReadOnly;
+        return RunPermissions::ReadOnly.skipping_prompts_if(setting == PermissionSetting::Skip);
     }
     if !action_edits(action) {
         return RunPermissions::AskEach;
@@ -117,11 +129,17 @@ pub fn is_edit_kind(kind: &str) -> bool {
     matches!(kind, "edit" | "delete" | "move")
 }
 
+/// ACP tool kinds that only look at things, never change them.
+fn is_read_kind(kind: &str) -> bool {
+    matches!(kind, "read" | "search" | "fetch" | "think")
+}
+
 /// Requests answered without showing the user anything, given the run and whether edits were already approved.
-pub fn auto_allow(run: RunPermissions, is_edit: bool, run_approved: bool) -> bool {
+pub fn auto_allow(run: RunPermissions, kind: &str, is_edit: bool, run_approved: bool) -> bool {
     match run {
         RunPermissions::Bypass => true,
         RunPermissions::ReadOnly => false,
+        RunPermissions::ReadOnlyQuiet => !is_edit && is_read_kind(kind),
         RunPermissions::AskOnce | RunPermissions::AskEach => is_edit && run_approved,
     }
 }
@@ -245,8 +263,12 @@ mod tests {
         for mode in [AgentMode::Ask, AgentMode::Review] {
             for action in [review.clone(), resolve(), AgentAction::Chat] {
                 let run = run_permissions(mode, &action, PermissionSetting::Skip);
-                assert_eq!(run, RunPermissions::ReadOnly, "{mode:?} {action:?}");
+                assert_eq!(run, RunPermissions::ReadOnlyQuiet, "{mode:?} {action:?}");
                 assert_eq!(run.acp_mode_id(AgentKind::Claude), "default");
+                assert_eq!(
+                    run_permissions(mode, &action, PermissionSetting::AskEach),
+                    RunPermissions::ReadOnly
+                );
             }
         }
         let explain = AgentAction::Explain { path: "a.rs".into() };
@@ -261,15 +283,27 @@ mod tests {
     }
 
     #[test]
+    fn dont_ask_again_never_unlocks_writes_in_read_only_runs() {
+        assert_eq!(RunPermissions::ReadOnly.skipping_prompts_if(true), RunPermissions::ReadOnlyQuiet);
+        assert_eq!(RunPermissions::AskOnce.skipping_prompts_if(true), RunPermissions::Bypass);
+        assert_eq!(RunPermissions::AskEach.skipping_prompts_if(false), RunPermissions::AskEach);
+    }
+
+    #[test]
     fn auto_allow_rules() {
-        assert!(auto_allow(RunPermissions::Bypass, false, false));
-        assert!(auto_allow(RunPermissions::Bypass, true, false));
-        assert!(!auto_allow(RunPermissions::ReadOnly, true, true));
-        assert!(!auto_allow(RunPermissions::AskOnce, true, false));
-        assert!(auto_allow(RunPermissions::AskOnce, true, true));
-        assert!(!auto_allow(RunPermissions::AskOnce, false, true), "shell keeps asking");
-        assert!(auto_allow(RunPermissions::AskEach, true, true));
-        assert!(!auto_allow(RunPermissions::AskEach, false, true));
+        assert!(auto_allow(RunPermissions::Bypass, "execute", false, false));
+        assert!(auto_allow(RunPermissions::Bypass, "edit", true, false));
+        assert!(!auto_allow(RunPermissions::ReadOnly, "edit", true, true));
+        assert!(!auto_allow(RunPermissions::ReadOnly, "fetch", false, false));
+        assert!(auto_allow(RunPermissions::ReadOnlyQuiet, "fetch", false, false));
+        assert!(auto_allow(RunPermissions::ReadOnlyQuiet, "read", false, false));
+        assert!(!auto_allow(RunPermissions::ReadOnlyQuiet, "other", false, false), "unknown tools keep asking");
+        assert!(!auto_allow(RunPermissions::ReadOnlyQuiet, "edit", true, true));
+        assert!(!auto_allow(RunPermissions::AskOnce, "edit", true, false));
+        assert!(auto_allow(RunPermissions::AskOnce, "edit", true, true));
+        assert!(!auto_allow(RunPermissions::AskOnce, "execute", false, true), "shell keeps asking");
+        assert!(auto_allow(RunPermissions::AskEach, "edit", true, true));
+        assert!(!auto_allow(RunPermissions::AskEach, "execute", false, true));
     }
 
     #[test]

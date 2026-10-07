@@ -519,8 +519,9 @@ impl AgentManager {
         request_id: &str,
         option_id: Option<String>,
         for_run: bool,
+        skip_prompts: bool,
     ) -> Result<()> {
-        if self.broker.respond(request_id, option_id, for_run) {
+        if self.broker.respond(request_id, option_id, for_run, skip_prompts) {
             return Ok(());
         }
         Err(AppError::not_found(format!(

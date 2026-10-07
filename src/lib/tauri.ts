@@ -162,8 +162,8 @@ export function sendPrompt(
   return invoke<void>('send_prompt', { chatId, text, context, action, model, onEvent: channel });
 }
 export const cancelPrompt = (chatId: string) => invoke<void>('cancel_prompt', { chatId });
-export const respondPermission = (requestId: string, optionId: string | null, forRun = false) =>
-  invoke<void>('respond_permission', { requestId, optionId, forRun });
+export const respondPermission = (requestId: string, optionId: string | null, forRun = false, skipPrompts = false) =>
+  invoke<void>('respond_permission', { requestId, optionId, forRun, skipPrompts });
 export const deleteChat = (chatId: string) => invoke<void>('delete_chat', { chatId });
 
 // github
