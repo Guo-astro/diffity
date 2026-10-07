@@ -13,11 +13,10 @@ const TABS: { value: RepoView; label: string; hint: string; icon: ComponentType<
   { value: 'guide', label: 'Guide', hint: 'The change chapter by chapter, explained by an agent (G)', icon: BookIcon },
 ];
 
-/** `showGuide`: the diff on screen is big enough for a guide, or has one. */
-export function ViewTabs(props: { current: RepoView; vertical?: boolean; showGuide?: boolean }) {
-  const { current, vertical = false, showGuide = false } = props;
+/** The same tabs on every page, so switching views never shifts them. */
+export function ViewTabs(props: { current: RepoView; vertical?: boolean }) {
+  const { current, vertical = false } = props;
   const nav = useRepoNav();
-  const tabs = showGuide ? TABS : TABS.filter((tab) => tab.value !== 'guide');
 
   const go = (view: RepoView) => {
     if (view === current) {
@@ -37,7 +36,7 @@ export function ViewTabs(props: { current: RepoView; vertical?: boolean; showGui
   if (vertical) {
     return (
       <nav className="flex flex-col items-center gap-1" aria-label="Views">
-        {tabs.map((tab) => {
+        {TABS.map((tab) => {
           const Icon = tab.icon;
           const active = tab.value === current;
           return (
@@ -61,7 +60,7 @@ export function ViewTabs(props: { current: RepoView; vertical?: boolean; showGui
 
   return (
     <nav className="flex items-center gap-0.5 mx-3 mt-3 mb-2 p-0.5 rounded-lg bg-fill shrink-0" aria-label="Views">
-      {tabs.map((tab) => {
+      {TABS.map((tab) => {
         const Icon = tab.icon;
         const active = tab.value === current;
         return (
@@ -71,7 +70,7 @@ export function ViewTabs(props: { current: RepoView; vertical?: boolean; showGui
             aria-current={active ? 'page' : undefined}
             title={tab.hint}
             className={cn(
-              'flex flex-auto min-w-0 items-center justify-center gap-1.5 h-7 px-2 rounded-md text-[13px] transition-colors cursor-pointer',
+              'flex flex-1 basis-0 min-w-0 items-center justify-center gap-1.5 h-7 px-2 rounded-md text-[13px] transition-colors cursor-pointer',
               active ? segmentActive : segmentInactive,
             )}
           >

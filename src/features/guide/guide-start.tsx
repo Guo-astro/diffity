@@ -11,17 +11,19 @@ import { useRunPick, writeRepoPick, type RunPick } from '../claude/model-setting
 import { formatElapsed, useNow } from '../claude/activity-panel';
 import { currentFile, openActivity, useRunActivity } from '../claude/run-activity';
 import { startGuide, useGuideRun, type GuidePullRequest } from './use-guide';
+import { isGuideWorthy } from './guide-model';
 
 interface GuideStartProps {
   diffRef: string;
   sessionId: string | null;
   fileCount: number;
+  changedLines: number;
   pr: GuidePullRequest | null;
 }
 
 /** Shown in the guide until one exists: one line on what it is, and the button that writes it. */
 export function GuideStart(props: GuideStartProps) {
-  const { diffRef, sessionId, fileCount, pr } = props;
+  const { diffRef, sessionId, fileCount, changedLines, pr } = props;
   const repoPath = getRepoPath();
   const fallbackPick = useRunPick('review', repoPath);
   const [picked, setPicked] = useState<RunPick | null>(null);
@@ -44,7 +46,9 @@ export function GuideStart(props: GuideStartProps) {
         </span>
         <h2 className="mt-3 text-[15px] font-semibold text-text">Read it chapter by chapter</h2>
         <p className="mt-1 text-[13px] text-text-secondary leading-relaxed">
-          {agent.short} groups {fileCount === 1 ? 'the change' : `the ${fileCount} files`} by idea, explains each part and puts the core change first.
+          {isGuideWorthy(fileCount, changedLines)
+            ? `${agent.short} groups the ${fileCount} files by idea, explains each part and puts the core change first.`
+            : `This change is small, so the diff may be all you need. ${agent.short} can still explain why it was made and what to check.`}
         </p>
         <div className="mt-5 flex items-center justify-center gap-2 min-h-8 max-w-full">
           {run ? <GuideProgress diffRef={diffRef} /> : (

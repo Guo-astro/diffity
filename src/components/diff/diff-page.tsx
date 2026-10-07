@@ -59,7 +59,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { GuideSidebar, GuideSidebarEmpty } from '../../features/guide/guide-sidebar';
 import { GuideReader } from '../../features/guide/guide-reader';
 import { GuideStart } from '../../features/guide/guide-start';
-import { isGuideStale, isGuideWorthy, readingChapters, stepLabel } from '../../features/guide/guide-model';
+import { isGuideStale, readingChapters, stepLabel } from '../../features/guide/guide-model';
 import { deleteGuide, OVERVIEW_STEP, startGuide, useGuide, useGuideRun, type GuideStep } from '../../features/guide/use-guide';
 import { setGuideOnScreen } from '../../features/guide/guide-on-screen';
 import { useRunPick } from '../../features/claude/model-setting';
@@ -186,9 +186,7 @@ export function DiffPage(props: DiffPageProps) {
   const reviewPick = useRunPick('review', repoPath);
   const chapters = useMemo(() => (guide && diff ? readingChapters(guide, diff.files) : []), [guide, diff]);
   const guideStale = !!guide && isGuideStale(guide, showIgnored ? undefined : rawDiff?.fingerprint, chapters);
-  // A guide pays off on bigger changes; on a few small files the diff reads fine as it is.
-  const guideEligible = reviewsEnabled && (!!guide || !!guideRun || isGuideWorthy(diff?.files.length ?? 0, (diff?.stats.totalAdditions ?? 0) + (diff?.stats.totalDeletions ?? 0)));
-  const guideMode = mode === 'guide' && guideEligible;
+  const guideMode = mode === 'guide' && reviewsEnabled;
   // The guide sits beside a story column, so it keeps its own unified/split choice, unified by default.
   const [guideViewMode, setGuideViewMode] = useViewState<ViewMode>('guide:viewMode', 'unified');
   const shownViewMode = guideMode ? guideViewMode : viewMode;
@@ -238,7 +236,7 @@ export function DiffPage(props: DiffPageProps) {
     return () => setGuideOnScreen(null, null);
   }, [guideMode, repoPath, refParam]);
 
-  useHotkeys('g', () => setMode(guideMode ? 'files' : 'guide'), { preventDefault: true, enabled: guideEligible }, [guideMode]);
+  useHotkeys('g', () => setMode(guideMode ? 'files' : 'guide'), { preventDefault: true, enabled: reviewsEnabled }, [guideMode]);
 
   useEffect(() => {
     localStorage.setItem('diffity-view-mode', viewMode);
@@ -570,7 +568,7 @@ export function DiffPage(props: DiffPageProps) {
       { id: 'file-next', title: 'Next file', group: 'View', hint: shortcutHint('file-next'), keywords: 'down', icon: <ChevronDownIcon size="sm" />, run: () => navigateFile(1) },
       { id: 'file-prev', title: 'Previous file', group: 'View', hint: shortcutHint('file-prev'), keywords: 'up', icon: <ChevronUpIcon size="sm" />, run: () => navigateFile(-1) },
       { id: 'claude-review', title: 'Ask Claude to review…', group: 'Actions', keywords: 'ai review', icon: <SparkleIcon size="sm" className="text-claude" />, run: () => requestAskClaude(refParam) },
-      ...(guideEligible ? [{
+      ...(reviewsEnabled ? [{
         id: 'guide',
         title: guideMode ? 'Show the diff' : guide ? 'Open the guide' : 'Write a guide…',
         group: 'View',
@@ -603,7 +601,7 @@ export function DiffPage(props: DiffPageProps) {
       list.push({ id: 'commit-push', title: `Commit & push to PR #${githubDetails.prNumber}`, group: 'Actions', icon: <PushIcon size="sm" />, run: () => openCommitDialog(githubDetails.prNumber) });
     }
     return list;
-  }, [hideWhitespace, diff, navigateFile, refParam, ownPr, githubDetails, activeFile, guideEligible, guideMode, guide, setMode, setShownViewMode]);
+  }, [hideWhitespace, diff, navigateFile, refParam, ownPr, githubDetails, activeFile, reviewsEnabled, guideMode, guide, setMode, setShownViewMode]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -748,7 +746,6 @@ export function DiffPage(props: DiffPageProps) {
           onCommentedFileClick={handleSidebarCommentedFileClick}
           stats={isEmpty ? undefined : diff.stats}
           stateKey={`diff:${refParam}:sidebar`}
-          showGuide={guideEligible}
         />
         )}
         {isEmpty ? (
@@ -808,7 +805,7 @@ export function DiffPage(props: DiffPageProps) {
               <MovedComposer selection={pendingSelection} onSubmit={handleAddThread} onCancel={() => setPendingSelection(null)} />
             )}
             {guideMode && !guideOpen && (
-              <GuideStart diffRef={refParam} sessionId={sessionId} fileCount={diff.files.length} pr={guidePr} />
+              <GuideStart diffRef={refParam} sessionId={sessionId} fileCount={diff.files.length} changedLines={diff.stats.totalAdditions + diff.stats.totalDeletions} pr={guidePr} />
             )}
             {guideOpen && guide && (
               <GuideReader

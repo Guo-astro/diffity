@@ -32,7 +32,7 @@ export function GuideSidebar(props: GuideSidebarProps) {
   let number = 0;
 
   return (
-    <SidebarFrame view="guide" showGuide>
+    <SidebarFrame view="guide">
       <div className="flex items-start gap-1 px-3 pb-2.5 shrink-0">
         <nav className="flex flex-wrap gap-1 flex-1 min-w-0" aria-label="Guide steps">
           <button
@@ -160,7 +160,7 @@ export function GuideSidebarEmpty(props: { writing: boolean }) {
   const { writing } = props;
 
   return (
-    <SidebarFrame view="guide" showGuide>
+    <SidebarFrame view="guide">
       <div className="px-4 pt-2 text-xs leading-5 text-text-muted">
         {writing ? 'The chapters will show here when the guide is written.' : 'No guide yet. Once one is written, its chapters show here.'}
       </div>

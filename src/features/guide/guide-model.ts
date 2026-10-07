@@ -4,7 +4,7 @@ import type { Guide, GuideAttention, GuideNote } from '../../lib/types';
 
 export const NOT_IN_GUIDE_TITLE = 'Not in the guide';
 
-/** Below this a diff reads fine file by file, so the guide is not offered. */
+/** Below this a diff reads fine file by file, and the guide's start screen says so. */
 export const GUIDE_MIN_FILES = 6;
 export const GUIDE_MIN_LINES = 300;
 
