@@ -9,12 +9,11 @@ import type { SinceViewedInfo } from '../../components/diff/since-viewed';
 import { DiffStats } from '../../components/diff/diff-stats';
 import { MermaidDiagram } from '../../components/mermaid-diagram';
 import { GeneralComments } from '../../components/comments/general-comments';
-import { buttonGhost, buttonPrimary } from '../../components/ui/button-styles';
-import { AlertCircleIcon, CheckIcon, ChevronRightIcon, RefreshIcon } from '../../components/ui/icon';
+import { buttonPrimary } from '../../components/ui/button-styles';
+import { CheckIcon, ChevronRightIcon } from '../../components/ui/icon';
 import { diagramWithStyles, type ReadingChapter } from './guide-model';
 import { ChapterNav, ChapterStory, chapterViewed, AttentionTag, CriticalTag, Eyebrow, Prose, stepNav } from './guide-story';
 import { useUi } from '../../lib/ui-store';
-import { GuideProgress } from './guide-start';
 import { GuideNoteCard, GuideNotesContext, notesByFile } from './guide-notes';
 import { OVERVIEW_STEP, type GuideStep } from './use-guide';
 
@@ -25,11 +24,6 @@ export interface GuideReaderProps extends SharedFileProps {
   chapters: ReadingChapter[];
   step: GuideStep;
   onStep: (step: GuideStep) => void;
-  stale: boolean;
-  /** Unset while a guide run is already queued or going. */
-  onRewrite: (() => void) | null;
-  rewriting: boolean;
-  diffRef: string;
   collapsedFiles: Set<string>;
   reviewedFiles: Set<string>;
   sinceViewedFiles: Map<string, SinceViewedInfo>;
@@ -40,7 +34,7 @@ export interface GuideReaderProps extends SharedFileProps {
 
 /** The guide's pages: the overview, then one chapter at a time with its files. */
 export function GuideReader(props: GuideReaderProps) {
-  const { guide, chapters, step, onStep, stale, onRewrite, rewriting, diffRef, scrollRef, reviewedFiles } = props;
+  const { guide, chapters, step, onStep, scrollRef, reviewedFiles } = props;
   const scroller = useRef<HTMLElement | null>(null);
   const { index, chapter, go } = stepNav(chapters, step, onStep);
 
@@ -73,23 +67,6 @@ export function GuideReader(props: GuideReaderProps) {
       }}
       className="flex-1 overflow-y-auto pb-16"
     >
-      {(stale || rewriting) && (
-        <div className="max-w-[760px] mx-auto px-8 pt-6">
-          {rewriting ? <GuideProgress diffRef={diffRef} /> : (
-            <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-border bg-bg-secondary text-[13px]">
-              <AlertCircleIcon size="sm" className="text-modified shrink-0" />
-              <span className="text-text-secondary">The changes moved on after this guide was written, so parts of it may be out of date.</span>
-              <span className="flex-1" />
-              {onRewrite && (
-                <button onClick={onRewrite} className={cn(buttonGhost, 'shrink-0')}>
-                  <RefreshIcon size="xs" />
-                  Write a new guide
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
       {chapter ? (
         <ChapterPage {...props} chapter={chapter} index={index} />
       ) : (

@@ -58,7 +58,7 @@ import { loadHeldBackFile } from '../../lib/large-diff';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { GuideSidebar, GuideSidebarEmpty } from '../../features/guide/guide-sidebar';
 import { GuideReader } from '../../features/guide/guide-reader';
-import { GuideStart } from '../../features/guide/guide-start';
+import { GuideBarStatus, GuideStart } from '../../features/guide/guide-start';
 import { isGuideStale, readingChapters, stepLabel } from '../../features/guide/guide-model';
 import { deleteGuide, OVERVIEW_STEP, startGuide, useGuide, useGuideRun, type GuideStep } from '../../features/guide/use-guide';
 import { setGuideOnScreen } from '../../features/guide/guide-on-screen';
@@ -781,7 +781,12 @@ export function DiffPage(props: DiffPageProps) {
                 onViewModeChange={setShownViewMode}
                 hideWhitespace={hideWhitespace}
                 onHideWhitespaceChange={setHideWhitespace}
-                leading={guideOpen ? <span className="mr-1 text-xs text-text-secondary tabular-nums shrink-0">{stepLabel(chapters, step)}</span> : undefined}
+                leading={guideOpen ? (
+                  <span className="flex items-center gap-3 mr-1 min-w-0">
+                    <span className="text-xs text-text-secondary tabular-nums shrink-0">{stepLabel(chapters, step)}</span>
+                    <GuideBarStatus diffRef={refParam} stale={guideStale} onRewrite={rewriteGuide} />
+                  </span>
+                ) : undefined}
                 ignored={{ hiddenCount: diff.hiddenFiles?.length ?? 0, showing: showIgnored, onShowingChange: setShowIgnored }}
                 onExpandAll={() => setCollapsedFiles(new Set())}
                 onCollapseAll={() => setCollapsedFiles(new Set(allPaths))}
@@ -813,10 +818,6 @@ export function DiffPage(props: DiffPageProps) {
                 chapters={chapters}
                 step={step}
                 onStep={setGuideStep}
-                stale={guideStale}
-                onRewrite={rewriteGuide}
-                rewriting={!!guideRun}
-                diffRef={refParam}
                 viewMode={shownViewMode}
                 collapsedFiles={collapsedFiles}
                 onToggleCollapse={handleToggleCollapse}

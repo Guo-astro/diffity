@@ -109,3 +109,28 @@ export function GuideProgress(props: { diffRef: string; className?: string }) {
     </div>
   );
 }
+
+/** The guide's state in the bar above the code: the run rewriting it, or a quiet "Out of date" with a way to rewrite. */
+export function GuideBarStatus(props: { diffRef: string; stale: boolean; onRewrite: (() => void) | null }) {
+  const { diffRef, stale, onRewrite } = props;
+  const run = useGuideRun(getRepoPath(), diffRef);
+
+  if (run) {
+    return <GuideProgress diffRef={diffRef} className="text-xs min-w-0" />;
+  }
+  if (!stale) {
+    return null;
+  }
+  return (
+    <span className="flex items-center gap-1.5 text-xs shrink-0" title="The changes moved on after this guide was written, so parts of it may be out of date.">
+      <span className="w-1.5 h-1.5 rounded-full bg-modified" />
+      <span className="text-text-secondary">Out of date</span>
+      {onRewrite && (
+        <>
+          <span className="text-text-muted">·</span>
+          <button onClick={onRewrite} className={linkButton}>Rewrite</button>
+        </>
+      )}
+    </span>
+  );
+}
