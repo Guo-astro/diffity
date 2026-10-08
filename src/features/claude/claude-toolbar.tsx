@@ -133,12 +133,11 @@ export function ClaudeToolbar(props: ClaudeToolbarProps) {
         ref={anchorRef}
         onClick={() => setOpen(!open)}
         className={cn(buttonClaude, open && 'bg-claude/16')}
-        title={prMode ? `${agent.short} reviews this pull request and leaves its comments in Diffity only (marked ${agent.short}). Use “Add to my review” on any you want to post to GitHub.` : `${agent.short} reviews these changes and leaves comments on the diff. Tell it what to focus on first.`}
+        title={prMode ? `${agent.short} reviews this pull request and leaves its comments in Diffity only (marked ${agent.short}). Use “Add to my review” on any you want to post to GitHub.` : `Ask ${agent.short} to review these changes and leave comments, or to make a change for you.`}
         aria-expanded={open}
       >
         <SparkleIcon size="md" />
         <span className="@max-3xl/titlebar:hidden">Ask {agent.short}</span>
-        <span className="hidden @min-[1100px]/titlebar:inline -ml-[3px]">to review</span>
       </button>
       <AskClaudePopover open={open} onClose={close} anchorRef={anchorRef} diffRef={reviewRef} sessionId={sessionId} focusedFile={focusedFile} />
     </>

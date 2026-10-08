@@ -17,7 +17,7 @@ import { isGuideOnScreen } from '../guide/guide-on-screen';
 
 export type ClaudeAction = Extract<
   AgentAction,
-  { kind: 'review' } | { kind: 'guide' } | { kind: 'resolve' } | { kind: 'thread' } | { kind: 'reviewFeedback' }
+  { kind: 'review' } | { kind: 'guide' } | { kind: 'chat' } | { kind: 'resolve' } | { kind: 'thread' } | { kind: 'reviewFeedback' }
 >;
 
 export interface ClaudeRunContext {
@@ -26,6 +26,8 @@ export interface ClaudeRunContext {
   ref?: string | null;
   /** GitHub threads whose new agent reply should be posted back to GitHub when the run ends. */
   postRepliesToGitHub?: string[];
+  /** What the user asked for, sent as the run's message (a `chat` run: changes to make). */
+  text?: string;
   /** Agent and model picked for this run; unset uses the thread's agent (thread runs), then the repo's last pick, then Settings. */
   pick?: RunPick;
 }
@@ -113,6 +115,8 @@ export function runLabel(action: ClaudeAction, name: string): string {
       return `${name} is reviewing`;
     case 'guide':
       return `${name} is writing a guide`;
+    case 'chat':
+      return `${name} is making changes`;
     case 'resolve':
       if (action.threadIds && action.threadIds.length > 0) {
         return `${name} is working on ${action.threadIds.length} comment${action.threadIds.length === 1 ? '' : 's'}`;
@@ -131,6 +135,8 @@ function chatTitle(action: ClaudeAction): string {
       return action.focus ? `Review (${action.focus}) · ${action.ref}` : `Review · ${action.ref}`;
     case 'guide':
       return `Guide · ${action.ref}`;
+    case 'chat':
+      return 'Make changes';
     case 'resolve':
       return action.threadId ? `Resolve thread ${action.threadId.slice(0, 8)}` : 'Resolve all comments';
     case 'thread':
@@ -396,6 +402,9 @@ function finishedMessage(run: ClaudeRun, added: number, name: string): string {
   if (run.action.kind === 'thread') {
     return `${name} replied${where}`;
   }
+  if (run.action.kind === 'chat') {
+    return `${name} finished the changes${where}`;
+  }
   return `${name} finished${where}`;
 }
 
@@ -520,7 +529,7 @@ async function execute(run: ClaudeRun) {
   let failed: ClaudeFailure | null = null;
   let cancelled = false;
   try {
-    await tauri.sendPrompt(chat.id, '', [], run.action, model, (event) => {
+    await tauri.sendPrompt(chat.id, run.context.text ?? '', [], run.action, model, (event) => {
       if (event.type === 'permissionRequest') {
         const permission: ClaudePermission = {
           runId: run.id,

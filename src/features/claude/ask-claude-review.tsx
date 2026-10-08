@@ -10,7 +10,8 @@ import { modKey } from '../../lib/platform';
 import { Popover } from '../../components/ui/popover';
 import { buttonClaudeSolid, buttonGhost, inputField } from '../../components/ui/button-styles';
 import { SparkleIcon } from '../../components/ui/icon';
-import { enqueueClaude } from './claude-runner';
+import { canSendToClaude, enqueueClaude } from './claude-runner';
+import { SegmentedToggle } from '../../components/ui/segmented-toggle';
 import { ModelPicker } from './model-picker';
 import { useRunPick, writeRepoPick, type RunPick } from './model-setting';
 import { agentMeta } from './agents';
@@ -18,6 +19,23 @@ import { agentMeta } from './agents';
 export const REVIEW_FOCUSES = ['Security', 'Performance', 'Correctness', 'Naming', 'Tests', 'Types'] as const;
 
 type Scope = 'all' | 'file' | 'glob';
+
+/** A review only leaves comments; changes edit the working tree. */
+type Task = 'review' | 'change';
+
+/** Instructions that ask for edits rather than a review, e.g. "remove the debug logs". */
+export function readsAsChangeRequest(text: string): boolean {
+  return /^\s*(?:please\s+|can you\s+|could you\s+)?(?:remove|delete|add|rename|fix|change|replace|refactor|update|move|rewrite|convert|implement|make|drop|clean up|extract|inline|format)\b/i.test(text);
+}
+
+/** The agent's message for a change: the request, the files it may touch, and the file on screen ("this file"). */
+export function changeRequest(text: string, paths: string[], diffRef: string, focusedFile?: string | null): string {
+  const scope = paths.length > 0
+    ? `Only change these files: ${paths.map((path) => `\`${path}\``).join(', ')}.`
+    : `Work on the files changed in \`${diffRef}\` unless the request needs others.`;
+  const onScreen = focusedFile ? ` The user is looking at \`${focusedFile}\`, so "this file" means that one.` : '';
+  return `${text.trim()}\n\n${scope}${onScreen}`;
+}
 
 const FOCUS_KEY = 'diffity-claude-focus:';
 
@@ -83,12 +101,16 @@ function AskClaudePanel(props: AskClaudePanelProps) {
   const { diffRef, sessionId, focusedFile, onStarted, onClose } = props;
   const repoPath = getRepoPath();
   const [text, setText] = useState('');
+  const canChange = canSendToClaude(diffRef);
+  const [task, setTask] = useState<Task>('review');
+  const changing = task === 'change' && canChange;
   const [focus, setFocus] = useState<string[]>(() => readFocus(repoPath));
   const [scope, setScope] = useState<Scope>('all');
   const [glob, setGlob] = useState('');
-  const fallbackPick = useRunPick('review', repoPath);
+  const reviewPick = useRunPick('review', repoPath);
+  const fixPick = useRunPick('fix', repoPath);
   const [picked, setPicked] = useState<RunPick | null>(null);
-  const pick = picked ?? fallbackPick;
+  const pick = picked ?? (changing ? fixPick : reviewPick);
   const agent = agentMeta(pick.agent);
   const textRef = useRef<HTMLTextAreaElement>(null);
   const { data: diff } = useQuery(diffOptions(false, diffRef));
@@ -108,17 +130,24 @@ function AskClaudePanel(props: AskClaudePanelProps) {
   }, []);
 
   const paths = scope === 'file' && focusedFile ? [focusedFile] : scope === 'glob' ? globMatches : [];
-  const blocked = scope === 'glob' && globMatches.length === 0;
+  const blocked = (scope === 'glob' && globMatches.length === 0) || (changing && !text.trim());
+  const suggestChange = !changing && canChange && readsAsChangeRequest(text);
 
   const start = async () => {
     if (blocked) {
       return;
     }
-    writeFocus(repoPath, focus);
     if (picked) {
-      writeRepoPick('review', repoPath, picked);
+      writeRepoPick(changing ? 'fix' : 'review', repoPath, picked);
     }
     const session = sessionId ?? (await tauri.getSession(repoPath, diffRef).catch(() => null))?.id ?? null;
+    if (changing) {
+      enqueueClaude({ kind: 'chat' }, { repoPath, sessionId: session, ref: diffRef, pick, text: changeRequest(text, paths, diffRef, focusedFile) });
+      onClose();
+      onStarted?.();
+      return;
+    }
+    writeFocus(repoPath, focus);
     enqueueClaude(
       {
         kind: 'review',
@@ -167,21 +196,49 @@ function AskClaudePanel(props: AskClaudePanelProps) {
     >
       <div className="flex items-center gap-2">
         <SparkleIcon size="md" className="text-claude" />
-        <h3 className="text-[13px] font-semibold text-text">Ask {agent.short} to review</h3>
+        <h3 className="text-[13px] font-semibold text-text">Ask {agent.short}</h3>
+        <span className="flex-1" />
+        {canChange && (
+          <SegmentedToggle<Task>
+            value={task}
+            onChange={(value) => {
+              setTask(value);
+              setPicked(null);
+              textRef.current?.focus();
+            }}
+            options={[
+              { value: 'review', label: 'Review', title: `${agent.short} reads the changes and leaves comments. It never edits files.` },
+              { value: 'change', label: 'Make changes', title: `${agent.short} edits the files to do what you ask.` },
+            ]}
+          />
+        )}
       </div>
       <div>
-        <label className="block mb-1.5 text-xs font-medium text-text-secondary" htmlFor="claude-instructions">What should {agent.short} focus on?</label>
+        <label className="block mb-1.5 text-xs font-medium text-text-secondary" htmlFor="claude-instructions">
+          {changing ? `What should ${agent.short} change?` : `What should ${agent.short} focus on?`}
+        </label>
         <textarea
           id="claude-instructions"
           ref={textRef}
           value={text}
           onChange={(event) => setText(event.target.value)}
           rows={3}
-          placeholder={'Optional. For example “Check error handling in the new API routes” or “This is a perf refactor, look for regressions”.'}
+          placeholder={changing
+            ? 'For example “Remove the code comments from this file” or “Rename getUser to fetchUser everywhere”.'
+            : 'Optional. For example “Check error handling in the new API routes” or “This is a perf refactor, look for regressions”.'}
           spellCheck={false}
           className={cn(inputField, 'h-auto py-2 leading-5 resize-y min-h-[76px]')}
         />
+        {suggestChange && (
+          <p className="mt-1.5 text-xs leading-5 text-text-secondary">
+            A review only leaves comments.{' '}
+            <button type="button" onClick={() => setTask('change')} className="text-claude hover:underline cursor-pointer">
+              Make this change instead
+            </button>
+          </p>
+        )}
       </div>
+      {!changing && (
       <div className="flex flex-wrap gap-1.5" role="group" aria-label="Focus areas">
         {REVIEW_FOCUSES.map((value) => {
           const active = focus.includes(value);
@@ -201,6 +258,7 @@ function AskClaudePanel(props: AskClaudePanelProps) {
           );
         })}
       </div>
+      )}
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-text-secondary mb-0.5">Scope</span>
         {scopeOption('all', `All changes in this view${files.length ? ` (${files.length} file${files.length === 1 ? '' : 's'})` : ''}`)}
@@ -229,9 +287,14 @@ function AskClaudePanel(props: AskClaudePanelProps) {
         <button type="button" onClick={onClose} className={buttonGhost}>
           Cancel
         </button>
-        <button type="submit" disabled={blocked} className={buttonClaudeSolid} title={blocked ? 'No files match the pattern' : `Start (${modKey}↵)`}>
+        <button
+          type="submit"
+          disabled={blocked}
+          className={buttonClaudeSolid}
+          title={blocked ? (changing && !text.trim() ? 'Say what to change' : 'No files match the pattern') : `Start (${modKey}↵)`}
+        >
           <SparkleIcon size="sm" />
-          Start review
+          {changing ? 'Make changes' : 'Start review'}
           <kbd className="ml-1 font-sans text-[11px] opacity-75">{modKey}↵</kbd>
         </button>
       </div>
