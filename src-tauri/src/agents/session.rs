@@ -8,7 +8,7 @@ use agent_client_protocol::schema::v1::{
     InitializeRequest, LoadSessionRequest, McpServer, McpServerStdio, NewSessionRequest,
     PromptRequest, ReadTextFileRequest, ReadTextFileResponse, RequestPermissionOutcome,
     RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome,
-    SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelect,
+    SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory, SessionConfigSelect,
     SessionConfigSelectOptions, SessionModeState, SessionNotification, SetSessionConfigOptionRequest,
     SetSessionModeRequest, SessionUpdate, TextContent, ToolCallContent, WriteTextFileRequest,
     WriteTextFileResponse,
@@ -594,6 +594,8 @@ enum Command {
     Prompt {
         text: String,
         mode_id: &'static str,
+        /// Stop the run rather than prompt outside `mode_id` (`policy::mode_required`).
+        mode_required: bool,
         model: RunModel,
         reply: oneshot::Sender<Result<String>>,
     },
@@ -784,22 +786,35 @@ impl AgentSession {
                         .map(|m| m.available_modes.into_iter().map(|mode| mode.id.0.to_string()).collect())
                         .unwrap_or_default();
                     while let Some(cmd) = cmd_rx.recv().await {
-                        let Command::Prompt { text, mode_id, model, reply } = cmd else {
+                        let Command::Prompt { text, mode_id, mode_required, model, reply } = cmd else {
                             continue;
                         };
                         apply_run_model(&cx, &session_id, &mut options, &model).await;
-                        if needs_mode_switch(&available, current_mode.as_deref(), mode_id) {
-                            let switched = cx
+                        let switched = match mode_switch(&available, current_mode.as_deref(), &options, mode_id) {
+                            ModeSwitch::Keep => Ok(()),
+                            ModeSwitch::SetMode => cx
                                 .send_request(SetSessionModeRequest::new(session_id.clone(), mode_id))
                                 .block_task()
-                                .await;
-                            match switched {
-                                Ok(_) => {
-                                    tracing::debug!("session/set_mode {mode_id}");
-                                    current_mode = Some(mode_id.to_string());
-                                }
-                                Err(e) => tracing::warn!("session/set_mode {mode_id} failed: {e:?}"),
+                                .await
+                                .map(|_| current_mode = Some(mode_id.to_string()))
+                                .map_err(|e| format!("{e:?}")),
+                            ModeSwitch::ConfigOption(option_id) => cx
+                                .send_request(SetSessionConfigOptionRequest::new(session_id.clone(), option_id, mode_id))
+                                .block_task()
+                                .await
+                                .map(|response| options = response.config_options)
+                                .map_err(|e| format!("{e:?}")),
+                            ModeSwitch::Unavailable => Err("the agent does not offer it".to_string()),
+                        };
+                        if let Err(e) = switched {
+                            if mode_required {
+                                let _ = reply.send(Err(AppError::new(
+                                    "agent_failed",
+                                    format!("Could not switch the agent to its `{mode_id}` mode, so the run was stopped: {e}"),
+                                )));
+                                continue;
                             }
+                            tracing::warn!("switching to mode {mode_id} failed: {e}");
                         }
                         let prompt = cx
                             .send_request(PromptRequest::new(
@@ -915,6 +930,7 @@ impl AgentSession {
         let sent = self.commands.send(Command::Prompt {
             text,
             mode_id: run.acp_mode_id(self.agent),
+            mode_required: policy::mode_required(self.agent),
             model,
             reply: reply_tx,
         });
@@ -1108,12 +1124,35 @@ pub async fn probe_models(launch: LaunchSpec, cwd: PathBuf) -> Result<Option<Mod
     })
 }
 
-/// Switch only to a mode the agent advertises, and only when it isn't already active.
-fn needs_mode_switch(available: &[String], current: Option<&str>, wanted: &str) -> bool {
+#[derive(Debug, PartialEq)]
+enum ModeSwitch {
+    Keep,
+    /// The mode is one of the session's ACP modes: `session/set_mode`.
+    SetMode,
+    /// The mode is a choice of this mode config option (OpenCode): `session/set_config_option`.
+    ConfigOption(SessionConfigId),
+    Unavailable,
+}
+
+/// How to put the session in `wanted`. Agents offer modes either as ACP session modes or as a config
+/// option in the mode category; switch only when the mode isn't already active.
+fn mode_switch(available: &[String], current: Option<&str>, options: &[SessionConfigOption], wanted: &str) -> ModeSwitch {
     if current == Some(wanted) {
-        return false;
+        return ModeSwitch::Keep;
     }
-    available.iter().any(|m| m == wanted)
+    if available.iter().any(|m| m == wanted) {
+        return ModeSwitch::SetMode;
+    }
+    let Some((option, select)) = select_option(options, SessionConfigOptionCategory::Mode) else {
+        return ModeSwitch::Unavailable;
+    };
+    if select.current_value.0.as_ref() == wanted {
+        return ModeSwitch::Keep;
+    }
+    if select_choices(select).iter().any(|c| c.value == wanted) {
+        return ModeSwitch::ConfigOption(option.id.clone());
+    }
+    ModeSwitch::Unavailable
 }
 
 /// Cancels the turn and frees the turn slot when a `prompt` future is dropped before completion.
@@ -1200,11 +1239,34 @@ mod tests {
     #[test]
     fn switches_mode_only_when_offered() {
         let offered = vec!["default".to_string(), "bypassPermissions".to_string()];
-        assert!(needs_mode_switch(&offered, Some("default"), "bypassPermissions"));
-        assert!(!needs_mode_switch(&offered, Some("bypassPermissions"), "bypassPermissions"));
-        assert!(needs_mode_switch(&offered, Some("bypassPermissions"), "default"));
-        assert!(!needs_mode_switch(&["default".to_string()], Some("default"), "bypassPermissions"));
-        assert!(!needs_mode_switch(&[], None, "bypassPermissions"));
+        assert_eq!(mode_switch(&offered, Some("default"), &[], "bypassPermissions"), ModeSwitch::SetMode);
+        assert_eq!(mode_switch(&offered, Some("bypassPermissions"), &[], "bypassPermissions"), ModeSwitch::Keep);
+        assert_eq!(mode_switch(&offered, Some("bypassPermissions"), &[], "default"), ModeSwitch::SetMode);
+        assert_eq!(mode_switch(&["default".to_string()], Some("default"), &[], "bypassPermissions"), ModeSwitch::Unavailable);
+        assert_eq!(mode_switch(&[], None, &[], "bypassPermissions"), ModeSwitch::Unavailable);
+    }
+
+    /// OpenCode lists its agents as a mode config option, not as ACP modes (as OpenCode 2.0.26 sends it).
+    fn opencode_mode_option(current: &str) -> Vec<SessionConfigOption> {
+        let option = serde_json::json!({
+            "id": "mode",
+            "name": "Mode",
+            "category": "mode",
+            "type": "select",
+            "currentValue": current,
+            "options": [{ "value": "build", "name": "build" }, { "value": "plan", "name": "plan" }],
+        });
+        vec![serde_json::from_value(option).unwrap()]
+    }
+
+    #[test]
+    fn switches_mode_through_a_mode_config_option() {
+        assert_eq!(
+            mode_switch(&[], None, &opencode_mode_option("plan"), "build"),
+            ModeSwitch::ConfigOption(SessionConfigId::new("mode")),
+        );
+        assert_eq!(mode_switch(&[], None, &opencode_mode_option("build"), "build"), ModeSwitch::Keep);
+        assert_eq!(mode_switch(&[], None, &opencode_mode_option("yolo"), "review"), ModeSwitch::Unavailable);
     }
 
     #[test]

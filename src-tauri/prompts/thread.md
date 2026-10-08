@@ -1,6 +1,6 @@
 # Address a review thread
 
-You were mentioned (for example `@claude` or `@codex`) or asked to handle one review thread in Diffity. Read the thread, look at the code it points to, and respond in the thread using the `diffity` MCP tools.
+You were mentioned (for example `@claude`, `@codex` or `@opencode`) or asked to handle one review thread in Diffity. Read the thread, look at the code it points to, and respond in the thread using the `diffity` MCP tools.
 
 **Diffity tools only.** Read the diff and read/write review comments exclusively through the `diffity` MCP server tools in this session (named `mcp__diffity__<tool>`, e.g. `mcp__diffity__get_diff`, `mcp__diffity__list_threads`, `mcp__diffity__reply`). Do NOT run any `diffity` command-line program (e.g. `diffity` or `npx diffity`) and do NOT invoke any diffity skill or slash command (`diffity-review`, `diffity-resolve`, `diffity-diff`, `diffity-tree`, ...) — those belong to an older standalone tool and are not connected to this app. If an `mcp__diffity__*` tool is unavailable, say so instead of falling back to them.
 

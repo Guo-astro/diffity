@@ -64,7 +64,7 @@ function useGlobalActions(): PaletteAction[] {
     { id: 'go-changes', title: 'Uncommitted changes', group: 'Go to', icon: <ChangesIcon size="sm" />, run: () => nav.toDiff('work') },
     { id: 'go-files', title: 'Browse files', group: 'Go to', icon: <FilesIcon size="sm" />, run: () => nav.toTree() },
     { id: 'comments', title: 'Show all comments', group: 'Go to', hint: shortcutHint('comments'), icon: <CommentIcon size="sm" />, run: openComments },
-    { id: 'agent-activity', title: 'Show agent activity', group: 'Go to', keywords: 'claude codex review thinking tools transcript', icon: <SparkleIcon size="sm" />, run: openActivity },
+    { id: 'agent-activity', title: 'Show agent activity', group: 'Go to', keywords: 'claude codex opencode review thinking tools transcript', icon: <SparkleIcon size="sm" />, run: openActivity },
     { id: 'toggle-sidebar', title: 'Toggle sidebar', group: 'View', hint: shortcutHint('toggle-sidebar'), icon: <SidebarIcon size="sm" />, run: toggleSidebar },
     { id: 'toggle-theme', title: theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', group: 'View', keywords: 'theme dark light appearance', icon: <MoonIcon size="sm" />, run: toggleTheme },
     { id: 'fetch', title: 'Fetch', group: 'Actions', keywords: 'git remote', icon: <FetchIcon size="sm" />, run: () => runGit('Fetch', () => tauri.gitFetch(nav.repoPath)) },

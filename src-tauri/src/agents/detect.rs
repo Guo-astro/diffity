@@ -11,17 +11,26 @@ pub const CODEX_ACP_PACKAGE: &str = "@agentclientprotocol/codex-acp@2.0.0";
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 
+/// Config Diffity starts OpenCode with (`OPENCODE_CONFIG_CONTENT`, which outranks the user's config
+/// files; the project's are off, see `opencode_launch`). OpenCode allows edits and shell commands
+/// without asking by default, but Diffity keeps reviews read-only by answering permission requests,
+/// so edits, commands and fetches must ask. The rules are repeated on the `build` agent because a
+/// user's config can grant that agent more, and subagents are denied because one may be set up to
+/// edit freely. Runs always use `build` (see `RunPermissions::acp_mode_id`).
+pub const OPENCODE_CONFIG: &str = r#"{"permission":{"edit":"ask","bash":"ask","webfetch":"ask","task":"deny"},"agent":{"build":{"permission":{"edit":"ask","bash":"ask","webfetch":"ask","task":"deny"}}}}"#;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentKind {
     Claude,
     Codex,
     Gemini,
+    OpenCode,
 }
 
 impl AgentKind {
-    pub const ALL: [AgentKind; 3] = [AgentKind::Claude, AgentKind::Codex, AgentKind::Gemini];
+    pub const ALL: [AgentKind; 4] = [AgentKind::Claude, AgentKind::Codex, AgentKind::Gemini, AgentKind::OpenCode];
     /// Agents exposed to the app. Gemini launch code is kept intact — add it here to enable it.
-    pub const ENABLED: [AgentKind; 2] = [AgentKind::Claude, AgentKind::Codex];
+    pub const ENABLED: [AgentKind; 3] = [AgentKind::Claude, AgentKind::Codex, AgentKind::OpenCode];
 
     pub fn is_enabled(self) -> bool {
         Self::ENABLED.contains(&self)
@@ -42,6 +51,7 @@ impl AgentKind {
             "claude" => Some(Self::Claude),
             "codex" => Some(Self::Codex),
             "gemini" => Some(Self::Gemini),
+            "opencode" => Some(Self::OpenCode),
             _ => None,
         }
     }
@@ -51,6 +61,7 @@ impl AgentKind {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::Gemini => "gemini",
+            Self::OpenCode => "opencode",
         }
     }
 
@@ -59,6 +70,7 @@ impl AgentKind {
             Self::Claude => "Claude Code",
             Self::Codex => "Codex",
             Self::Gemini => "Gemini",
+            Self::OpenCode => "OpenCode",
         }
     }
 
@@ -67,6 +79,7 @@ impl AgentKind {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::Gemini => "gemini",
+            Self::OpenCode => "opencode",
         }
     }
 
@@ -74,7 +87,7 @@ impl AgentKind {
         match self {
             Self::Claude => Some(("claude-agent-acp", CLAUDE_ACP_PACKAGE)),
             Self::Codex => Some(("codex-acp", CODEX_ACP_PACKAGE)),
-            Self::Gemini => None,
+            Self::Gemini | Self::OpenCode => None,
         }
     }
 }
@@ -162,6 +175,20 @@ async fn gemini_acp_flag(bin: &Path) -> &'static str {
     }
 }
 
+/// OpenCode speaks ACP itself, so no adapter or Node.js is needed. Project config is turned off:
+/// OpenCode starts a project's MCP servers and plugins as soon as a session opens, so a branch under
+/// review could run code before any permission is asked. That also drops the project's `AGENTS.md`.
+fn opencode_launch(bin: &Path) -> LaunchSpec {
+    LaunchSpec {
+        command: bin.to_path_buf(),
+        args: vec!["acp".into()],
+        env: vec![
+            ("OPENCODE_CONFIG_CONTENT".into(), OPENCODE_CONFIG.into()),
+            ("OPENCODE_DISABLE_PROJECT_CONFIG".into(), "1".into()),
+        ],
+    }
+}
+
 pub fn adapter_launch(kind: AgentKind, npx: Option<&Path>) -> Result<LaunchSpec, String> {
     let Some((bin, package)) = kind.adapter() else {
         return Err("no adapter".into());
@@ -195,7 +222,7 @@ fn expand_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-/// A custom path may point at the agent CLI (`claude`, `codex`, `gemini`) or directly at the ACP
+/// A custom path may point at the agent CLI (`claude`, `codex`, `gemini`, `opencode`) or directly at the ACP
 /// adapter (`claude-agent-acp`, `codex-acp`).
 fn is_adapter_path(kind: AgentKind, path: &Path) -> bool {
     let Some((adapter, _)) = kind.adapter() else {
@@ -250,11 +277,13 @@ pub async fn detect_with(kind: AgentKind, custom_path: Option<&str>) -> Detected
             spec
         }),
         AgentKind::Claude => adapter_launch(kind, find_in_path("npx").as_deref()),
+        AgentKind::OpenCode => Ok(opencode_launch(&cli)),
     };
     info.authenticated = match kind {
         AgentKind::Claude => claude_authenticated(&cli).await,
         AgentKind::Codex => codex_authenticated(&cli).await,
-        AgentKind::Gemini => None,
+        // Works without signing in (OpenCode's free models), and providers are signed in one by one.
+        AgentKind::Gemini | AgentKind::OpenCode => None,
     };
 
     let launch = match launch {
@@ -324,6 +353,7 @@ async fn detect_custom(kind: AgentKind, custom: PathBuf) -> DetectedAgent {
                     .push(("CLAUDE_CODE_EXECUTABLE".into(), display.clone()));
                 spec
             }),
+            AgentKind::OpenCode => Ok(opencode_launch(&custom)),
         };
         (launch, Some(custom.clone()))
     };
@@ -395,11 +425,29 @@ mod tests {
     }
 
     #[test]
-    fn claude_and_codex_enabled() {
+    fn claude_codex_and_opencode_enabled() {
         assert!(AgentKind::Claude.is_enabled());
         assert!(AgentKind::Codex.is_enabled());
+        assert!(AgentKind::OpenCode.is_enabled());
         assert!(!AgentKind::Gemini.is_enabled());
         assert_eq!(AgentKind::Claude.path_setting_key(), "agent.claude.path");
+    }
+
+    #[test]
+    fn opencode_runs_its_own_acp_server_with_permissions_that_ask() {
+        let spec = opencode_launch(Path::new("/usr/local/bin/opencode"));
+        assert_eq!(spec.command, Path::new("/usr/local/bin/opencode"));
+        assert_eq!(spec.args, vec!["acp".to_string()]);
+        assert!(spec.env.contains(&("OPENCODE_DISABLE_PROJECT_CONFIG".to_string(), "1".to_string())));
+        let (key, value) = &spec.env[0];
+        assert_eq!(key, "OPENCODE_CONFIG_CONTENT");
+        let config: serde_json::Value = serde_json::from_str(value).unwrap();
+        for rules in [&config["permission"], &config["agent"]["build"]["permission"]] {
+            for tool in ["edit", "bash", "webfetch"] {
+                assert_eq!(rules[tool], "ask", "{tool}");
+            }
+            assert_eq!(rules["task"], "deny");
+        }
     }
 
     #[tokio::test]

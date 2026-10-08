@@ -21,7 +21,7 @@ import { AGENTS, agentMeta, type AgentMeta } from '../claude/agents';
 
 const CAPABILITIES = [
   { title: 'Review a diff', detail: 'Reads the changes you are looking at and leaves comments on lines. Never edits files while reviewing.' },
-  { title: 'Answer @mentions', detail: 'Mention @claude or @codex in a comment or reply and that agent answers in the thread.' },
+  { title: 'Answer @mentions', detail: 'Mention @claude, @codex or @opencode in a comment or reply and that agent answers in the thread.' },
   { title: 'Resolve comments', detail: 'Makes the requested edits, then resolves the thread with a summary. Permissions below decide whether it asks first.' },
   { title: 'Stay local', detail: 'Uses your own agent logins. Nothing is posted to GitHub unless you post it.' },
 ];

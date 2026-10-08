@@ -1,8 +1,8 @@
 //! Live smoke test against an installed agent. Costs tokens.
-//! `cargo build --features mcp --bin diffity-mcp && cargo run --example smoke -- <claude|codex|gemini> [repo] [review|ask|edit|thread]`
+//! `cargo build --features mcp --bin diffity-mcp && cargo run --example smoke -- <claude|codex|opencode|gemini> [repo] [review|ask|edit|thread]`
 //! `resolve` leaves a plain comment asking for a fix and runs `resolve` on it; `SMOKE_PERMISSIONS=askOnce|askEach` overrides the default (skip); `SMOKE_MODEL` picks the model.
 //! `guide` writes a reading guide for `SMOKE_REF` (default `work`) and prints it; `SMOKE_TIMEOUT` (seconds) gives it longer.
-//! `thread` leaves a user comment mentioning the agent (`@claude`, `@codex`) on math.js and runs the `thread` action (auto-approves writes).
+//! `thread` leaves a user comment mentioning the agent (`@claude`, `@codex`, `@opencode`) on math.js and runs the `thread` action (auto-approves writes).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

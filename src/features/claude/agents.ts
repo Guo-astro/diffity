@@ -37,6 +37,15 @@ export const AGENTS: AgentMeta[] = [
     login: 'Run `codex login` in a terminal to sign in.',
     pathHint: 'Point to the codex CLI or codex-acp.',
   },
+  {
+    id: 'opencode',
+    name: 'OpenCode',
+    short: 'OpenCode',
+    handle: 'opencode',
+    install: 'npm i -g @opencode/cli',
+    login: 'Run `opencode auth login` in a terminal to sign in to a provider.',
+    pathHint: 'Point to the opencode CLI.',
+  },
 ];
 
 const AGENTS_KEY = ['agents'];

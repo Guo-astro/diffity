@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -497,6 +497,13 @@ impl AgentManager {
             Some(section) => format!("{prompt}\n{section}"),
             None => prompt,
         };
+        let prompt = if kind == Some(AgentKind::OpenCode) && first_turn {
+            let repo = rec.chat.repo_path.clone();
+            let agents_md = blocking(move || Ok(read_agents_md(Path::new(&repo)))).await?;
+            format!("{prompt}{}", prompts::project_instructions(&agents_md))
+        } else {
+            prompt
+        };
 
         let rt = self.runtime(&rec, binding).await?;
 
@@ -584,4 +591,36 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
     tokio::task::spawn_blocking(f)
         .await
         .map_err(|e| AppError::internal(format!("task failed: {e}")))?
+}
+
+/// The repo's `AGENTS.md`, if it is a regular file: a symlink in a branch under review could point
+/// at a secret elsewhere on disk, which would then go into the prompt.
+fn read_agents_md(repo: &Path) -> String {
+    let path = repo.join("AGENTS.md");
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() => std::fs::read_to_string(&path).unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_agents_md_but_not_through_a_symlink() {
+        let repo = tempfile::tempdir().unwrap();
+        assert_eq!(read_agents_md(repo.path()), "");
+        std::fs::write(repo.path().join("AGENTS.md"), "Use tabs.").unwrap();
+        assert_eq!(read_agents_md(repo.path()), "Use tabs.");
+
+        let secret = repo.path().join("secret");
+        std::fs::write(&secret, "private key").unwrap();
+        std::fs::remove_file(repo.path().join("AGENTS.md")).unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&secret, repo.path().join("AGENTS.md")).unwrap();
+            assert_eq!(read_agents_md(repo.path()), "");
+        }
+    }
 }

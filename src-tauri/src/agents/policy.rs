@@ -85,15 +85,25 @@ impl RunPermissions {
 
     /// The ACP session mode (`session/set_mode`) this turn should run in. Codex starts in its "Auto
     /// review" mode, which edits without asking, so every prompting run moves it to `read-only`, where
-    /// edits and commands come to Diffity as permission requests.
+    /// edits and commands come to Diffity as permission requests. OpenCode's modes are its agents: every
+    /// run uses `build`, the one Diffity's launch config makes ask (`detect::OPENCODE_CONFIG`), since a
+    /// project can make another agent the default.
     pub fn acp_mode_id(self, agent: AgentKind) -> &'static str {
         match (agent, self) {
             (AgentKind::Codex, Self::Bypass) => "agent-full-access",
             (AgentKind::Codex, _) => "read-only",
+            (AgentKind::OpenCode, _) => "build",
             (_, Self::Bypass) => "bypassPermissions",
             _ => "default",
         }
     }
+}
+
+/// Whether a run must stop when the agent can't be put in its `acp_mode_id`. OpenCode's other agents
+/// (and any a project defines) skip the permissions Diffity's launch config sets on `build`, so
+/// prompting there could edit files in a review.
+pub fn mode_required(agent: AgentKind) -> bool {
+    agent == AgentKind::OpenCode
 }
 
 /// Actions that are expected to change code. Read-style actions never get bypass, even in a writable chat.
@@ -251,6 +261,9 @@ mod tests {
         assert_eq!(RunPermissions::Bypass.acp_mode_id(AgentKind::Codex), "agent-full-access");
         assert_eq!(RunPermissions::AskEach.acp_mode_id(AgentKind::Codex), "read-only");
         assert_eq!(RunPermissions::ReadOnly.acp_mode_id(AgentKind::Codex), "read-only");
+        for run in [RunPermissions::Bypass, RunPermissions::AskEach, RunPermissions::ReadOnly] {
+            assert_eq!(run.acp_mode_id(AgentKind::OpenCode), "build");
+        }
     }
 
     #[test]

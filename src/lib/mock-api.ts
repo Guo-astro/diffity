@@ -600,6 +600,7 @@ const handlers: Record<string, (args: Args) => unknown> = {
   list_agents: () => [
     { id: 'claude', name: 'Claude Code', installed: true, binaryPath: '/usr/local/bin/claude', authenticated: true, note: null },
     { id: 'codex', name: 'Codex', installed: false, binaryPath: null, authenticated: null, note: '`codex` not found on PATH' },
+    { id: 'opencode', name: 'OpenCode', installed: false, binaryPath: null, authenticated: null, note: '`opencode` not found on PATH' },
   ],
   list_chats: () => [],
   start_chat: (args) => {

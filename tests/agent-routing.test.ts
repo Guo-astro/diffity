@@ -13,6 +13,7 @@ describe('agentOfComments', () => {
     expect(agentOfComments([user('@codex why?'), agent('Codex'), user('@claude second opinion')])).toBe('claude');
     expect(agentOfComments([agent('Claude Code'), user('thanks')])).toBe('claude');
     expect(agentOfComments([user('plain comment')])).toBe(null);
+    expect(agentOfComments([user('@opencode why?'), agent('OpenCode'), user('and this?')])).toBe('opencode');
   });
 });
 

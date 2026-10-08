@@ -99,6 +99,20 @@ fn guide_pull_request(title: Option<&str>, description: Option<&str>) -> String 
     out
 }
 
+const PROJECT_INSTRUCTIONS_LIMIT: usize = 32_000;
+
+/// The repo's `AGENTS.md`, for agents that can't read it themselves (OpenCode runs with project
+/// config off, which also drops it). Empty when there is nothing to add.
+pub fn project_instructions(agents_md: &str) -> String {
+    let text = agents_md.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+    let cut: String = text.chars().take(PROJECT_INSTRUCTIONS_LIMIT).collect();
+    let more = if cut.len() < text.len() { "\n\n[… AGENTS.md is longer; the rest was left out]" } else { "" };
+    format!("\n## Project instructions\n\nThe repository's `AGENTS.md`. Follow it where it applies to this task; Diffity's instructions above win where they conflict.\n\n<agents-md>\n{cut}{more}\n</agents-md>\n")
+}
+
 pub fn render(template: &str, vars: &[(&str, &str)]) -> String {
     let mut out = template.to_string();
     for (key, value) in vars {
@@ -504,5 +518,17 @@ mod tests {
         let empty = build_prompt(AgentMode::Resolve, &action, "work", true, "", &[], None);
         assert!(empty.contains("none (act on the summary only)"));
         assert!(empty.contains("(no summary)"));
+    }
+
+    #[test]
+    fn project_instructions_wrap_and_cap_agents_md() {
+        assert_eq!(project_instructions("  \n "), "");
+        let section = project_instructions("Use tabs.");
+        assert!(section.contains("## Project instructions"));
+        assert!(section.contains("<agents-md>\nUse tabs.\n</agents-md>"));
+        let long = "x".repeat(PROJECT_INSTRUCTIONS_LIMIT + 10);
+        let section = project_instructions(&long);
+        assert!(section.contains("the rest was left out"));
+        assert!(section.len() < PROJECT_INSTRUCTIONS_LIMIT + 400);
     }
 }
