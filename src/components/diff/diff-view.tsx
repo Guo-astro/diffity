@@ -129,7 +129,7 @@ export function DiffView(props: DiffViewProps) {
   } = props;
   const measurements = useViewStateSlot<VirtualItem[]>(`${memoryKey}:measurements`);
   const [initialMeasurements] = useState(() => measurements.read([]));
-  const { tokenize, ready: highlighterReady } = useHighlighter();
+  const { tokenize, languageReady } = useHighlighter();
   const scrollElementRef = useRef<HTMLElement>(null);
 
   const outsideThreads = useMemo(() => {
@@ -139,15 +139,15 @@ export function DiffView(props: DiffViewProps) {
 
   const highlighters = useMemo(() => {
     const map = new Map<string, CodeHighlighter>();
-    if (!highlighterReady) {
-      return map;
-    }
     for (const file of diff.files) {
       const filePath = getFilePath(file);
+      if (!languageReady(filePath)) {
+        continue;
+      }
       map.set(filePath, (code, state) => tokenize(code, filePath, theme, state));
     }
     return map;
-  }, [diff, tokenize, theme, highlighterReady]);
+  }, [diff, tokenize, theme, languageReady]);
 
   const heldBackPaths = useMemo(() => {
     const threadPaths = new Set(threads.map((thread) => thread.filePath));

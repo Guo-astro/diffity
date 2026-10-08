@@ -41,7 +41,8 @@ const TAB_WIDTH = 8;
 const syntaxCache = new WeakMap<string[], Map<string, Map<number, SyntaxToken[]>>>();
 
 function useFileSyntax(filePath: string, content: string[], theme: 'light' | 'dark') {
-  const { tokenize, ready } = useHighlighter();
+  const { tokenize, languageReady } = useHighlighter();
+  const ready = languageReady(filePath);
   const highlightable = canHighlight(filePath);
   const tooLarge = highlightable && content.length > HIGHLIGHT_MAX_ROWS;
   const [tokens, setTokens] = useState<Map<number, SyntaxToken[]> | null>(() => syntaxCache.get(content)?.get(theme) ?? null);

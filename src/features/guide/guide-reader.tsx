@@ -223,7 +223,7 @@ interface ChapterPageProps extends GuideReaderProps {
 function ChapterPage(props: ChapterPageProps) {
   const { chapter, chapters, index, onStep, onFileClick, collapsedFiles, reviewedFiles, sinceViewedFiles, onReviewedChange } = props;
   const theme = useThemeStore((state) => state.theme);
-  const { tokenize, ready } = useHighlighter();
+  const { tokenize, languageReady } = useHighlighter();
   const sidebarCollapsed = useUi((state) => state.sidebarCollapsed);
   const lineNotes = useMemo(() => notesByFile(chapter.notes.filter((note) => note.line !== undefined)), [chapter.notes]);
   const story = { chapter, chapters, index, reviewedFiles, onStep, onReviewedChange, onFileClick };
@@ -260,7 +260,7 @@ function ChapterPage(props: ChapterPageProps) {
                 collapsed={collapsedFiles.has(getFilePath(file))}
                 reviewed={reviewedFiles.has(getFilePath(file))}
                 sinceViewed={sinceViewedFiles.get(getFilePath(file)) ?? null}
-                highlightCode={ready ? (code, state) => tokenize(code, getFilePath(file), theme, state) : undefined}
+                highlightCode={languageReady(getFilePath(file)) ? (code, state) => tokenize(code, getFilePath(file), theme, state) : undefined}
               />
             </div>
           ))}

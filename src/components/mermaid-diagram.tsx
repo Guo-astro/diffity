@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
-import mermaid from 'mermaid';
 import { XIcon } from './ui/icon';
 import { useThemeStore } from '../hooks/use-theme';
 
+type Mermaid = typeof import('mermaid').default;
+
+let mermaidPromise: Promise<Mermaid> | null = null;
+
+/** Mermaid is large, so it loads the first time a diagram is shown, not with the app (issue #55). */
+function loadMermaid(): Promise<Mermaid> {
+  if (!mermaidPromise) {
+    mermaidPromise = import('mermaid').then((module) => module.default);
+  }
+  return mermaidPromise;
+}
+
 let initializedTheme: 'light' | 'dark' | null = null;
 
-function initMermaid(theme: 'light' | 'dark') {
+function initMermaid(mermaid: Mermaid, theme: 'light' | 'dark') {
   if (initializedTheme === theme) {
     return;
   }
@@ -38,19 +49,23 @@ export function MermaidDiagram(props: { chart: string; frameClassName?: string }
       return;
     }
 
-    initMermaid(theme);
-
     let cancelled = false;
 
-    // A fresh id per render: reusing one while an earlier render of it is still running leaves an empty diagram.
-    mermaid
-      .render(`${idRef.current}-${++renderCounter}`, props.chart)
-      .then(({ svg }) => {
+    loadMermaid()
+      .then((mermaid) => {
         if (cancelled) {
+          return null;
+        }
+        initMermaid(mermaid, theme);
+        // A fresh id per render: reusing one while an earlier render of it is still running leaves an empty diagram.
+        return mermaid.render(`${idRef.current}-${++renderCounter}`, props.chart);
+      })
+      .then((result) => {
+        if (cancelled || !result) {
           return;
         }
-        container.innerHTML = svg;
-        setSvgContent(svg);
+        container.innerHTML = result.svg;
+        setSvgContent(result.svg);
         setError(null);
       })
       .catch(() => {

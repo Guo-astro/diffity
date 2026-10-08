@@ -140,21 +140,15 @@ export function canHighlight(filePath: string): boolean {
   return getLang(filePath) !== null;
 }
 
-const ALL_LANGS: BundledLanguage[] = [
-  ...new Set([
-    ...Object.values(LANG_MAP),
-    ...Object.values(FILENAME_MAP),
-  ]),
-];
-
 let highlighterPromise: Promise<Highlighter> | null = null;
 let loadedHighlighter: Highlighter | null = null;
 
 function getHighlighter(): Promise<Highlighter> {
   if (!highlighterPromise) {
+    // No grammars up front: each loads the first time a file or code block in it is shown (issue #55).
     highlighterPromise = createHighlighter({
       themes: ['github-light', 'github-dark'],
-      langs: ALL_LANGS,
+      langs: [],
     }).then((instance) => {
       loadedHighlighter = instance;
       return instance;
@@ -163,8 +157,46 @@ function getHighlighter(): Promise<Highlighter> {
   return highlighterPromise;
 }
 
+/** Grammars that finished loading, or failed to (their code then shows plain). */
+const settledLangs = new Set<BundledLanguage>();
+const loadingLangs = new Set<BundledLanguage>();
+const langListeners = new Set<() => void>();
+
+function loadLang(lang: BundledLanguage) {
+  if (settledLangs.has(lang) || loadingLangs.has(lang)) {
+    return;
+  }
+  loadingLangs.add(lang);
+  getHighlighter()
+    .then((instance) => instance.loadLanguage(lang))
+    .catch(() => {})
+    .then(() => {
+      loadingLangs.delete(lang);
+      settledLangs.add(lang);
+      for (const listener of langListeners) {
+        listener();
+      }
+    });
+}
+
 export interface HighlightedTokens {
   tokens: { text: string; color?: string }[];
+}
+
+/**
+ * Tokens of code blocks already highlighted, so opening a markdown preview or comment again does not tokenize it
+ * again: WebKit is slow to collect the garbage each pass leaves behind.
+ */
+const highlightCache = new Map<string, HighlightedTokens[]>();
+
+function rememberHighlight(key: string, lines: HighlightedTokens[]) {
+  if (highlightCache.size >= 300) {
+    const first = highlightCache.keys().next().value;
+    if (first !== undefined) {
+      highlightCache.delete(first);
+    }
+  }
+  highlightCache.set(key, lines);
 }
 
 /** Tokens of a run of lines, plus the grammar state to carry into the next run of the same file. */
@@ -177,25 +209,50 @@ export type CodeHighlighter = (code: string, state?: GrammarState) => HighlightC
 
 export function useHighlighter() {
   const [highlighter, setHighlighter] = useState<Highlighter | null>(() => loadedHighlighter);
+  const [langCount, setLangCount] = useState(() => settledLangs.size);
 
   useEffect(() => {
-    if (loadedHighlighter) {
-      return;
+    const listener = () => setLangCount(settledLangs.size);
+    langListeners.add(listener);
+    listener();
+    if (!loadedHighlighter) {
+      getHighlighter().then(setHighlighter);
     }
-    getHighlighter().then(setHighlighter);
+    return () => {
+      langListeners.delete(listener);
+    };
   }, []);
 
-  const highlight = useCallback((code: string, filePath: string, theme: 'light' | 'dark'): HighlightedTokens[] | null => {
+  /**
+   * Whether `tokenize` can highlight this file now. Until its grammar has loaded it says no and starts the load; the
+   * component renders again once it lands. Files with no grammar are ready at once (they show plain).
+   */
+  const languageReady = useCallback((filePath: string): boolean => {
     if (!highlighter) {
-      return null;
+      return false;
     }
-
     const lang = getLang(filePath);
-    if (!lang) {
+    if (!lang || settledLangs.has(lang)) {
+      return true;
+    }
+    loadLang(lang);
+    return false;
+    // langCount gives this a new identity once a grammar lands, so memos and effects that use it run again.
+  }, [highlighter, langCount]);
+
+  /** Tokens of a code block, or null while its grammar loads (the caller renders again once it has). */
+  const highlight = useCallback((code: string, filePath: string, theme: 'light' | 'dark'): HighlightedTokens[] | null => {
+    const lang = getLang(filePath);
+    if (!highlighter || !lang || !languageReady(filePath)) {
       return null;
     }
 
     const shikiTheme = theme === 'dark' ? 'github-dark' : 'github-light';
+    const key = `${shikiTheme}\0${lang}\0${code}`;
+    const cached = highlightCache.get(key);
+    if (cached) {
+      return cached;
+    }
 
     try {
       const result = highlighter.codeToTokens(code, {
@@ -203,16 +260,18 @@ export function useHighlighter() {
         theme: shikiTheme,
       });
 
-      return result.tokens.map(line => ({
+      const lines = result.tokens.map(line => ({
         tokens: line.map(token => ({
           text: token.content,
           color: token.color,
         })),
       }));
+      rememberHighlight(key, lines);
+      return lines;
     } catch {
       return null;
     }
-  }, [highlighter]);
+  }, [highlighter, languageReady]);
 
   const tokenize = useCallback((code: string, filePath: string, theme: 'light' | 'dark', state?: GrammarState): HighlightChunk | null => {
     if (!highlighter) {
@@ -238,5 +297,5 @@ export function useHighlighter() {
     }
   }, [highlighter]);
 
-  return { highlight, tokenize, ready: highlighter !== null };
+  return { highlight, tokenize, languageReady };
 }

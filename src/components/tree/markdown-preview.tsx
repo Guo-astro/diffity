@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useCallback, type ReactElement } from 'react';
+import { useMemo, useCallback, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -7,6 +7,7 @@ import { useHighlighter } from '../../hooks/use-highlighter';
 import { getTheme } from '../../hooks/use-theme';
 import { MermaidDiagram } from '../mermaid-diagram';
 import { RepoImage, REPO_FILE_PREFIX } from './repo-image';
+import { tokensToHtml } from '../../lib/syntax-token';
 
 interface MarkdownPreviewProps {
   content: string[];
@@ -95,7 +96,7 @@ function FrontmatterTable(props: { entries: [string, string][] }) {
 
 export function MarkdownPreview(props: MarkdownPreviewProps) {
   const { content, filePath } = props;
-  const { highlight, ready } = useHighlighter();
+  const { highlight } = useHighlighter();
   const raw = content.join('\n');
 
   const { entries: frontmatterEntries, body: markdown } = useMemo(() => parseFrontmatter(raw), [raw]);
@@ -121,31 +122,16 @@ export function MarkdownPreview(props: MarkdownPreviewProps) {
         return <MermaidDiagram chart={codeString} />;
       }
 
-      let highlighted: { text: string; color?: string }[][] | null = null;
-      if (ready && lang) {
-        const result = highlight(codeString, `file.${lang}`, getTheme());
-        if (result) {
-          highlighted = result.map((line) => line.tokens);
-        }
-      }
+      const highlighted = lang ? highlight(codeString, `file.${lang}`, getTheme()) : null;
 
       return (
         <div className="gh-md-code-block">
           <pre>
-            <code>{highlighted ? (
-              highlighted.map((tokens, lineIdx) => (
-                <Fragment key={lineIdx}>
-                  {lineIdx > 0 && '\n'}
-                  {tokens.map((token, tokenIdx) => (
-                    <span key={tokenIdx} style={token.color ? { color: token.color } : undefined}>
-                      {token.text}
-                    </span>
-                  ))}
-                </Fragment>
-              ))
+            {highlighted ? (
+              <code dangerouslySetInnerHTML={{ __html: highlighted.map((line) => tokensToHtml(line.tokens)).join('\n') }} />
             ) : (
-              codeString
-            )}</code>
+              <code>{codeString}</code>
+            )}
           </pre>
         </div>
       );
@@ -160,7 +146,7 @@ export function MarkdownPreview(props: MarkdownPreviewProps) {
       }
       return <img src={resolved} alt={alt || ''} width={width} height={height} />;
     },
-  }), [highlight, ready, resolveSrc]);
+  }), [highlight, resolveSrc]);
 
   return (
     <div className="border border-border rounded-md overflow-hidden">

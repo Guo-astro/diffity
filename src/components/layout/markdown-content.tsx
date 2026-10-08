@@ -8,6 +8,7 @@ import { useHighlighter } from '../../hooks/use-highlighter';
 import { getTheme } from '../../hooks/use-theme';
 import { MermaidDiagram } from '../mermaid-diagram';
 import { rehypeMentions } from '../../lib/mentions';
+import { tokensToHtml } from '../../lib/syntax-token';
 
 interface MarkdownContentProps {
   content: string;
@@ -15,7 +16,7 @@ interface MarkdownContentProps {
 
 export function MarkdownContent(props: MarkdownContentProps) {
   const { content } = props;
-  const { highlight, ready } = useHighlighter();
+  const { highlight } = useHighlighter();
 
   const components = useMemo<Components>(() => ({
     p({ children }) {
@@ -78,34 +79,23 @@ export function MarkdownContent(props: MarkdownContentProps) {
         );
       }
 
-      let highlighted: { text: string; color?: string }[][] | null = null;
-      if (ready && lang) {
-        const result = highlight(codeString, `file.${lang}`, getTheme());
-        if (result) {
-          highlighted = result.map((line) => line.tokens);
-        }
-      }
+      const highlighted = highlight(codeString, `file.${lang}`, getTheme());
 
       return (
         <div className="rounded-md border border-border overflow-hidden">
           <div className="bg-bg-secondary px-3 py-1 border-b border-border">
             <span className="text-[10px] text-text-muted font-mono">{lang}</span>
           </div>
-          <pre className="px-3 py-2 overflow-x-auto bg-bg text-xs leading-5 font-mono">
-            {highlighted ? (
-              highlighted.map((tokens, lineIdx) => (
-                <div key={lineIdx}>
-                  {tokens.map((token, tokenIdx) => (
-                    <span key={tokenIdx} style={token.color ? { color: token.color } : undefined}>
-                      {token.text}
-                    </span>
-                  ))}
-                </div>
-              ))
-            ) : (
+          {highlighted ? (
+            <pre
+              className="px-3 py-2 overflow-x-auto bg-bg text-xs leading-5 font-mono"
+              dangerouslySetInnerHTML={{ __html: highlighted.map((line) => `<div>${tokensToHtml(line.tokens)}</div>`).join('') }}
+            />
+          ) : (
+            <pre className="px-3 py-2 overflow-x-auto bg-bg text-xs leading-5 font-mono">
               <code>{codeString}</code>
-            )}
-          </pre>
+            </pre>
+          )}
         </div>
       );
     },
@@ -143,7 +133,7 @@ export function MarkdownContent(props: MarkdownContentProps) {
         <td className="border border-border px-2 py-1">{children}</td>
       );
     },
-  }), [highlight, ready]);
+  }), [highlight]);
 
   return (
     <div className="markdown-body">
