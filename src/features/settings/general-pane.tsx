@@ -1,8 +1,23 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { cn } from '../../lib/cn';
 import { useTheme, type ThemePreference } from '../../hooks/use-theme';
 import { setDiffPalette, useDiffPalette, type DiffPalette } from '../../lib/diff-palette';
-import { PreferencesGroup, PreferencesPane, PreferencesRow, SegmentedControl } from './preferences';
+import { ChevronDownIcon } from '../../components/ui/icon';
+import {
+  CODE_SIZES,
+  DEFAULT_CODE_SIZE,
+  installedFonts,
+  setCodeFont,
+  setCodeSize,
+  setTabSize,
+  setUiFont,
+  setWrapLines,
+  TAB_SIZES,
+  useTypography,
+  type TabSize,
+} from '../../lib/typography';
+import { PreferencesGroup, PreferencesPane, PreferencesRow, SegmentedControl, Stepper } from './preferences';
 import { DiffIgnoreRow } from './diff-ignore-row';
 
 const PALETTES = {
@@ -198,6 +213,115 @@ function DiffLayoutRow() {
   );
 }
 
+function useInstalledFonts() {
+  return useQuery({ queryKey: ['installed-fonts'], queryFn: installedFonts, staleTime: Infinity });
+}
+
+/** Keeps a saved font listed even when it is no longer installed. */
+function withCurrent(names: string[], current: string | null) {
+  if (!current || names.includes(current)) {
+    return names;
+  }
+  return [current, ...names];
+}
+
+function SelectField(props: { value: string; ariaLabel: string; onChange: (value: string) => void; children: ReactNode }) {
+  const { value, ariaLabel, onChange, children } = props;
+
+  return (
+    <div className="relative w-full">
+      <select
+        aria-label={ariaLabel}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-7 w-full cursor-pointer appearance-none truncate rounded-md border border-control-border bg-raised pl-2.5 pr-7 text-xs text-text outline-none hover:bg-control-hover focus:border-focus"
+      >
+        {children}
+      </select>
+      <ChevronDownIcon size="xs" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-text-muted" />
+    </div>
+  );
+}
+
+function FontRow(props: { label: string; hint: string; defaultLabel: string; value: string | null; fonts: string[]; onChange: (font: string | null) => void }) {
+  const { label, hint, defaultLabel, value, fonts, onChange } = props;
+
+  return (
+    <PreferencesRow label={label} hint={hint}>
+      <SelectField ariaLabel={label} value={value ?? ''} onChange={(next) => onChange(next || null)}>
+        <option value="">{defaultLabel}</option>
+        {withCurrent(fonts, value).map((font) => (
+          <option key={font} value={font}>
+            {font}
+          </option>
+        ))}
+      </SelectField>
+    </PreferencesRow>
+  );
+}
+
+function TypographyGroup() {
+  const { uiFont, codeFont, codeSize, tabSize } = useTypography();
+  const { data: fonts } = useInstalledFonts();
+
+  return (
+    <PreferencesGroup label="Fonts">
+      <FontRow
+        label="Interface font"
+        hint="Menus, sidebars, comments and the guide."
+        defaultLabel="System default"
+        value={uiFont}
+        fonts={fonts?.all ?? []}
+        onChange={setUiFont}
+      />
+      <FontRow
+        label="Code font"
+        hint="Diffs, file contents and code in comments. Lists monospaced fonts."
+        defaultLabel="Default monospace"
+        value={codeFont}
+        fonts={fonts?.monospaced ?? []}
+        onChange={setCodeFont}
+      />
+      <PreferencesRow label="Code font size" hint="Diffs and file contents.">
+        <Stepper
+          ariaLabel="Code font size"
+          value={codeSize}
+          steps={CODE_SIZES}
+          defaultValue={DEFAULT_CODE_SIZE}
+          format={(value) => `${value}px`}
+          onChange={setCodeSize}
+        />
+      </PreferencesRow>
+      <PreferencesRow label="Tab width" hint="Spaces a tab character takes up in code.">
+        <SegmentedControl<string>
+          ariaLabel="Tab width"
+          value={String(tabSize)}
+          options={TAB_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
+          onChange={(next) => setTabSize(Number(next) as TabSize)}
+        />
+      </PreferencesRow>
+    </PreferencesGroup>
+  );
+}
+
+function WrapLinesRow() {
+  const wrapLines = useTypography((state) => state.wrapLines);
+
+  return (
+    <PreferencesRow label="Long lines" hint="Off keeps each line on one row; scroll a file sideways with the trackpad, Shift-scroll or the bar under it.">
+      <SegmentedControl<'wrap' | 'scroll'>
+        ariaLabel="Long lines"
+        value={wrapLines ? 'wrap' : 'scroll'}
+        options={[
+          { value: 'wrap', label: 'Wrap' },
+          { value: 'scroll', label: 'Scroll' },
+        ]}
+        onChange={(next) => setWrapLines(next === 'wrap')}
+      />
+    </PreferencesRow>
+  );
+}
+
 export function GeneralPane() {
   return (
     <PreferencesPane>
@@ -209,8 +333,10 @@ export function GeneralPane() {
           <DiffColoursPicker />
         </PreferencesRow>
       </PreferencesGroup>
+      <TypographyGroup />
       <PreferencesGroup label="Diffs">
         <DiffLayoutRow />
+        <WrapLinesRow />
         <DiffIgnoreRow />
       </PreferencesGroup>
     </PreferencesPane>

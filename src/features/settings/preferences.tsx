@@ -1,7 +1,8 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { Spinner } from '../../components/icons/spinner';
-import { buttonGhost, buttonOutline, buttonPrimary, segmentInactive } from '../../components/ui/button-styles';
+import { buttonGhost, buttonGroup, buttonGroupDivider, buttonGroupItem, buttonOutline, buttonPrimary, segmentInactive } from '../../components/ui/button-styles';
+import { MinusIcon, PlusIcon } from '../../components/ui/icon';
 
 export function PreferencesPane(props: { children: ReactNode }) {
   const { children } = props;
@@ -118,6 +119,52 @@ export function SegmentedControl<T extends string>(props: {
         );
       })}
     </div>
+  );
+}
+
+/** Steps through `steps`, with a Reset that appears once the value moves off `defaultValue`. */
+export function Stepper(props: {
+  value: number;
+  steps: readonly number[];
+  defaultValue: number;
+  ariaLabel: string;
+  format: (value: number) => string;
+  onChange: (value: number) => void;
+}) {
+  const { value, steps, defaultValue, ariaLabel, format, onChange } = props;
+  const index = steps.indexOf(value);
+
+  return (
+    <>
+      {value !== defaultValue && (
+        <button type="button" onClick={() => onChange(defaultValue)} className="cursor-pointer text-xs text-text-muted hover:text-text">
+          Reset
+        </button>
+      )}
+      <div role="group" aria-label={ariaLabel} className={buttonGroup}>
+        <button
+          type="button"
+          aria-label={`Decrease ${ariaLabel.toLowerCase()}`}
+          disabled={index <= 0}
+          onClick={() => onChange(steps[index - 1])}
+          className={cn(buttonGroupItem, 'px-2 text-text-secondary')}
+        >
+          <MinusIcon size="xs" />
+        </button>
+        <span aria-live="polite" className={cn(buttonGroupDivider, 'flex w-14 items-center justify-center text-xs tabular-nums text-text')}>
+          {format(value)}
+        </span>
+        <button
+          type="button"
+          aria-label={`Increase ${ariaLabel.toLowerCase()}`}
+          disabled={index >= steps.length - 1}
+          onClick={() => onChange(steps[index + 1])}
+          className={cn(buttonGroupItem, buttonGroupDivider, 'px-2 text-text-secondary')}
+        >
+          <PlusIcon size="xs" />
+        </button>
+      </div>
+    </>
   );
 }
 

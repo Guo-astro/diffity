@@ -40,7 +40,13 @@ const ORDER = GROUPS.flatMap((group) => group.sections);
 
 const INDEX: { label: string; section: SettingsSection; keywords?: string }[] = [
   { label: 'Theme', section: 'general', keywords: 'appearance dark light system mode colour color' },
+  { label: 'Diff colours', section: 'general', keywords: 'colour color blind colorblind palette green red' },
+  { label: 'Interface font', section: 'general', keywords: 'font typeface family typography ui' },
+  { label: 'Code font', section: 'general', keywords: 'font monospace mono typeface family typography' },
+  { label: 'Code font size', section: 'general', keywords: 'font text size bigger smaller larger zoom' },
+  { label: 'Tab width', section: 'general', keywords: 'tab size indent indentation spaces' },
   { label: 'Diff layout', section: 'general', keywords: 'split unified view' },
+  { label: 'Long lines', section: 'general', keywords: 'wrap wrapping word wrap nowrap horizontal scroll' },
   { label: 'Hide files from diffs', section: 'general', keywords: 'diffityignore ignore generated hidden exclude' },
   { label: 'Open files with', section: 'editor', keywords: 'vs code cursor zed editor' },
   { label: 'Custom editor command', section: 'editor', keywords: 'subl idea cli' },

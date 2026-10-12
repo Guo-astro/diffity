@@ -11,6 +11,7 @@ import { commitRef, errorMessage, openInEditor } from '../../lib/api';
 import { reportIssue } from '../../lib/report-issue';
 import { modKey } from '../../lib/platform';
 import { shortcutHint } from '../../lib/shortcuts';
+import { setWrapLines, useTypography } from '../../lib/typography';
 import { KeyCaps } from '../../components/ui/key-caps';
 import { useRepoNav } from '../../hooks/use-repo';
 import { useTheme } from '../../hooks/use-theme';
@@ -26,7 +27,7 @@ import { checkoutPullRequest } from '../pr/pr-checkout';
 import { prDiffRef } from '../../components/layout/ref-menu';
 import {
   AlertCircleIcon, ChangesIcon, CommentIcon, EditorIcon, FetchIcon, FileIcon, FilesIcon, GitCommitIcon, GitPullRequestIcon,
-  HomeIcon, KeyboardIcon, MoonIcon, SparkleIcon, PullIcon, PushIcon, RefreshIcon, RevealIcon, SearchIcon, SettingsIcon, SidebarIcon,
+  HomeIcon, KeyboardIcon, MoonIcon, WrapIcon, SparkleIcon, PullIcon, PushIcon, RefreshIcon, RevealIcon, SearchIcon, SettingsIcon, SidebarIcon,
 } from '../../components/ui/icon';
 import { checkForUpdatesAndTell } from '../updates/updater';
 import { openActivity } from '../claude/run-activity';
@@ -58,6 +59,7 @@ function runGit(label: string, run: () => Promise<{ ok: boolean; output: string 
 function useGlobalActions(): PaletteAction[] {
   const nav = useRepoNav();
   const { theme, toggleTheme } = useTheme();
+  const wrapLines = useTypography((state) => state.wrapLines);
 
   return useMemo(() => [
     { id: 'go-home', title: 'Go to Home', group: 'Go to', hint: shortcutHint('go-home'), icon: <HomeIcon size="sm" />, run: nav.toOverview },
@@ -67,6 +69,7 @@ function useGlobalActions(): PaletteAction[] {
     { id: 'agent-activity', title: 'Show agent activity', group: 'Go to', keywords: 'claude codex opencode review thinking tools transcript', icon: <SparkleIcon size="sm" />, run: openActivity },
     { id: 'toggle-sidebar', title: 'Toggle sidebar', group: 'View', hint: shortcutHint('toggle-sidebar'), icon: <SidebarIcon size="sm" />, run: toggleSidebar },
     { id: 'toggle-theme', title: theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', group: 'View', keywords: 'theme dark light appearance', icon: <MoonIcon size="sm" />, run: toggleTheme },
+    { id: 'toggle-wrap', title: wrapLines ? 'Stop wrapping long lines' : 'Wrap long lines', group: 'View', keywords: 'wrap word wrap nowrap horizontal scroll lines', icon: <WrapIcon size="sm" />, run: () => setWrapLines(!wrapLines) },
     { id: 'fetch', title: 'Fetch', group: 'Actions', keywords: 'git remote', icon: <FetchIcon size="sm" />, run: () => runGit('Fetch', () => tauri.gitFetch(nav.repoPath)) },
     { id: 'pull', title: 'Pull', group: 'Actions', keywords: 'git', icon: <PullIcon size="sm" />, run: () => runGit('Pull', () => tauri.gitPull(nav.repoPath)) },
     { id: 'push', title: 'Push', group: 'Actions', keywords: 'git publish', icon: <PushIcon size="sm" />, run: () => runGit('Push', () => tauri.gitPush(nav.repoPath)) },
@@ -77,7 +80,7 @@ function useGlobalActions(): PaletteAction[] {
     { id: 'report-issue', title: 'Report an issue…', group: 'Actions', keywords: 'bug feedback github idea feature request help', icon: <AlertCircleIcon size="sm" />, run: reportIssue },
     { id: 'check-updates', title: 'Check for updates…', group: 'Actions', keywords: 'update upgrade new version release', icon: <RefreshIcon size="sm" />, run: () => { void checkForUpdatesAndTell(); } },
     { id: 'whats-new', title: 'What’s new in Diffity', group: 'Actions', keywords: 'release notes changelog updates new features version', icon: <SparkleIcon size="sm" />, run: openWhatsNew },
-  ], [nav, theme, toggleTheme]);
+  ], [nav, theme, toggleTheme, wrapLines]);
 }
 
 export function CommandPalette() {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DiffHunk } from '@/lib/diff-parser';
 import type { DiffFile, DiffLine as DiffLineType } from '@/lib/diff-parser';
@@ -46,6 +46,8 @@ import { useEditorName } from '../../hooks/use-editor-name';
 import { useCurrentFindKey } from '../../features/find/find-store';
 import { diffLineKey } from '../../lib/find';
 import { SinceViewedBadge, SinceViewedDiff, type SinceViewedInfo } from './since-viewed';
+import { CodeScrollbar } from './code-scroll';
+import { useTypography } from '../../lib/typography';
 
 /** Cards that scroll straight past are never highlighted: work starts once a card has stayed mounted this long. */
 const HIGHLIGHT_DELAY_MS = 120;
@@ -199,6 +201,8 @@ function FileCard(props: FileCardProps) {
     highlighted, onHighlightEnd, heldBack, loadingPatch, sinceViewed,
   } = props;
   const [showSinceViewed, setShowSinceViewed] = useState(false);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const wrapLines = useTypography((state) => state.wrapLines);
 
   const rendersLines = !collapsed && !heldBack && !loadingPatch && !file.isBinary && file.hunks.length > 0;
   const filePath = getFilePath(file);
@@ -562,7 +566,7 @@ function FileCard(props: FileCardProps) {
           <ChevronIcon expanded={!collapsed} />
         </IconButton>
         <button
-          className="flex min-w-0 font-mono text-[12.5px] text-left cursor-pointer hover:[&_span]:text-text transition-colors"
+          className="flex min-w-0 font-mono text-[calc(var(--code-size)-0.5px)] text-left cursor-pointer hover:[&_span]:text-text transition-colors"
           onClick={() => onToggleCollapse(filePath)}
         >
           {showRename ? (
@@ -711,18 +715,18 @@ function FileCard(props: FileCardProps) {
             </div>
           ) : (
             <>
-            <table className="w-full border-collapse table-fixed">
+            <table ref={tableRef} className="w-full border-collapse table-fixed">
               {viewMode === 'split' ? (
                 <colgroup>
-                  <col className="w-12" />
-                  <col className="w-[calc(50%-48px)]" />
-                  <col className="w-12" />
+                  <col className="w-(--gutter-w)" />
+                  <col className="w-[calc(50%-var(--gutter-w))]" />
+                  <col className="w-(--gutter-w)" />
                   <col />
                 </colgroup>
               ) : (
                 <colgroup>
-                  <col className="w-12" />
-                  <col className="w-12" />
+                  <col className="w-(--gutter-w)" />
+                  <col className="w-(--gutter-w)" />
                   <col className="w-5" />
                   <col />
                 </colgroup>
@@ -803,6 +807,7 @@ function FileCard(props: FileCardProps) {
                 );
               })()}
             </table>
+            <CodeScrollbar tableRef={tableRef} enabled={!wrapLines} />
             </>
           )}
         </div>

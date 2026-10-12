@@ -77,6 +77,15 @@ async function unhideRepo(path: string) {
   void queryClient.invalidateQueries({ queryKey: ['recent-repos'] });
 }
 
+/** Home when there is nothing uncommitted to review, so the diff doesn't flash before redirecting there. */
+async function landingPage(path: string, extra?: Record<string, string>): Promise<RepoPage> {
+  if (extra && Object.keys(extra).length > 0) {
+    return 'diff';
+  }
+  const status = await tauri.gitStatus(path).catch(() => null);
+  return status && !status.dirty ? 'overview' : 'diff';
+}
+
 export async function openRepoAt(path: string, navigate: NavigateFunction, options?: { newWindow?: boolean; extra?: Record<string, string>; page?: RepoPage }) {
   if (!options?.newWindow) {
     beginOpening(path);
@@ -90,13 +99,16 @@ export async function openRepoAt(path: string, navigate: NavigateFunction, optio
       });
       return;
     }
+    if (!options?.newWindow) {
+      setOpeningStep('Reading changes');
+    }
+    const page = options?.page ?? (await landingPage(info.path, options?.extra));
     if (options?.newWindow) {
-      await openRepoInNewWindow(info.path, options.extra, options.page);
+      await openRepoInNewWindow(info.path, options.extra, page);
       return;
     }
-    setOpeningStep('Reading changes');
     void unhideRepo(info.path);
-    navigate(repoRoute(info.path, options?.extra, options?.page), { state: { fresh: true } });
+    navigate(repoRoute(info.path, options?.extra, page), { state: { fresh: true } });
   } catch (error) {
     endOpening();
     toast.error('Could not open the folder', { description: `${tauri.errorMessage(error)}. It may have been moved or deleted.` });

@@ -18,6 +18,7 @@ import { type ViewMode, getFilePath } from '../../lib/diff-utils';
 import type { DiffFile } from '@/lib/diff-parser';
 import type { CommentThread, LineSelection } from '../comments/types';
 import type { CommentActions } from '../../hooks/use-comment-actions';
+import { codeLineHeight } from '../../lib/typography';
 
 function flashThreadElement(element: Element) {
   element.dispatchEvent(new CustomEvent('diffity:focus-thread', { bubbles: false }));
@@ -36,7 +37,6 @@ export interface DiffViewHandle {
 const VIRTUALIZER_OVERSCAN = 3;
 const FILE_HEADER_HEIGHT = 56;
 const EMPTY_CONTENT_HEIGHT = 100;
-const LINE_HEIGHT = 22;
 const HUNK_HEADER_HEIGHT = 32;
 const FILE_BLOCK_PADDING = 16;
 const LIST_TOP_PADDING = 16;
@@ -85,7 +85,7 @@ function estimateFileHeight(file: DiffFile, collapsed: boolean, heldBack: boolea
   if (file.isBinary || file.hunks.length === 0) {
     return EMPTY_CONTENT_HEIGHT;
   }
-  return FILE_HEADER_HEIGHT + getRowCount(file) * LINE_HEIGHT + file.hunks.length * HUNK_HEADER_HEIGHT + FILE_BLOCK_PADDING;
+  return FILE_HEADER_HEIGHT + getRowCount(file) * codeLineHeight() + file.hunks.length * HUNK_HEADER_HEIGHT + FILE_BLOCK_PADDING;
 }
 
 function LargeDiffNotice(props: { files: DiffFile[] }) {

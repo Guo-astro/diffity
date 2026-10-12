@@ -12,7 +12,7 @@ interface CommentLineNumberProps {
   forceShowButton?: boolean;
 }
 
-const baseClass = 'diff-gutter w-12 min-w-12 pl-2 pr-2.5 text-right text-text-muted select-none cursor-pointer align-top relative group/line';
+const baseClass = 'diff-gutter w-(--gutter-w) min-w-(--gutter-w) pl-2 pr-2.5 text-right text-text-muted select-none cursor-pointer align-top relative group/line';
 
 export function CommentLineNumber(props: CommentLineNumberProps) {
   const { lineNumber, className, isSelected, onMouseDown, onMouseEnter, onCommentClick, showCommentButton, forceShowButton } = props;

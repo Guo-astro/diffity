@@ -80,6 +80,9 @@ importers:
       tailwindcss:
         specifier: 4.3.3
         version: 4.3.3
+      tauri-plugin-system-fonts-api:
+        specifier: 2.0.2
+        version: 2.0.2
       zustand:
         specifier: 5.0.15
         version: 5.0.15(@types/react@19.3.0)(react@19.3.0)
@@ -1657,6 +1660,9 @@ packages:
   tapable@2.3.3:
     resolution: {integrity: sha512-uxc/zpqFg6x7C8vOE7lh6Lbda8eEL9zmVm/PLeTPBRhh1xCgdWaQ+J1CUieGpIfm2HdtsUpRv+HshiasBMcc6A==}
     engines: {node: '>=6'}
+
+  tauri-plugin-system-fonts-api@2.0.2:
+    resolution: {integrity: sha512-ewgkpl8RavtdLfXTvk3uZcS+Bj71yYYY7ItyJXDqohiUe+nkSzk8dyGZc1GUVj4BKQqnesVWwO4FG/Atm8t8Ug==}
 
   tinybench@6.2.0:
     resolution: {integrity: sha512-78U2TlB2CnVenajOFzf3BKSm0J6oz5L0NV7g32LCPccvYc0lbWvys4d3uUUCS2B1N8PAf2+aekR8i1KbC3HO7Q==}
@@ -3523,6 +3529,10 @@ snapshots:
   tailwindcss@4.3.3: {}
 
   tapable@2.3.3: {}
+
+  tauri-plugin-system-fonts-api@2.0.2:
+    dependencies:
+      '@tauri-apps/api': 2.12.0
 
   tinybench@6.2.0: {}
 

@@ -407,6 +407,10 @@ export const XIcon = softStroke(() => <path d="M6 6l12 12M18 6 6 18" fill="none"
 
 export const PlusIcon = softStroke(() => <path d="M12 4.5v15M4.5 12h15" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
 
+export const MinusIcon = softStroke(() => <path d="M4.5 12h15" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
+
+export const WrapIcon = softStroke(() => <path d="M4 6h16M4 12h12.5a3.5 3.5 0 0 1 0 7H13m2-2.2L12.8 19l2.2 2.2M4 18h5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />);
+
 export const EllipsisIcon = softGlyph(() => (
   <>
     <circle cx="5" cy="12" r="2.2" fill="currentColor" stroke="none" />

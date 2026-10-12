@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { codeLineHeight } from '../../lib/typography';
 
-const LINE_HEIGHT = 22;
 /** Slices within this distance of the viewport stay mounted, so a fast scroll rarely shows a blank band. */
 const MARGIN = 1600;
 
@@ -76,7 +76,7 @@ export function LazySlice(props: LazySliceProps) {
   }, []);
 
   const mounted = near || pinned;
-  const height = heightRef.current ?? rows * LINE_HEIGHT;
+  const height = heightRef.current ?? rows * codeLineHeight();
 
   return (
     <>

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { parseDiff } from '@/lib/diff-parser';
 import type { ViewMode } from '../../lib/diff-utils';
@@ -8,6 +8,8 @@ import { Spinner } from '../icons/spinner';
 import { XIcon } from '../ui/icon';
 import { HunkBlock } from './hunk-block';
 import { HunkBlockSplit } from './hunk-block-split';
+import { CodeScrollbar } from './code-scroll';
+import { useTypography } from '../../lib/typography';
 
 export interface SinceViewedInfo {
   sessionId: string;
@@ -70,6 +72,8 @@ export function SinceViewedDiff(props: SinceViewedDiffProps) {
     staleTime: Infinity,
   });
   const file = useMemo(() => (query.data ? parseDiff(query.data).files[0] ?? null : null), [query.data]);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const wrapLines = useTypography((state) => state.wrapLines);
 
   const renderBody = () => {
     if (query.isPending) {
@@ -87,18 +91,19 @@ export function SinceViewedDiff(props: SinceViewedDiffProps) {
       return <div className="p-4 text-center text-[13px] text-text-muted italic">The file's contents are the same as when you viewed it</div>;
     }
     return (
-      <table className="w-full border-collapse table-fixed">
+      <>
+      <table ref={tableRef} className="w-full border-collapse table-fixed">
         {viewMode === 'split' ? (
           <colgroup>
-            <col className="w-12" />
-            <col className="w-[calc(50%-48px)]" />
-            <col className="w-12" />
+            <col className="w-(--gutter-w)" />
+            <col className="w-[calc(50%-var(--gutter-w))]" />
+            <col className="w-(--gutter-w)" />
             <col />
           </colgroup>
         ) : (
           <colgroup>
-            <col className="w-12" />
-            <col className="w-12" />
+            <col className="w-(--gutter-w)" />
+            <col className="w-(--gutter-w)" />
             <col className="w-5" />
             <col />
           </colgroup>
@@ -107,6 +112,8 @@ export function SinceViewedDiff(props: SinceViewedDiffProps) {
           ? <HunkBlockSplit key={index} hunk={hunk} filePath={filePath} />
           : <HunkBlock key={index} hunk={hunk} filePath={filePath} />))}
       </table>
+      <CodeScrollbar tableRef={tableRef} enabled={!wrapLines} />
+      </>
     );
   };
 

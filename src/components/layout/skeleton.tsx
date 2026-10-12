@@ -6,6 +6,8 @@ import { Skeleton } from '../ui/skeleton';
 import { TitleBar, Workspace } from './title-bar';
 import { endOpening } from '../../lib/opening';
 import { HomeSkeletonMain } from './home-skeleton';
+import { HomeTitleBar } from './home-title-bar';
+import { StatusBar } from './status-bar';
 import { Spinner } from '../icons/spinner';
 
 /** Removes the static splash from index.html once React has painted something equivalent. */
@@ -106,10 +108,12 @@ export function OpeningSkeleton(props: { repoName: string; onCancel?: () => void
 
   return (
     <div className="flex flex-col h-screen bg-frame font-sans">
-      <TitleBar sidebarToggle={!home}>
-        <span className="font-semibold text-text text-[13px] truncate max-w-[180px] px-1.5">{repoName}</span>
-        {bars && !home && <Bar className="w-48 h-7" />}
-      </TitleBar>
+      {home ? <HomeTitleBar name={repoName} /> : (
+        <TitleBar>
+          <span className="font-semibold text-text text-[13px] truncate max-w-[180px] px-1.5">{repoName}</span>
+          {bars && <Bar className="w-48 h-7" />}
+        </TitleBar>
+      )}
       <Workspace>
         <div className="relative flex flex-1 overflow-hidden">
           {home ? <HomeSkeletonMain repoName={repoName} /> : (
@@ -147,7 +151,7 @@ export function OpeningSkeleton(props: { repoName: string; onCancel?: () => void
           )}
         </div>
       </Workspace>
-      <div className="h-8 shrink-0" />
+      {home ? <StatusBar /> : <div className="h-8 shrink-0" />}
     </div>
   );
 }

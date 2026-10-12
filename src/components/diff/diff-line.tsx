@@ -70,7 +70,7 @@ export function DiffLine(props: DiffLineProps) {
       <td className={cn('w-5 min-w-5 px-1 text-center select-none align-top', getPrefixColor(line.type), isSelected && 'bg-diff-comment-bg')}>
         {getPrefix(line.type)}
       </td>
-      <td className={cn('px-3 whitespace-pre-wrap [overflow-wrap:anywhere]', isSelected && 'bg-diff-comment-bg')}>
+      <td data-code-cell className={cn('px-3 code-cell', isSelected && 'bg-diff-comment-bg')}>
         <span className="inline" data-find-line={diffLineKey(line)}>{renderContent(line, syntaxTokens)}</span>
       </td>
     </tr>

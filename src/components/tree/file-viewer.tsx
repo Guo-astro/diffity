@@ -13,6 +13,7 @@ import { useFindSource, type FindSource } from '../../features/find/find-store';
 import { fileFindLines } from '../../lib/find';
 import { fileSource, HIGHLIGHT_MAX_ROWS, runInSteps, tokenizeSources, type SideTokens } from '../../lib/syntax-lines';
 import type { SyntaxToken } from '../../lib/syntax-token';
+import { codeLineHeight } from '../../lib/typography';
 
 interface FileViewerProps {
   filePath: string;
@@ -29,7 +30,6 @@ export interface FileViewerHandle {
 }
 
 const CURRENT_AUTHOR: CommentAuthor = { name: 'You', type: 'user' };
-const LINE_HEIGHT = 22;
 const THREAD_HEIGHT_ESTIMATE = 120;
 const FORM_HEIGHT_ESTIMATE = 160;
 const OVERSCAN = 30;
@@ -139,7 +139,7 @@ export const FileViewer = forwardRef<FileViewerHandle, FileViewerProps>(function
     estimateSize: (index) => {
       const lineNum = index + 1;
       const threadCount = threadsByLine.get(lineNum)?.length ?? 0;
-      return LINE_HEIGHT + threadCount * THREAD_HEIGHT_ESTIMATE + (pendingEndLine === lineNum ? FORM_HEIGHT_ESTIMATE : 0);
+      return codeLineHeight() + threadCount * THREAD_HEIGHT_ESTIMATE + (pendingEndLine === lineNum ? FORM_HEIGHT_ESTIMATE : 0);
     },
     scrollMargin,
     overscan: OVERSCAN,
@@ -348,7 +348,7 @@ export const FileViewer = forwardRef<FileViewerHandle, FileViewerProps>(function
       <table ref={tableRef} className='w-full border-collapse'>
         <tbody>
           <tr style={{ height: paddingTop }}>
-            <td className='w-12 min-w-12 p-0' />
+            <td className='w-(--gutter-w) min-w-(--gutter-w) p-0' />
             <td className='code-text p-0' style={{ minWidth: `calc(${maxColumns}ch + 2rem)` }} />
           </tr>
         </tbody>

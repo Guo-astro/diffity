@@ -166,6 +166,8 @@
 :root {
   --code-size: 13px;
   --code-line: 22px;
+  --tab-size: 8;
+  --gutter-w: max(48px, calc(var(--code-size) * 3.8));
 }
 
 html,
@@ -196,12 +198,30 @@ pre,
   font-size: var(--code-size);
   line-height: var(--code-line);
   font-variant-ligatures: none;
+  tab-size: var(--tab-size);
+}
+
+/* Diff code cells wrap long lines unless wrapping is off (`data-nowrap`), when the text shifts by its file's --code-x. */
+.code-cell {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+[data-nowrap] .code-cell {
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow: hidden;
+}
+
+[data-nowrap] .code-cell > [data-find-line] {
+  display: inline-block;
+  translate: calc(var(--code-x, 0px) * -1) 0;
 }
 
 td.diff-gutter {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: calc(var(--code-size) - 1px);
 }
 
 tr.bg-diff-add-bg > td.diff-gutter:not(.bg-diff-comment-gutter),
@@ -313,6 +333,11 @@ dialog {
   animation: skeleton-in 120ms ease-out 150ms both, skeleton-shimmer 1.6s ease-in-out 270ms infinite;
 }
 
+/* Takes over from a placeholder already on screen: no fade-in, shimmer in step with the one it replaces. */
+.skeleton-instant {
+  animation: skeleton-shimmer 1.6s ease-in-out var(--shimmer-delay, 0ms) infinite;
+}
+
 @keyframes skeleton-in {
   from {
     opacity: 0;
@@ -349,6 +374,9 @@ dialog {
   .skeleton {
     background-image: none;
     animation: skeleton-in 1ms linear 150ms both;
+  }
+  .skeleton-instant {
+    animation: none;
   }
   .reveal {
     animation: none;

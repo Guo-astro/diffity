@@ -37,6 +37,16 @@ function inView(element: Element): boolean {
 }
 
 /** Waits (up to ~2s) for the match's row to mount after a reveal, then keeps it centred while the layout settles. */
+/** Unwrapped diff lines scroll sideways; asks the match's file to bring it into view (see CodeScrollbar). */
+function revealSideways(element: Element, match: FindMatch) {
+  const range = rangeFor(textSegments(element), match.start, match.end);
+  if (!range) {
+    return;
+  }
+  const { left, right } = range.getBoundingClientRect();
+  element.dispatchEvent(new CustomEvent('diffity:reveal-range', { bubbles: true, detail: { left, right } }));
+}
+
 function settleOnMatch(match: FindMatch): () => void {
   let disposed = false;
   let frame = 0;
@@ -54,6 +64,7 @@ function settleOnMatch(match: FindMatch): () => void {
       if (!inView(element)) {
         element.scrollIntoView({ behavior: 'instant', block: 'center' });
       }
+      revealSideways(element, match);
       if (now - foundAt > 500) {
         return;
       }

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useInfo } from '../../hooks/use-info';
-import { useTheme } from '../../hooks/use-theme';
 import { useBaseBranch, useBranches, useGitHubAuth, useGitHubPr, useGitStatus, useRecentCommits, useRepoMeta } from '../../hooks/use-repo-state';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -20,15 +19,14 @@ import { HomeSkeletonBody } from './home-skeleton';
 import { relative } from '../../features/pr/pr-meta';
 import { Spinner } from '../icons/spinner';
 import { hideStaticSplash } from './skeleton';
-import { Breadcrumb, CurrentCrumb, TitleBar, Workspace } from './title-bar';
-import { OptionsMenu } from './options-menu';
+import { Workspace } from './title-bar';
+import { HomeTitleBar } from './home-title-bar';
 import { StatusBar } from './status-bar';
 import { commitRef, errorMessage, openInEditor } from '../../lib/api';
 import { prDiffRef } from './ref-menu';
 import { useRepoNav } from '../../hooks/use-repo';
 import { isOpenThread, useRepoThreads } from '../../hooks/use-repo-threads';
 import { openSettingsAt } from '../../lib/ui-store';
-import { CommentsButton } from '../../features/comments/comments-button';
 import { cn } from '../../lib/cn';
 import { buttonClaude, buttonIconSmall, buttonOutline, buttonPrimary, inputField } from '../ui/button-styles';
 import { ChangesIcon, CheckCircleIcon, ChevronDownIcon, CommentIcon, EditorIcon, FilesIcon, GitCompareIcon, GitHubIcon, GitPullRequestIcon, SearchIcon, SparkleIcon, SwapIcon, XIcon } from '../ui/icon';
@@ -340,7 +338,6 @@ function SectionTitle(props: { children: ReactNode; right?: ReactNode }) {
 export function Dashboard(props: DashboardProps) {
   const { onNavigate } = props;
   const nav = useRepoNav();
-  const { theme, toggleTheme } = useTheme();
   const { data: info } = useInfo();
   const statusQuery = useGitStatus();
   const status = statusQuery.data;
@@ -493,18 +490,7 @@ export function Dashboard(props: DashboardProps) {
 
   return (
     <div className="flex flex-col h-screen bg-frame text-text font-sans">
-      <TitleBar sidebarToggle={false}>
-        <div data-tauri-drag-region className="flex items-center gap-2.5 min-w-0 shrink">
-          <Breadcrumb name={info?.name}>
-            <CurrentCrumb>Home</CurrentCrumb>
-          </Breadcrumb>
-        </div>
-        <div data-tauri-drag-region className="flex-1 min-w-2 self-stretch" />
-        <div className="flex items-center gap-2 shrink-0">
-          <CommentsButton />
-          <OptionsMenu theme={theme} onToggleTheme={toggleTheme} />
-        </div>
-      </TitleBar>
+      <HomeTitleBar name={info?.name} />
 
       <Workspace>
         <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto">

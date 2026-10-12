@@ -4,6 +4,7 @@ import { App } from './App';
 import { isTauri, shouldUseMockApi } from './lib/platform';
 import './styles/app.css';
 import './lib/diff-palette';
+import './lib/typography';
 
 async function bootstrap() {
   if (shouldUseMockApi) {

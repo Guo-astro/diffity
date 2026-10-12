@@ -3,10 +3,11 @@ import { cn } from '../../lib/cn';
 import type { ViewMode } from '../../lib/diff-utils';
 import { SegmentedToggle } from '../ui/segmented-toggle';
 import { buttonIconOutline } from '../ui/button-styles';
-import { CollapseAllIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, ExpandAllIcon, SplitViewIcon, TrashIcon, UnifiedViewIcon, XIcon } from '../ui/icon';
+import { CollapseAllIcon, CopyIcon, EllipsisIcon, EyeIcon, EyeOffIcon, ExpandAllIcon, SplitViewIcon, TrashIcon, UnifiedViewIcon, WrapIcon, XIcon } from '../ui/icon';
 import { MenuItem, MenuSeparator, Popover, useMenu } from '../ui/popover';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { toast } from 'sonner';
+import { setWrapLines, useTypography } from '../../lib/typography';
 
 interface DiffBarProps {
   viewMode: ViewMode;
@@ -64,6 +65,7 @@ export function DiffBar(props: DiffBarProps) {
   const { viewMode, onViewModeChange, hideWhitespace, onHideWhitespaceChange, ignored, onExpandAll, onCollapseAll, commentNav, leading, comments } = props;
   const menu = useMenu();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const wrapLines = useTypography((state) => state.wrapLines);
   const run = (action: () => void) => () => {
     menu.close();
     action();
@@ -97,7 +99,7 @@ export function DiffBar(props: DiffBarProps) {
       <button
         ref={menu.anchorRef}
         onClick={menu.toggle}
-        title="More diff options: whitespace, expand or collapse files, comments"
+        title="More diff options: whitespace, line wrapping, expand or collapse files, comments"
         aria-label="More diff options"
         className={cn(buttonIconOutline, menu.open && 'bg-control-hover text-text')}
       >
@@ -105,6 +107,7 @@ export function DiffBar(props: DiffBarProps) {
       </button>
       <Popover open={menu.open} onClose={menu.close} anchorRef={menu.anchorRef} align="end" width={250}>
         <MenuItem icon={<EyeOffIcon size="sm" />} label="Hide whitespace changes" checked={hideWhitespace} onSelect={run(() => onHideWhitespaceChange(!hideWhitespace))} />
+        <MenuItem icon={<WrapIcon size="sm" />} label="Wrap long lines" checked={wrapLines} onSelect={run(() => setWrapLines(!wrapLines))} />
         <MenuSeparator />
         <MenuItem icon={<ExpandAllIcon size="sm" />} label="Expand all files" onSelect={run(onExpandAll)} />
         <MenuItem icon={<CollapseAllIcon size="sm" />} label="Collapse all files" hint="⇧X" onSelect={run(onCollapseAll)} />

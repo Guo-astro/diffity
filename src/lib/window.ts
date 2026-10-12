@@ -3,7 +3,7 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { hashString } from './hash';
 import { isTauri } from './platform';
 
-export type RepoPage = 'diff' | 'tree';
+export type RepoPage = 'diff' | 'tree' | 'overview';
 
 export function repoRoute(path: string, extra?: Record<string, string>, page: RepoPage = 'diff') {
   const params = new URLSearchParams(extra);
