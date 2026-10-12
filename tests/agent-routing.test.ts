@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { agentOfComments } from '../src/features/claude/claude-runner';
-import { pickForAgent, resolvePick } from '../src/features/claude/model-setting';
+import { hasManyProviders, modelName, modelProvider, pickForAgent, resolvePick, runModelLabel } from '../src/features/claude/model-setting';
 
 const user = (body: string) => ({ authorType: 'user', authorName: 'You', body });
 const agent = (name: string) => ({ authorType: 'agent', authorName: name, body: 'Done.' });
@@ -30,5 +30,24 @@ describe('resolvePick', () => {
   it('drops the model when another agent takes the run', () => {
     expect(pickForAgent({ agent: 'claude', model: 'opus' }, 'codex')).toEqual({ agent: 'codex' });
     expect(pickForAgent({ agent: 'claude', model: 'opus' }, 'claude')).toEqual({ agent: 'claude', model: 'opus' });
+  });
+});
+
+describe('model names', () => {
+  const choice = (value: string, name: string) => ({ value, name, efforts: [] });
+  const catalog = (...models: ReturnType<typeof choice>[]) => ({ models, currentModel: models[0]?.value ?? null, fetchedAt: '' });
+
+  it('drops the provider from OpenCode-style names', () => {
+    expect(modelName(choice('opencode/big-pickle', 'opencode/Big Pickle'))).toBe('Big Pickle');
+    expect(modelProvider(choice('opencode/big-pickle', 'opencode/Big Pickle'))).toBe('opencode');
+    expect(modelName(choice('opus', 'Opus 5.5'))).toBe('Opus 5.5');
+    expect(modelProvider(choice('opus', 'Opus 5.5'))).toBe(null);
+    expect(runModelLabel(catalog(choice('opencode/big-pickle', 'opencode/Big Pickle')), { model: 'opencode/big-pickle' })).toBe('Big Pickle');
+  });
+
+  it('needs providers shown only when a list mixes them', () => {
+    expect(hasManyProviders(catalog(choice('opencode/a', 'opencode/A'), choice('opencode/b', 'opencode/B')))).toBe(false);
+    expect(hasManyProviders(catalog(choice('anthropic/s', 'anthropic/Sonnet'), choice('openrouter/s', 'openrouter/Sonnet')))).toBe(true);
+    expect(hasManyProviders(catalog(choice('opus', 'Opus 5.5'), choice('sonnet', 'Sonnet 5.5')))).toBe(false);
   });
 });

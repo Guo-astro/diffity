@@ -119,10 +119,27 @@ export function findModel(catalog: ModelCatalog | null | undefined, value: strin
   return catalog.models.find((model) => model.value === value);
 }
 
+/** The provider in a `provider/Name` model name (OpenCode lists models that way), else null. */
+export function modelProvider(model: ModelChoice): string | null {
+  const slash = model.name.indexOf('/');
+  return slash > 0 ? model.name.slice(0, slash) : null;
+}
+
+/** A model's name without its provider: "Big Pickle" for "opencode/Big Pickle". */
+export function modelName(model: ModelChoice): string {
+  const provider = modelProvider(model);
+  return provider ? model.name.slice(provider.length + 1) : model.name;
+}
+
+/** Whether a catalog mixes providers, so each model needs its provider shown to tell them apart. */
+export function hasManyProviders(catalog: ModelCatalog): boolean {
+  return new Set(catalog.models.map(modelProvider)).size > 1;
+}
+
 /** Short label like "Opus 5.5 · High"; an unset model shows the one the agent uses on its own. */
 export function runModelLabel(catalog: ModelCatalog | null | undefined, runModel: RunModel, fallback = 'Default model'): string {
   const model = findModel(catalog, runModel.model) ?? findModel(catalog, catalog?.currentModel);
-  const name = model?.name ?? runModel.model ?? fallback;
+  const name = model ? modelName(model) : runModel.model ?? fallback;
   const effort = runModel.effort ? model?.efforts.find((item) => item.value === runModel.effort)?.name ?? runModel.effort : null;
   return effort ? `${name} · ${effort}` : name;
 }

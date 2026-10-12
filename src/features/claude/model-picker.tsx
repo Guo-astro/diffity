@@ -5,7 +5,7 @@ import type { ModelCatalog } from '../../lib/types';
 import { MenuItem, MenuLabel, MenuSeparator, Popover, useMenu } from '../../components/ui/popover';
 import { ChevronDownIcon } from '../../components/ui/icon';
 import { Spinner } from '../../components/icons/spinner';
-import { findModel, refreshModelCatalog, runModelLabel, useModelCatalog, useModelCatalogs, withModel, type RunPick } from './model-setting';
+import { findModel, hasManyProviders, modelName, modelProvider, refreshModelCatalog, runModelLabel, useModelCatalog, useModelCatalogs, withModel, type RunPick } from './model-setting';
 import { agentMeta, useInstalledAgents, type AgentMeta } from './agents';
 
 interface ModelMenuProps {
@@ -55,16 +55,25 @@ function AgentModels(props: GroupProps) {
     onChange({ agent: agent.id, model });
   };
 
+  const agentModel = findModel(catalog, catalog.currentModel);
+  const showProvider = hasManyProviders(catalog);
+
   return (
     <>
       <MenuItem
         label={`${agent.name} setting`}
-        hint={findModel(catalog, catalog.currentModel)?.name}
+        hint={agentModel && modelName(agentModel)}
         checked={current && !value.model}
         onSelect={() => pick(undefined)}
       />
       {catalog.models.map((model) => (
-        <MenuItem key={model.value} label={model.name} checked={current && value.model === model.value} onSelect={() => pick(model.value)} />
+        <MenuItem
+          key={model.value}
+          label={modelName(model)}
+          hint={showProvider ? modelProvider(model) ?? undefined : undefined}
+          checked={current && value.model === model.value}
+          onSelect={() => pick(model.value)}
+        />
       ))}
     </>
   );
