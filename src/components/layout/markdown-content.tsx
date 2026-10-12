@@ -1,11 +1,11 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import type { Components } from 'react-markdown';
 import { useHighlighter } from '../../hooks/use-highlighter';
-import { getTheme } from '../../hooks/use-theme';
+import { useThemeStore } from '../../hooks/use-theme';
 import { MermaidDiagram } from '../mermaid-diagram';
 import { rehypeMentions } from '../../lib/mentions';
 import { tokensToHtml } from '../../lib/syntax-token';
@@ -14,9 +14,10 @@ interface MarkdownContentProps {
   content: string;
 }
 
-export function MarkdownContent(props: MarkdownContentProps) {
+export const MarkdownContent = memo(function MarkdownContent(props: MarkdownContentProps) {
   const { content } = props;
   const { highlight } = useHighlighter();
+  const theme = useThemeStore((state) => state.theme);
 
   const components = useMemo<Components>(() => ({
     p({ children }) {
@@ -79,7 +80,7 @@ export function MarkdownContent(props: MarkdownContentProps) {
         );
       }
 
-      const highlighted = highlight(codeString, `file.${lang}`, getTheme());
+      const highlighted = highlight(codeString, `file.${lang}`, theme);
 
       return (
         <div className="rounded-md border border-border overflow-hidden">
@@ -89,7 +90,8 @@ export function MarkdownContent(props: MarkdownContentProps) {
           {highlighted ? (
             <pre
               className="px-3 py-2 overflow-x-auto bg-bg text-xs leading-5 font-mono"
-              dangerouslySetInnerHTML={{ __html: highlighted.map((line) => `<div>${tokensToHtml(line.tokens)}</div>`).join('') }}
+              style={{ color: highlighted.fg }}
+              dangerouslySetInnerHTML={{ __html: highlighted.lines.map((line) => `<div>${tokensToHtml(line.tokens)}</div>`).join('') }}
             />
           ) : (
             <pre className="px-3 py-2 overflow-x-auto bg-bg text-xs leading-5 font-mono">
@@ -133,7 +135,7 @@ export function MarkdownContent(props: MarkdownContentProps) {
         <td className="border border-border px-2 py-1">{children}</td>
       );
     },
-  }), [highlight]);
+  }), [highlight, theme]);
 
   return (
     <div className="markdown-body">
@@ -142,4 +144,4 @@ export function MarkdownContent(props: MarkdownContentProps) {
       </ReactMarkdown>
     </div>
   );
-}
+});

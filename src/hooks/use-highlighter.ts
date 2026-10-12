@@ -183,20 +183,26 @@ export interface HighlightedTokens {
   tokens: { text: string; color?: string }[];
 }
 
+/** A highlighted code block: its lines, and the theme's text color, which tokens without a color of their own show in. */
+export interface HighlightedCode {
+  lines: HighlightedTokens[];
+  fg: string;
+}
+
 /**
  * Tokens of code blocks already highlighted, so opening a markdown preview or comment again does not tokenize it
  * again: WebKit is slow to collect the garbage each pass leaves behind.
  */
-const highlightCache = new Map<string, HighlightedTokens[]>();
+const highlightCache = new Map<string, HighlightedCode>();
 
-function rememberHighlight(key: string, lines: HighlightedTokens[]) {
+function rememberHighlight(key: string, code: HighlightedCode) {
   if (highlightCache.size >= 300) {
     const first = highlightCache.keys().next().value;
     if (first !== undefined) {
       highlightCache.delete(first);
     }
   }
-  highlightCache.set(key, lines);
+  highlightCache.set(key, code);
 }
 
 /** Tokens of a run of lines, plus the grammar state to carry into the next run of the same file. */
@@ -241,7 +247,7 @@ export function useHighlighter() {
   }, [highlighter, langCount]);
 
   /** Tokens of a code block, or null while its grammar loads (the caller renders again once it has). */
-  const highlight = useCallback((code: string, filePath: string, theme: 'light' | 'dark'): HighlightedTokens[] | null => {
+  const highlight = useCallback((code: string, filePath: string, theme: 'light' | 'dark'): HighlightedCode | null => {
     const lang = getLang(filePath);
     if (!highlighter || !lang || !languageReady(filePath)) {
       return null;
@@ -260,14 +266,17 @@ export function useHighlighter() {
         theme: shikiTheme,
       });
 
+      // About half the tokens are in the theme's text color; leaving their color to the block saves a span each.
+      const fg = (result.fg ?? '').toLowerCase();
       const lines = result.tokens.map(line => ({
         tokens: line.map(token => ({
           text: token.content,
-          color: token.color,
+          color: token.color?.toLowerCase() === fg ? undefined : token.color,
         })),
       }));
-      rememberHighlight(key, lines);
-      return lines;
+      const highlighted = { lines, fg: result.fg ?? '' };
+      rememberHighlight(key, highlighted);
+      return highlighted;
     } catch {
       return null;
     }

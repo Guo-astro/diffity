@@ -1,10 +1,10 @@
-import { useMemo, useCallback, type ReactElement } from 'react';
+import { memo, useMemo, useCallback, useLayoutEffect, useRef, useState, type ReactElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import type { Components } from 'react-markdown';
-import { useHighlighter } from '../../hooks/use-highlighter';
-import { getTheme } from '../../hooks/use-theme';
+import { useHighlighter, type HighlightedCode } from '../../hooks/use-highlighter';
+import { useThemeStore } from '../../hooks/use-theme';
 import { MermaidDiagram } from '../mermaid-diagram';
 import { RepoImage, REPO_FILE_PREFIX } from './repo-image';
 import { tokensToHtml } from '../../lib/syntax-token';
@@ -94,9 +94,85 @@ function FrontmatterTable(props: { entries: [string, string][] }) {
   );
 }
 
-export function MarkdownPreview(props: MarkdownPreviewProps) {
+/** How far outside the visible area a code block gets highlighted, so it is colored before it scrolls in. */
+const HIGHLIGHT_MARGIN_PX = 1500;
+
+function scrollParent(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(node).overflowY)) {
+      return node;
+    }
+  }
+  return null;
+}
+
+function isNear(element: HTMLElement, root: HTMLElement | null): boolean {
+  const rect = element.getBoundingClientRect();
+  const area = root ? root.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+  return rect.bottom > area.top - HIGHLIGHT_MARGIN_PX && rect.top < area.bottom + HIGHLIGHT_MARGIN_PX;
+}
+
+interface CodeBlockProps {
+  code: string;
+  lang: string | null;
+  highlight: (code: string, filePath: string, theme: 'light' | 'dark') => HighlightedCode | null;
+  theme: 'light' | 'dark';
+}
+
+/**
+ * A fenced code block, plain until it comes near the visible area. A long preview holds tens of thousands of
+ * highlighted spans; building them all at once froze the app for a second. Blocks already in view are highlighted
+ * before the first paint, so they never show uncolored.
+ */
+function CodeBlock(props: CodeBlockProps) {
+  const { code, lang, highlight, theme } = props;
+  const ref = useRef<HTMLDivElement>(null);
+  const [near, setNear] = useState(false);
+
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (near || !lang || !element) {
+      return;
+    }
+    const root = scrollParent(element);
+    if (isNear(element, root)) {
+      setNear(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setNear(true);
+        }
+      },
+      { root, rootMargin: `${HIGHLIGHT_MARGIN_PX}px 0px` },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [near, lang]);
+
+  const highlighted = near && lang ? highlight(code, `file.${lang}`, theme) : null;
+
+  return (
+    <div ref={ref} className="gh-md-code-block">
+      <pre>
+        {highlighted ? (
+          <code
+            style={{ color: highlighted.fg }}
+            dangerouslySetInnerHTML={{ __html: highlighted.lines.map((line) => tokensToHtml(line.tokens)).join('\n') }}
+          />
+        ) : (
+          <code>{code}</code>
+        )}
+      </pre>
+    </div>
+  );
+}
+
+export const MarkdownPreview = memo(function MarkdownPreview(props: MarkdownPreviewProps) {
   const { content, filePath } = props;
   const { highlight } = useHighlighter();
+  const theme = useThemeStore((state) => state.theme);
   const raw = content.join('\n');
 
   const { entries: frontmatterEntries, body: markdown } = useMemo(() => parseFrontmatter(raw), [raw]);
@@ -122,19 +198,7 @@ export function MarkdownPreview(props: MarkdownPreviewProps) {
         return <MermaidDiagram chart={codeString} />;
       }
 
-      const highlighted = lang ? highlight(codeString, `file.${lang}`, getTheme()) : null;
-
-      return (
-        <div className="gh-md-code-block">
-          <pre>
-            {highlighted ? (
-              <code dangerouslySetInnerHTML={{ __html: highlighted.map((line) => tokensToHtml(line.tokens)).join('\n') }} />
-            ) : (
-              <code>{codeString}</code>
-            )}
-          </pre>
-        </div>
-      );
+      return <CodeBlock code={codeString} lang={lang} highlight={highlight} theme={theme} />;
     },
     code({ children }) {
       return <code className="gh-md-inline-code">{children}</code>;
@@ -146,7 +210,7 @@ export function MarkdownPreview(props: MarkdownPreviewProps) {
       }
       return <img src={resolved} alt={alt || ''} width={width} height={height} />;
     },
-  }), [highlight, resolveSrc]);
+  }), [highlight, theme, resolveSrc]);
 
   return (
     <div className="border border-border rounded-md overflow-hidden">
@@ -160,4 +224,4 @@ export function MarkdownPreview(props: MarkdownPreviewProps) {
       </div>
     </div>
   );
-}
+});
