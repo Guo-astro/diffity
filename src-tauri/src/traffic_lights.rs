@@ -9,8 +9,9 @@
 //! AppKit occasionally moves a button without posting that notification (e.g. when the screen-sharing indicator
 //! goes away), so a run-loop observer that fires just before Core Animation commits re-checks every pass too.
 //!
-//! The buttons stay where AppKit keeps them; only their frames are touched, so there is nothing for AppKit to
-//! reclaim. In full screen the buttons live in the menu-bar reveal and are left alone.
+//! The buttons are moved into a view of ours and that view is positioned, which keeps them clickable on macOS 27
+//! where moving them inside AppKit's title bar did not. In full screen the buttons live in the menu-bar reveal and
+//! are left alone.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -18,9 +19,9 @@ use std::ffi::c_void;
 
 use objc2::rc::{Retained, Weak};
 use objc2::runtime::{AnyObject, NSObject};
-use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
+use objc2::{define_class, msg_send, sel, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly};
 use objc2_app_kit::{
-    NSButton, NSView, NSViewFrameDidChangeNotification, NSWindow, NSWindowButton,
+    NSAutoresizingMaskOptions, NSButton, NSView, NSViewFrameDidChangeNotification, NSWindow, NSWindowButton,
     NSWindowDidBecomeKeyNotification, NSWindowDidBecomeMainNotification,
     NSWindowDidChangeBackingPropertiesNotification, NSWindowDidChangeOcclusionStateNotification,
     NSWindowDidChangeScreenNotification, NSWindowDidDeminiaturizeNotification,
@@ -31,13 +32,16 @@ use objc2_app_kit::{
 use objc2_core_foundation::{
     kCFRunLoopCommonModes, CFIndex, CFRetained, CFRunLoop, CFRunLoopActivity, CFRunLoopObserver,
 };
-use objc2_foundation::{NSNotification, NSNotificationCenter, NSNotificationName, NSPoint, NSRect};
+use objc2_foundation::{NSNotification, NSNotificationCenter, NSNotificationName, NSPoint, NSRect, NSSize};
 
 /// Matches `h-11` on `TitleBar` and the welcome screen's top bar.
 pub const TITLEBAR_HEIGHT: f64 = 44.0;
 
 /// Distance between the buttons' left edges.
 const BUTTON_STRIDE: f64 = 20.0;
+
+/// The close button's left edge.
+const BUTTONS_LEFT: f64 = 15.0;
 
 const MAX_PASSES: usize = 8;
 
@@ -136,8 +140,8 @@ impl TrafficLights {
             if buttons.len() != 3 {
                 break;
             }
+            place(self.mtm(), &window, &buttons);
             self.observe_views(&buttons);
-            place(&window, &buttons);
         }
         ivars.dirty.set(false);
         ivars.busy.set(false);
@@ -189,42 +193,103 @@ fn buttons(window: &NSWindow) -> Vec<Retained<NSButton>> {
     .collect()
 }
 
-fn place(window: &NSWindow, buttons: &[Retained<NSButton>]) {
+fn place(mtm: MainThreadMarker, window: &NSWindow, buttons: &[Retained<NSButton>]) {
     if window.styleMask().contains(NSWindowStyleMask::FullScreen) {
         return;
     }
+    let Some(holder) = holder(mtm, buttons) else {
+        return;
+    };
+    let Some(titlebar) = (unsafe { holder.superview() }) else {
+        return;
+    };
 
     let window_height = window.frame().size.height;
+    let size = buttons[0].frame().size;
     for (index, button) in buttons.iter().enumerate() {
-        let Some(parent) = (unsafe { button.superview() }) else {
-            continue;
-        };
-        let size = button.frame().size;
-        let margin = (TITLEBAR_HEIGHT - size.height) / 2.0;
-        let in_window = NSRect::new(
-            NSPoint::new(margin + BUTTON_STRIDE * index as f64, window_height - margin - size.height),
-            size,
-        );
-        let wanted = parent.convertRect_fromView(in_window, None);
+        let wanted = NSRect::new(NSPoint::new(BUTTON_STRIDE * index as f64, 0.0), size);
         if !rect_eq(button.frame(), wanted) {
             button.setFrame(wanted);
         }
     }
 
-    if let Some(titlebar) = unsafe { buttons[2].superview() } {
-        center_strays(&titlebar, buttons, window_height);
+    let margin = (TITLEBAR_HEIGHT - size.height) / 2.0;
+    let in_window = NSRect::new(
+        NSPoint::new(BUTTONS_LEFT, window_height - margin - size.height),
+        NSSize::new(BUTTON_STRIDE * (buttons.len() - 1) as f64 + size.width, size.height),
+    );
+    contain(&titlebar, in_window);
+    let wanted = titlebar.convertRect_fromView(in_window, None);
+    if !rect_eq(holder.frame(), wanted) {
+        holder.setFrame(wanted);
+    }
+
+    center_strays(&titlebar, &holder, window_height);
+}
+
+/// A plain view of ours holding the three buttons, which is what gets moved. When AppKit rebuilds the title bar it takes the buttons back,
+/// so the emptied holder is dropped and a new one made; AppKit never puts a plain NSView in a title bar itself.
+/// AppKit also lays the buttons out again inside the holder (e.g. after un-minimising), so `place` sets their
+/// frames there every pass.
+fn holder(mtm: MainThreadMarker, buttons: &[Retained<NSButton>]) -> Option<Retained<NSView>> {
+    let parent = unsafe { buttons[0].superview() }?;
+    if parent.class() == NSView::class() {
+        return Some(parent);
+    }
+
+    let titlebar = parent;
+    for view in titlebar.subviews().iter() {
+        if view.class() == NSView::class() {
+            view.removeFromSuperview();
+        }
+    }
+    let holder = NSView::initWithFrame(NSView::alloc(mtm), NSRect::ZERO);
+    holder.setAutoresizingMask(NSAutoresizingMaskOptions::ViewMinYMargin | NSAutoresizingMaskOptions::ViewMaxXMargin);
+    titlebar.addSubview(&holder);
+    for button in buttons {
+        button.removeFromSuperview();
+        holder.addSubview(button);
+    }
+    Some(holder)
+}
+
+/// Grows the title bar (and its ancestors) to cover `rect` (window coordinates) in case AppKit makes it shorter
+/// than our row: a view outside its superview's bounds still draws but never gets the click.
+fn contain(titlebar: &Retained<NSView>, rect: NSRect) {
+    let mut views = vec![titlebar.clone()];
+    let mut parent = unsafe { titlebar.superview() };
+    while let Some(view) = parent {
+        parent = unsafe { view.superview() };
+        if parent.is_some() {
+            views.push(view);
+        }
+    }
+    for view in views.iter().rev() {
+        let Some(superview) = (unsafe { view.superview() }) else {
+            continue;
+        };
+        let in_window = superview.convertRect_toView(view.frame(), None);
+        let covered = union(in_window, rect);
+        if !rect_eq(covered, in_window) {
+            view.setFrame(superview.convertRect_fromView(covered, None));
+        }
     }
 }
 
+fn union(a: NSRect, b: NSRect) -> NSRect {
+    let left = a.origin.x.min(b.origin.x);
+    let bottom = a.origin.y.min(b.origin.y);
+    let right = (a.origin.x + a.size.width).max(b.origin.x + b.size.width);
+    let top = (a.origin.y + a.size.height).max(b.origin.y + b.size.height);
+    NSRect::new(NSPoint::new(left, bottom), NSSize::new(right - left, top - bottom))
+}
+
 /// Brings other small title-bar views (e.g. the screen-sharing indicator) down to the buttons' row.
-fn center_strays(titlebar: &NSView, buttons: &[Retained<NSButton>], window_height: f64) {
+fn center_strays(titlebar: &NSView, holder: &NSView, window_height: f64) {
     let half_width = titlebar.bounds().size.width / 2.0;
     for view in titlebar.subviews().iter() {
-        let is_button = buttons
-            .iter()
-            .any(|button| std::ptr::eq(Retained::as_ptr(button).cast::<NSView>(), &*view as *const NSView));
         let frame = view.frame();
-        if is_button || view.isHidden() || frame.size.height <= 0.0 || frame.size.width >= half_width {
+        if std::ptr::eq(&*view as *const NSView, holder) || view.isHidden() || frame.size.height <= 0.0 || frame.size.width >= half_width {
             continue;
         }
         let in_window = titlebar.convertRect_toView(frame, None);
