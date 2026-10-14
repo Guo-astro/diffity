@@ -230,13 +230,15 @@ function RecentRow(props: { repo: RecentRepo; onOpen: (path: string, newWindow?:
           <span className="text-xs text-text-muted shrink-0 group-hover:invisible">{dayjs(repo.lastOpenedAt).fromNow()}</span>
         )}
       </button>
-      <button
-        onClick={() => onRemove(repo.path)}
-        className="absolute right-2 w-6 h-6 inline-flex items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-hover invisible group-hover:visible cursor-pointer"
-        title="Remove from recent"
-      >
-        <XIcon className="w-3.5 h-3.5" />
-      </button>
+      {!opening && (
+        <button
+          onClick={() => onRemove(repo.path)}
+          className="absolute right-2 w-6 h-6 inline-flex items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-hover invisible group-hover:visible cursor-pointer"
+          title="Remove from recent"
+        >
+          <XIcon className="w-3.5 h-3.5" />
+        </button>
+      )}
     </li>
   );
 }
