@@ -349,7 +349,7 @@ export function Dashboard(props: DashboardProps) {
   const threadsQuery = useRepoThreads();
   const repoThreads = threadsQuery.data;
   const branch = status?.branch ?? info?.branch ?? null;
-  const base = useBaseBranch(details?.baseRef ?? null, branch);
+  const base = useBaseBranch(details?.pr ?? null, branch);
   const [search, setSearch] = useViewState('home:search', '');
   const [searching, setSearching] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
@@ -370,7 +370,7 @@ export function Dashboard(props: DashboardProps) {
   }, []);
 
   const uncommitted = status ? status.staged + status.unstaged + status.untracked : 0;
-  const branchBase = !details && base && branch && branch !== base && `origin/${branch}` !== base ? base : null;
+  const branchBase = !details && base && branch && branch !== base && base.replace(/^(origin|upstream)\//, '') !== branch ? base : null;
   const branchRef = branchBase ? `${branchBase}...HEAD` : null;
   const prRef = details ? prDiffRef(details) : null;
   const last = recent?.commits[0] ?? null;

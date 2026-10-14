@@ -51,8 +51,8 @@ fn slug_from_path(path: &str) -> Option<RepoSlug> {
     })
 }
 
-pub fn not_github() -> AppError {
-    AppError::new("not_github", "origin remote is not a github.com repository")
+pub fn not_github(remote: &str) -> AppError {
+    AppError::new("not_github", format!("The `{remote}` remote is not a github.com repository"))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

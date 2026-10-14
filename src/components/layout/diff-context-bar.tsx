@@ -13,6 +13,7 @@ import { useGitHubPr, useGitStatus } from '../../hooks/use-repo-state';
 import { AuthorAvatar } from './commit-list';
 import { isAllChangesRef, isPrShapedRef, prDiffRef, rangeParts, shortBase, uncommittedTwin } from './ref-menu';
 import { CheckIcon, CopyIcon, GitCompareIcon } from '../ui/icon';
+import { prBaseFor } from '../../lib/pr-ref';
 
 export function useCommitDetails(sha: string | null) {
   return useQuery({
@@ -102,8 +103,8 @@ function useUncommittedFiles(): number {
 }
 
 /** The PR view shows commits only, since its comments must sit on lines GitHub has. */
-function PrUncommittedNotice(props: { baseRef: string }) {
-  const { baseRef } = props;
+function PrUncommittedNotice(props: { base: string }) {
+  const { base } = props;
   const nav = useRepoNav();
   const files = useUncommittedFiles();
 
@@ -117,7 +118,7 @@ function PrUncommittedNotice(props: { baseRef: string }) {
         {plural(files, 'uncommitted file')} {files === 1 ? 'isn’t' : 'aren’t'} in this pull request yet
       </span>
       <button
-        onClick={() => nav.toDiff(`origin/${baseRef}`)}
+        onClick={() => nav.toDiff(base)}
         className={cn(buttonGhost, 'h-6 px-2 text-xs text-text')}
         title="Everything on this branch plus your uncommitted changes. Comments there on uncommitted lines can’t be posted to GitHub until you push"
       >
@@ -179,7 +180,7 @@ export function DiffContextHeader(props: { diffRef: string }) {
     return <CommitHeader sha={commitSha} />;
   }
   if (isPr && details) {
-    return <PrUncommittedNotice baseRef={details.baseRef} />;
+    return <PrUncommittedNotice base={prBaseFor(details.pr)} />;
   }
   if (mayBePr || (!diffRef.includes('..') && !isAllChangesRef(diffRef))) {
     return null;

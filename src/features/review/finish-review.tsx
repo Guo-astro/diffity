@@ -287,7 +287,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
   const checkingCandidates = candidatesQuery.isLoading || (open && candidatesQuery.isFetching && candidatesQuery.dataUpdatedAt < openedAt);
 
   const candidateItems = useMemo(
-    () => toCandidateItems(candidatesQuery.data?.candidates ?? [], prRefFor({ baseRef: pr.baseRef })),
+    () => toCandidateItems(candidatesQuery.data?.candidates ?? [], prRefFor(pr.pr)),
     [candidatesQuery.data, pr.baseRef],
   );
   const selected = selectedItems(candidateItems, excluded);

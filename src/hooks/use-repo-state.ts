@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import * as tauri from '../lib/tauri';
 import { fetchCommits, fetchGitHubDetails, getRepoPath, parseGitHubRemote } from '../lib/api';
-import type { Branch } from '../lib/types';
+import type { Branch, PullRequest } from '../lib/types';
+import { prBaseFor } from '../lib/pr-ref';
 
 export function useGitStatus() {
   return useQuery({
@@ -65,7 +66,11 @@ export function useBranches() {
   });
 }
 
-const BASE_CANDIDATES = ['origin/main', 'origin/master', 'main', 'master', 'origin/develop', 'develop', 'origin/trunk', 'trunk'];
+/** In a fork, `upstream` holds the real base; your fork's `origin` copy can be stale. */
+const BASE_CANDIDATES = [
+  'upstream/main', 'upstream/master', 'origin/main', 'origin/master', 'main', 'master',
+  'upstream/develop', 'origin/develop', 'develop', 'upstream/trunk', 'origin/trunk', 'trunk',
+];
 
 export function guessBaseBranch(branches: Branch[], current: string | null): string | null {
   const names = new Set(branches.map((branch) => branch.name));
@@ -73,7 +78,7 @@ export function guessBaseBranch(branches: Branch[], current: string | null): str
     if (!names.has(candidate)) {
       continue;
     }
-    if (candidate === current || candidate === `origin/${current}`) {
+    if (candidate === current || candidate === `origin/${current}` || candidate === `upstream/${current}`) {
       continue;
     }
     return candidate;
@@ -81,11 +86,11 @@ export function guessBaseBranch(branches: Branch[], current: string | null): str
   return null;
 }
 
-/** Base branch to compare the current branch against: the PR base, else main/master (prefers the remote one). */
-export function useBaseBranch(prBase: string | null, current: string | null): string | null {
+/** Base branch to compare the current branch against: the PR base, else main/master (prefers `upstream`, then `origin`). */
+export function useBaseBranch(pr: Pick<PullRequest, 'baseRef' | 'baseRemote'> | null, current: string | null): string | null {
   const { data: branches } = useBranches();
-  if (prBase) {
-    return `origin/${prBase}`;
+  if (pr) {
+    return prBaseFor(pr);
   }
   if (!branches) {
     return null;

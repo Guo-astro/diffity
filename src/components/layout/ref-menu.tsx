@@ -14,6 +14,7 @@ import { Popover } from '../ui/popover';
 import { Skeleton, useElapsed, useRevealClass } from '../ui/skeleton';
 import { PrRefChip } from '../../features/pr/pr-chip';
 import { useCurrentPr } from '../../features/pr/pr-session';
+import { prRefFor } from '../../lib/pr-ref';
 
 interface RefMenuProps {
   diffRef: string;
@@ -23,12 +24,12 @@ interface RefMenuProps {
 export const HOME_REF = '__home__';
 
 export function prDiffRef(details: GitHubDetails): string {
-  return `origin/${details.baseRef}...HEAD`;
+  return prRefFor(details.pr);
 }
 
-/** A remote-base range such as `origin/main...HEAD`: the ref a checked-out pull request is reviewed with. */
+/** A remote-base range such as `origin/main...HEAD` (or `upstream/…` in a fork): the ref a checked-out pull request is reviewed with. */
 export function isPrShapedRef(diffRef: string): boolean {
-  return /^origin\/.+\.\.\.HEAD$/.test(diffRef);
+  return /^(origin|upstream)\/.+\.\.\.HEAD$/.test(diffRef);
 }
 
 /**
@@ -49,7 +50,7 @@ export function uncommittedTwin(diffRef: string): string | null {
 }
 
 export function shortBase(base: string): string {
-  return base.replace(/^origin\//, '');
+  return base.replace(/^(origin|upstream)\//, '');
 }
 
 function shortRef(ref: string): string {
@@ -70,7 +71,7 @@ export function useTargetLabel(diffRef: string, branch: string | null): { label:
   const { details, loading: prLoading } = useGitHubPr();
   const { isPending: branchesPending, isError: branchesFailed } = useBranches();
   const githubBudgetSpent = useElapsed(600);
-  const base = useBaseBranch(details?.baseRef ?? null, branch);
+  const base = useBaseBranch(details?.pr ?? null, branch);
   const commitSha = parseCommitRef(diffRef);
   const { data: commit, isPending: commitPending, isError: commitFailed } = useCommitDetails(commitSha);
   if (diffRef === HOME_REF) {
@@ -257,7 +258,7 @@ function RefMenuPanel(props: { diffRef: string; branch: string | null; onPick: (
   const hasGitHubRemote = useHasGitHubRemote();
   const { data: status } = useGitStatus();
   const { details, loading: prLoading } = useGitHubPr();
-  const base = useBaseBranch(details?.baseRef ?? null, branch);
+  const base = useBaseBranch(details?.pr ?? null, branch);
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState('');
   const sentinel = useRef<HTMLDivElement>(null);

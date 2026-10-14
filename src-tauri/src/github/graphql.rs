@@ -258,6 +258,7 @@ impl PrNode {
             changed_files: self.changed_files.unwrap_or(0),
             head_repo: self.head_repo_full_name().map(str::to_string),
             is_cross_repository: self.is_cross_repository.unwrap_or(false),
+            base_remote: None,
         }
     }
 }

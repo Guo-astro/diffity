@@ -86,15 +86,34 @@ pub async fn has_upstream(repo: &str) -> Result<bool> {
     Ok(out.ok)
 }
 
-pub async fn origin_url(repo: &str) -> Result<String> {
-    let out = run(repo, &["remote", "get-url", "origin"]).await?;
-    if !out.ok {
+/// The name and URL of the remote pull requests live on (`upstream` in a fork setup, usually `origin`).
+pub async fn pr_remote(repo: &str) -> Result<(String, String)> {
+    let remotes = run(repo, &["remote"]).await?;
+    let remotes: Vec<String> = if remotes.ok { remotes.output.lines().map(str::to_string).collect() } else { Vec::new() };
+    let gh = run(repo, &["config", "--get-regexp", r"^remote\..*\.gh-resolved$"]).await?;
+    let gh = if gh.ok { gh.output } else { String::new() };
+    let Some(name) = crate::core::git::choose_pr_remote(&remotes, &gh) else {
         return Err(AppError::new(
             "not_github",
-            "This repository has no `origin` remote. Add a github.com remote to use pull requests.",
+            "This repository has no `origin` or `upstream` remote. Add a github.com remote to use pull requests.",
         ));
+    };
+    let url = run_ok(repo, &["remote", "get-url", &name]).await?;
+    Ok((name, url))
+}
+
+/// The name of a remote pointing at `slug`, if any (e.g. your fork's `origin` in a fork setup).
+pub async fn remote_for(repo: &str, slug: &crate::github::remote::RepoSlug) -> Result<Option<String>> {
+    let out = run(repo, &["remote", "-v"]).await?;
+    if !out.ok {
+        return Ok(None);
     }
-    Ok(out.output)
+    Ok(out.output.lines().find_map(|line| {
+        let mut parts = line.split_whitespace();
+        let name = parts.next()?;
+        let url = parts.next()?;
+        crate::github::remote::parse_remote_url(url).filter(|found| found.matches(slug)).map(|_| name.to_string())
+    }))
 }
 
 pub async fn branch_exists(repo: &str, branch: &str) -> Result<bool> {

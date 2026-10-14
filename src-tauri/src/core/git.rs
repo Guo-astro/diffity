@@ -170,6 +170,48 @@ pub fn current_branch(repo: &Path) -> Result<Option<String>> {
     Ok(out.map(|b| String::from_utf8_lossy(&b).trim().to_string()).filter(|s| !s.is_empty()))
 }
 
+/// The remote pull requests are opened against: the one `gh repo set-default` picked, else `upstream`
+/// (a fork setup, where `origin` is your fork), else `origin`.
+pub fn choose_pr_remote(remotes: &[String], gh_resolved: &str) -> Option<String> {
+    let gh_default = gh_resolved.lines().find_map(|line| {
+        let (key, value) = line.split_once(char::is_whitespace)?;
+        let name = key.strip_prefix("remote.")?.strip_suffix(".gh-resolved")?;
+        (value.trim() == "base").then_some(name)
+    });
+    let has = |name: &str| remotes.iter().any(|remote| remote == name);
+    if let Some(name) = gh_default.filter(|name| has(name)) {
+        return Some(name.to_string());
+    }
+    ["upstream", "origin"].into_iter().find(|name| has(name)).map(str::to_string)
+}
+
+pub fn pr_remote(repo: &Path) -> Result<Option<String>> {
+    let remotes = run_opt(repo, &["remote"])?.unwrap_or_default();
+    let remotes: Vec<String> = String::from_utf8_lossy(&remotes).lines().map(str::to_string).collect();
+    let gh = run_opt(repo, &["config", "--get-regexp", r"^remote\..*\.gh-resolved$"])?.unwrap_or_default();
+    Ok(choose_pr_remote(&remotes, &String::from_utf8_lossy(&gh)))
+}
+
+/// Every remote's URL, the PR remote (`upstream` in a fork) first, so a clone can be matched by any of them.
+pub fn remote_urls(repo: &Path) -> Result<Vec<String>> {
+    let names = run_opt(repo, &["remote"])?.unwrap_or_default();
+    let mut names: Vec<String> = String::from_utf8_lossy(&names).lines().map(str::to_string).collect();
+    if let Some(first) = pr_remote(repo)? {
+        names.retain(|name| name != &first);
+        names.insert(0, first);
+    }
+    let mut urls = Vec::new();
+    for name in names {
+        if let Some(url) = run_opt(repo, &["remote", "get-url", &name])? {
+            let url = String::from_utf8_lossy(&url).trim().to_string();
+            if !url.is_empty() {
+                urls.push(url);
+            }
+        }
+    }
+    Ok(urls)
+}
+
 pub fn remote_url(repo: &Path) -> Result<Option<String>> {
     let out = run_opt(repo, &["remote", "get-url", "origin"])?;
     if let Some(url) = out.map(|b| String::from_utf8_lossy(&b).trim().to_string()).filter(|s| !s.is_empty()) {
@@ -204,6 +246,7 @@ pub fn repo_info(path: &Path) -> Result<RepoInfo> {
             branch: None,
             head_sha: None,
             remote_url: None,
+            pr_remote: None,
         });
     };
     Ok(RepoInfo {
@@ -213,6 +256,7 @@ pub fn repo_info(path: &Path) -> Result<RepoInfo> {
         branch: current_branch(&root)?,
         head_sha: head_sha(&root)?,
         remote_url: remote_url(&root)?,
+        pr_remote: pr_remote(&root)?,
     })
 }
 

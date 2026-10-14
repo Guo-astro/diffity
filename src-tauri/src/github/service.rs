@@ -195,9 +195,15 @@ impl GithubService {
         })
     }
 
-    async fn origin_slug(&self, repo_path: &str) -> Result<RepoSlug> {
-        let url = gitcli::origin_url(repo_path).await?;
-        remote::parse_remote_url(&url).ok_or_else(remote::not_github)
+    /// The remote pull requests live on and its GitHub repository.
+    async fn pr_remote(&self, repo_path: &str) -> Result<PrRemote> {
+        let (name, url) = gitcli::pr_remote(repo_path).await?;
+        let slug = remote::parse_remote_url(&url).ok_or_else(|| remote::not_github(&name))?;
+        Ok(PrRemote { name, slug })
+    }
+
+    async fn pr_slug(&self, repo_path: &str) -> Result<RepoSlug> {
+        Ok(self.pr_remote(repo_path).await?.slug)
     }
 
     async fn fetch_pr(&self, token: &str, slug: &RepoSlug, number: u64) -> Result<PrNode> {
@@ -294,7 +300,7 @@ impl GithubService {
     }
 
     pub async fn find_pr(&self, repo_path: &str) -> Result<Option<PullRequest>> {
-        let slug = self.origin_slug(repo_path).await?;
+        let PrRemote { name: remote_name, slug } = self.pr_remote(repo_path).await?;
         let token = self.require_token().await?;
         let Some(branch) = gitcli::current_branch(repo_path).await? else {
             return Ok(None);
@@ -303,7 +309,7 @@ impl GithubService {
         // match the PR's head branch, so look the PR up by number.
         if let Some(number) = linked_pr_number(repo_path, &branch).await {
             if let Ok(pr) = self.fetch_pr(&token, &slug, number).await {
-                return Ok(Some(pr.to_pull_request()));
+                return Ok(Some(with_remote(pr.to_pull_request(), &remote_name)));
             }
         }
         let data: RepositoryData<PullRequestsField> = self
@@ -328,11 +334,11 @@ impl GithubService {
                             || head_repo.as_deref().is_some_and(|h| name.eq_ignore_ascii_case(h))
                     })
             });
-        Ok(found.map(|pr| pr.to_pull_request()))
+        Ok(found.map(|pr| with_remote(pr.to_pull_request(), &remote_name)))
     }
 
     pub async fn list_prs(&self, repo_path: &str) -> Result<Vec<PullRequest>> {
-        let slug = self.origin_slug(repo_path).await?;
+        let PrRemote { name: remote_name, slug } = self.pr_remote(repo_path).await?;
         let token = self.require_token().await?;
         let data: RepositoryData<PullRequestsField> = self
             .http
@@ -343,7 +349,7 @@ impl GithubService {
             .map(|r| r.pull_requests.into_items())
             .unwrap_or_default()
             .iter()
-            .map(PrNode::to_pull_request)
+            .map(|pr| with_remote(pr.to_pull_request(), &remote_name))
             .collect())
     }
 
@@ -367,14 +373,14 @@ impl GithubService {
     }
 
     pub async fn checkout_pr(&self, repo_path: &str, url_or_number: String) -> Result<PullRequest> {
-        let slug = self.origin_slug(repo_path).await?;
+        let PrRemote { name: remote_name, slug } = self.pr_remote(repo_path).await?;
         let input = url_or_number.trim();
         let number = if let Some(pr_ref) = remote::parse_pr_url(input) {
             if !pr_ref.slug.matches(&slug) {
                 return Err(AppError::new(
                     "wrong_repo",
                     format!(
-                        "PR belongs to {} but this repository's origin is {}",
+                        "PR belongs to {} but this repository's pull requests are on {} (the `{remote_name}` remote)",
                         pr_ref.slug.full_name(),
                         slug.full_name()
                     ),
@@ -394,16 +400,30 @@ impl GithubService {
         let same_repo = pr
             .head_repo_full_name()
             .is_some_and(|name| name.eq_ignore_ascii_case(&full));
-        // The PR diff is `origin/<base>...HEAD`, so the base must be current too.
+        // The PR diff is `<remote>/<base>...HEAD`, so the base must be current too.
         let base = pr.base_ref_name.as_str();
-        let base_refspec = format!("+refs/heads/{base}:refs/remotes/origin/{base}");
-        gitcli::run_ok(repo_path, &["fetch", "origin", &base_refspec]).await?;
+        let base_refspec = format!("+refs/heads/{base}:refs/remotes/{remote_name}/{base}");
+        gitcli::run_ok(repo_path, &["fetch", &remote_name, &base_refspec]).await?;
+        // Check out the real branch when its repository is one of our remotes (the PR's own repo, or
+        // your fork in a fork setup), so pushing works; otherwise `pull/<n>/head`.
+        let head_remote = if same_repo {
+            Some(remote_name.clone())
+        } else {
+            match pr.head_repo_full_name().and_then(|name| remote::parse_remote_url(&format!("https://github.com/{name}"))) {
+                Some(head_slug) => gitcli::remote_for(repo_path, &head_slug).await?,
+                None => None,
+            }
+        };
         let head = pr.head_ref_name.as_str();
-        let head_refspec = format!("+refs/heads/{head}:refs/remotes/origin/{head}");
-        // A merged PR's branch is often deleted: fall back to `pull/<n>/head`, like fork PRs.
-        let fetched_branch = same_repo && gitcli::run(repo_path, &["fetch", "origin", &head_refspec]).await?.ok;
-        if fetched_branch {
-            let remote_ref = format!("origin/{head}");
+        // A merged PR's branch is often deleted: fall back to `pull/<n>/head`.
+        let mut fetched_branch = None;
+        if let Some(head_remote) = head_remote {
+            let head_refspec = format!("+refs/heads/{head}:refs/remotes/{head_remote}/{head}");
+            if gitcli::run(repo_path, &["fetch", &head_remote, &head_refspec]).await?.ok {
+                fetched_branch = Some(format!("{head_remote}/{head}"));
+            }
+        }
+        if let Some(remote_ref) = fetched_branch {
             if gitcli::branch_exists(repo_path, head).await? {
                 gitcli::run_ok(repo_path, &["checkout", head]).await?;
                 gitcli::run_ok(repo_path, &["merge", "--ff-only", &remote_ref]).await?;
@@ -413,12 +433,12 @@ impl GithubService {
         } else {
             let pull_ref = format!("pull/{number}/head");
             let branch = format!("pr-{number}");
-            gitcli::run_ok(repo_path, &["fetch", "origin", &pull_ref]).await?;
+            gitcli::run_ok(repo_path, &["fetch", &remote_name, &pull_ref]).await?;
             gitcli::run_ok(repo_path, &["checkout", "-B", &branch, "FETCH_HEAD"]).await?;
             let key = format!("branch.{branch}.{PR_BRANCH_CONFIG}");
             gitcli::run_ok(repo_path, &["config", &key, &number.to_string()]).await?;
         }
-        Ok(pr.to_pull_request())
+        Ok(with_remote(pr.to_pull_request(), &remote_name))
     }
 
     pub async fn stash_push(&self, repo_path: &str, message: &str) -> Result<StashResult> {
@@ -439,7 +459,7 @@ impl GithubService {
 
     /// Everything needed to decide which local comments can be posted to PR `pr_number`.
     async fn pr_context(&self, repo_path: &str, pr_number: u64) -> Result<PrContext> {
-        let slug = self.origin_slug(repo_path).await?;
+        let PrRemote { name: remote_name, slug } = self.pr_remote(repo_path).await?;
         let token = self.require_token().await?;
         let pr = self.fetch_pr(&token, &slug, pr_number).await?;
         let files = self.fetch_pr_files(&token, &slug, pr_number).await?;
@@ -447,7 +467,7 @@ impl GithubService {
         let locally_changed = gitcli::changed_files(repo_path).await?;
         let store = self.store.clone();
         let repo = repo_path.to_string();
-        let pr_ref = format!("origin/{}...HEAD", pr.base_ref_name);
+        let pr_ref = format!("{remote_name}/{}...HEAD", pr.base_ref_name);
         let head_for_anchor = head.clone();
         let (threads, sessions, anchors, lines) = tokio::task::spawn_blocking(move || -> Result<_> {
             let repo_dir = std::path::Path::new(&repo);
@@ -796,14 +816,14 @@ impl GithubService {
     /// Open, unsynced threads from all of the repo's review sessions that can be pushed to the PR:
     /// the file is in the PR and the commented side is anchored like GitHub's PR diff.
     pub async fn pushable_threads(&self, repo_path: &str, pr_number: u64) -> Result<Vec<Thread>> {
-        let slug = self.origin_slug(repo_path).await?;
+        let PrRemote { name: remote_name, slug } = self.pr_remote(repo_path).await?;
         let token = self.require_token().await?;
         let pr = self.fetch_pr(&token, &slug, pr_number).await?;
         let pr_files = self.fetch_pr_files(&token, &slug, pr_number).await?;
         let head = gitcli::head_sha(repo_path).await?;
         let store = self.store.clone();
         let repo = repo_path.to_string();
-        let pr_ref = format!("origin/{}...HEAD", pr.base_ref_name);
+        let pr_ref = format!("{remote_name}/{}...HEAD", pr.base_ref_name);
         let (threads, anchors) = tokio::task::spawn_blocking(move || -> Result<_> {
             let repo_dir = std::path::Path::new(&repo);
             let pr_base = crate::core::diff::resolve_ref(repo_dir, &pr_ref)
@@ -828,7 +848,7 @@ impl GithubService {
     }
 
     pub async fn pull_review(&self, repo_path: &str, session_id: &str, pr_number: u64) -> Result<PullResult> {
-        let slug = self.origin_slug(repo_path).await?;
+        let slug = self.pr_slug(repo_path).await?;
         let token = self.require_token().await?;
         let remote_threads = self.fetch_threads(&token, &slug, pr_number).await?;
         // Threads already linked to GitHub may live in any session of the repo (e.g. pushed from `work`);
@@ -1056,6 +1076,16 @@ fn event_name(event: ReviewEvent) -> &'static str {
 const PR_BRANCH_CONFIG: &str = "diffityPr";
 
 /// The repository a branch tracks (`branch.<b>.remote`), e.g. a fork after `gh pr checkout`.
+fn with_remote(mut pr: PullRequest, remote: &str) -> PullRequest {
+    pr.base_remote = Some(remote.to_string());
+    pr
+}
+
+struct PrRemote {
+    name: String,
+    slug: RepoSlug,
+}
+
 async fn branch_head_repo(repo_path: &str, branch: &str) -> Option<RepoSlug> {
     let key = format!("branch.{branch}.remote");
     let out = gitcli::run(repo_path, &["config", "--get", &key]).await.ok().filter(|out| out.ok)?;

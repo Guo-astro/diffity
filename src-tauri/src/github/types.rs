@@ -67,6 +67,9 @@ pub struct PullRequest {
     /// Head branch lives in a fork.
     #[serde(default)]
     pub is_cross_repository: bool,
+    /// The local remote for the PR's base repository (`upstream` in a fork setup), when looked up from a clone.
+    #[serde(default)]
+    pub base_remote: Option<String>,
 }
 
 /// A pull request in the inbox, with the repository it lives in.

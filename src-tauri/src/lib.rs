@@ -191,7 +191,7 @@ pub fn run() {
             commands::repo::project_data,
             commands::repo::clear_project_data,
             commands::repo::reset_all_data,
-            commands::repo::repo_remote_url,
+            commands::repo::repo_remote_urls,
             commands::repo::watch_repo,
             commands::repo::unwatch_repo,
             commands::repo::list_commits,

@@ -45,6 +45,9 @@ pub struct RepoInfo {
     pub branch: Option<String>,
     pub head_sha: Option<String>,
     pub remote_url: Option<String>,
+    /// The remote pull requests live on (see `git::choose_pr_remote`).
+    #[serde(default)]
+    pub pr_remote: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

@@ -39,13 +39,15 @@ export function useLocalClones(): Map<string, string> {
   const { data } = useQuery({
     queryKey: ['recent-remotes', paths],
     queryFn: async () => {
-      const remotes = await Promise.all(paths.map((path) => tauri.repoRemoteUrl(path).catch(() => null)));
+      const remotes = await Promise.all(paths.map((path) => tauri.repoRemoteUrls(path).catch(() => [])));
       const clones = new Map<string, string>();
-      remotes.forEach((url, index) => {
-        const remote = parseGitHubRemote(url);
-        const key = remote ? `${remote.owner}/${remote.repo}`.toLowerCase() : null;
-        if (key && !clones.has(key)) {
-          clones.set(key, paths[index]);
+      remotes.forEach((urls, index) => {
+        for (const url of urls) {
+          const remote = parseGitHubRemote(url);
+          const key = remote ? `${remote.owner}/${remote.repo}`.toLowerCase() : null;
+          if (key && !clones.has(key)) {
+            clones.set(key, paths[index]);
+          }
         }
       });
       return clones;

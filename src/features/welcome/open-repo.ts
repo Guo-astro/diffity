@@ -29,11 +29,11 @@ export function remoteMatches(remoteUrl: string | null, owner: string, repo: str
   return normalized.endsWith(`/${owner}/${repo}`.toLowerCase()) || normalized.endsWith(`:${owner}/${repo}`.toLowerCase());
 }
 
-/** The first of `paths` whose remote is the pull request's repository. */
+/** The first of `paths` with a remote on the pull request's repository (`upstream` counts, for forks). */
 export async function findLocalClone(paths: string[], pr: { owner: string; repo: string }): Promise<string | null> {
   for (const path of paths) {
-    const remote = await tauri.repoRemoteUrl(path).catch(() => null);
-    if (remoteMatches(remote, pr.owner, pr.repo)) {
+    const remotes = await tauri.repoRemoteUrls(path).catch(() => []);
+    if (remotes.some((remote) => remoteMatches(remote, pr.owner, pr.repo))) {
       return path;
     }
   }

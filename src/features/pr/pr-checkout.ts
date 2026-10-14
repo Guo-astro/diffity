@@ -5,6 +5,7 @@ import * as tauri from '../../lib/tauri';
 import { queryClient } from '../../lib/query-client';
 import { openSettingsAt } from '../../lib/ui-store';
 import type { GitStatus, PullRequest, PullResult, StashResult } from '../../lib/types';
+import { prBaseFor, prRefFor } from '../../lib/pr-ref';
 
 export interface ReturnPoint {
   branch: string | null;
@@ -31,9 +32,7 @@ export function dismissGuard() {
 
 type ToDiff = (ref: string) => void;
 
-export function prRefFor(pr: Pick<PullRequest, 'baseRef'>): string {
-  return `origin/${pr.baseRef}...HEAD`;
-}
+export { prBaseFor, prRefFor };
 
 export function labelFor(input: string): string {
   const match = /\/pull\/(\d+)/.exec(input) ?? /^#?(\d+)$/.exec(input.trim());

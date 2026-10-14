@@ -401,6 +401,8 @@ export interface PullRequest {
   changedFiles: number;
   headRepo: string | null;
   isCrossRepository: boolean;
+  /** The local remote for the PR's base repository (`upstream` in a fork setup); missing outside a clone. */
+  baseRemote?: string | null;
 }
 
 export interface InboxPullRequest extends PullRequest {

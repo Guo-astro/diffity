@@ -229,7 +229,7 @@ pub fn ref_label(repo: &Path, r: &str) -> String {
 }
 
 fn short_ref(r: &str) -> &str {
-    let r = r.strip_prefix("origin/").unwrap_or(r);
+    let r = r.strip_prefix("origin/").or_else(|| r.strip_prefix("upstream/")).unwrap_or(r);
     let is_sha = (8..=40).contains(&r.len()) && r.chars().all(|c| c.is_ascii_hexdigit());
     if is_sha {
         &r[..7]
