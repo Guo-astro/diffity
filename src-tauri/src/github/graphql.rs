@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::github::types::PullRequest;
+use crate::github::types::{InboxPullRequest, PullRequest};
 
 const GRAPHQL_URL: &str = "https://api.github.com/graphql";
 pub const API_URL: &str = "https://api.github.com";
@@ -213,6 +213,8 @@ pub struct CommitInner {
 #[derive(Deserialize, Debug)]
 pub struct Rollup {
     pub state: String,
+    #[serde(default)]
+    pub contexts: Option<TotalCount>,
 }
 
 impl PrNode {
@@ -280,6 +282,64 @@ pub fn list_prs_query() -> String {
          pullRequests(states:OPEN,first:30,orderBy:{{field:UPDATED_AT,direction:DESC}}){{nodes{{{}}}}}}}}}",
         pr_fields()
     )
+}
+
+/// Open PRs across every repository, one aliased search per inbox group, newest activity first.
+pub fn pr_inbox_query() -> String {
+    let fields = format!(
+        "{} repository{{nameWithOwner}} comments{{totalCount}} commits(last:1){{nodes{{commit{{statusCheckRollup{{contexts{{totalCount}}}}}}}}}}",
+        pr_fields()
+    );
+    let search = |alias: &str, var: &str| format!("{alias}:search(query:${var},type:ISSUE,first:50){{nodes{{... on PullRequest{{{fields}}}}}}}");
+    format!(
+        "query($direct:String!,$requested:String!,$assigned:String!,$authored:String!){{{} {} {} {}}}",
+        search("direct", "direct"),
+        search("requested", "requested"),
+        search("assigned", "assigned"),
+        search("authored", "authored"),
+    )
+}
+
+pub const INBOX_DIRECT: &str = "is:pr is:open archived:false user-review-requested:@me sort:updated-desc";
+pub const INBOX_REQUESTED: &str = "is:pr is:open archived:false review-requested:@me sort:updated-desc";
+pub const INBOX_ASSIGNED: &str = "is:pr is:open archived:false assignee:@me sort:updated-desc";
+pub const INBOX_AUTHORED: &str = "is:pr is:open archived:false author:@me sort:updated-desc";
+
+#[derive(Deserialize, Debug)]
+pub struct InboxData {
+    pub direct: Connection<InboxNode>,
+    pub requested: Connection<InboxNode>,
+    pub assigned: Connection<InboxNode>,
+    pub authored: Connection<InboxNode>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct InboxNode {
+    #[serde(flatten)]
+    pub pr: PrNode,
+    pub repository: RepoRef,
+    pub comments: Option<TotalCount>,
+}
+
+impl InboxNode {
+    pub fn to_inbox_pr(&self) -> InboxPullRequest {
+        let check_count = self
+            .pr
+            .commits
+            .as_ref()
+            .and_then(|c| c.nodes.iter().flatten().next_back())
+            .and_then(|n| n.commit.as_ref())
+            .and_then(|c| c.status_check_rollup.as_ref())
+            .and_then(|r| r.contexts.as_ref())
+            .map(|t| t.total_count)
+            .unwrap_or(0);
+        InboxPullRequest {
+            pr: self.pr.to_pull_request(),
+            repo: self.repository.name_with_owner.clone(),
+            comment_count: self.comments.as_ref().map(|t| t.total_count).unwrap_or(0),
+            check_count,
+        }
+    }
 }
 
 pub fn get_pr_query() -> String {
@@ -551,5 +611,45 @@ mod tests {
         let err = parse_response::<RepositoryData<PullRequestsField>>(text).unwrap_err();
         assert_eq!(err.code, "github");
         assert_eq!(err.message, "Could not resolve; other");
+    }
+    #[test]
+    fn parses_pr_inbox() {
+        let text = r#"{"data":{
+          "direct":{"nodes":[
+            {"id":"PR_1","number":214,"title":"Stream diffs","url":"https://github.com/o/r/pull/214","state":"OPEN","isDraft":false,
+             "author":{"login":"mira"},"baseRefName":"main","headRefName":"feat","headRefOid":"abc","reviewDecision":"REVIEW_REQUIRED",
+             "body":"","headRepository":{"nameWithOwner":"o/r"},
+             "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"SUCCESS","contexts":{"totalCount":24}}}}]},
+             "updatedAt":"2026-10-14T10:00:00Z","reviewThreads":{"totalCount":2},
+             "repository":{"nameWithOwner":"o/r"},"comments":{"totalCount":3}}]},
+          "requested":{"nodes":[]},
+          "assigned":{"nodes":[]},
+          "authored":{"nodes":[
+            {"id":"PR_2","number":5,"title":"Draft","url":"https://github.com/me/x/pull/5","state":"OPEN","isDraft":true,
+             "author":{"login":"me"},"baseRefName":"main","headRefName":"wip","headRefOid":"def","reviewDecision":null,
+             "body":null,"headRepository":null,"commits":{"nodes":[{"commit":{"statusCheckRollup":null}}]},
+             "repository":{"nameWithOwner":"me/x"},"comments":{"totalCount":0}}]}
+        }}"#;
+        let data: InboxData = parse_response(text).unwrap();
+        let direct: Vec<_> = data.direct.nodes.iter().flatten().map(InboxNode::to_inbox_pr).collect();
+        assert_eq!(direct.len(), 1);
+        assert_eq!(direct[0].repo, "o/r");
+        assert_eq!(direct[0].pr.number, 214);
+        assert_eq!(direct[0].pr.checks.as_deref(), Some("SUCCESS"));
+        assert_eq!((direct[0].check_count, direct[0].comment_count, direct[0].pr.review_thread_count), (24, 3, 2));
+        let mine: Vec<_> = data.authored.nodes.iter().flatten().map(InboxNode::to_inbox_pr).collect();
+        assert_eq!(mine[0].repo, "me/x");
+        assert!(mine[0].pr.is_draft);
+        assert_eq!((mine[0].check_count, mine[0].pr.checks.as_deref()), (0, None));
+        assert!(data.requested.nodes.is_empty());
+    }
+
+    #[test]
+    fn inbox_query_has_one_search_per_group() {
+        let q = pr_inbox_query();
+        for alias in ["direct:search(query:$direct", "requested:search(", "assigned:search(", "authored:search("] {
+            assert!(q.contains(alias), "{alias} missing");
+        }
+        assert_eq!(q.matches('{').count(), q.matches('}').count());
     }
 }

@@ -347,6 +347,25 @@ impl GithubService {
             .collect())
     }
 
+    pub async fn pr_inbox(&self) -> Result<PrInbox> {
+        let token = self.require_token().await?;
+        let data: InboxData = self
+            .http
+            .query(
+                &token,
+                &pr_inbox_query(),
+                json!({ "direct": INBOX_DIRECT, "requested": INBOX_REQUESTED, "assigned": INBOX_ASSIGNED, "authored": INBOX_AUTHORED }),
+            )
+            .await?;
+        let list = |conn: &Connection<InboxNode>| conn.nodes.iter().flatten().map(InboxNode::to_inbox_pr).collect();
+        Ok(PrInbox {
+            review_direct: list(&data.direct),
+            review_requested: list(&data.requested),
+            assigned: list(&data.assigned),
+            authored: list(&data.authored),
+        })
+    }
+
     pub async fn checkout_pr(&self, repo_path: &str, url_or_number: String) -> Result<PullRequest> {
         let slug = self.origin_slug(repo_path).await?;
         let input = url_or_number.trim();

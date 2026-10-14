@@ -8,6 +8,8 @@ import type {
   GithubAuthStatus,
   Guide,
   NewThread,
+  InboxPullRequest,
+  PrInbox,
   PullRequest,
   ReviewSession,
   Thread,
@@ -154,6 +156,55 @@ const PRS: PullRequest[] = [
     isCrossRepository: false,
   },
 ];
+
+function inboxPr(repo: string, number: number, title: string, extra: Partial<InboxPullRequest> = {}): InboxPullRequest {
+  const minutesAgo = extra.updatedAt ? 0 : (number % 7) * 47 + 12;
+  return {
+    number,
+    title,
+    url: `https://github.com/${repo}/pull/${number}`,
+    state: 'OPEN',
+    isDraft: false,
+    author: 'octocat',
+    baseRef: 'main',
+    headRef: `feat/${number}`,
+    headSha: 'f00d',
+    reviewDecision: 'REVIEW_REQUIRED',
+    checks: 'SUCCESS',
+    body: '',
+    createdAt: '2026-09-20T10:00:00Z',
+    reviewThreadCount: 0,
+    updatedAt: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    additions: 10,
+    deletions: 2,
+    changedFiles: 1,
+    headRepo: repo,
+    isCrossRepository: false,
+    repo,
+    commentCount: 0,
+    checkCount: 12,
+    ...extra,
+  };
+}
+
+const INBOX_DIRECT = [
+  inboxPr('demo/tiny-serve', 42, 'Add in-memory cache to the static file server', { reviewThreadCount: 2, commentCount: 1, checkCount: 8 }),
+  inboxPr('acme/payments-api', 1893, 'Retry webhook delivery with exponential backoff', { author: 'jdoe', checks: 'FAILURE', commentCount: 4 }),
+  inboxPr('acme/web', 772, 'Drop Node 18 from the CI matrix', { author: 'tlee', reviewDecision: 'CHANGES_REQUESTED', commentCount: 8 }),
+];
+const INBOX: PrInbox = {
+  reviewDirect: INBOX_DIRECT,
+  reviewRequested: [
+    ...INBOX_DIRECT,
+    inboxPr('acme/payments-api', 1889, 'Rename BillingAccount to Account across services', { author: 'nadia', checkCount: 31, commentCount: 5 }),
+    inboxPr('acme/gateway', 340, 'Add rate limit headers to public endpoints', { author: 'okafor', checks: 'PENDING' }),
+  ],
+  assigned: [inboxPr('demo/diffity', 209, 'Docs: explain the .diffityignore file', { author: 'utvara', reviewDecision: 'APPROVED', commentCount: 2 })],
+  authored: [
+    inboxPr('demo/tiny-serve', 41, 'Fix formatBytes rounding for values under 1 KB', { author: 'demo-user', reviewDecision: 'APPROVED' }),
+    inboxPr('demo/diffity', 217, 'PR inbox in the open dialog', { author: 'demo-user', isDraft: true, reviewDecision: null, checks: 'PENDING' }),
+  ],
+};
 
 const OLD_FORMAT = `export function formatBytes(bytes: number): string {
   let value = bytes;
@@ -515,6 +566,13 @@ export function createAgentMockHandlers(deps: AgentMockDeps): Record<string, (ar
     },
     find_pr: () => currentPr,
     list_prs: () => PRS,
+    github_pr_inbox: async () => {
+      await wait(400);
+      if (!auth.authenticated) {
+        throw { code: 'unauthenticated', message: 'Not signed in to GitHub' };
+      }
+      return INBOX;
+    },
     checkout_pr: async (args) => {
       await wait(600);
       const raw = String(args.urlOrNumber);

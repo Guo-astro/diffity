@@ -1,7 +1,7 @@
 use crate::core::types::Thread;
 use crate::core::AppError;
 use crate::github::{
-    DeviceCode, GitOpResult, GithubAuthStatus, GithubPendingAction, PullRequest, PullResult, PushResult, ReviewCandidates,
+    DeviceCode, GitOpResult, GithubAuthStatus, GithubPendingAction, PrInbox, PullRequest, PullResult, PushResult, ReviewCandidates,
     ReviewEvent, StashResult,
 };
 use serde_json::json;
@@ -86,6 +86,11 @@ pub async fn find_pr(state: State<'_, AppState>, repo_path: String) -> Result<Op
 #[tauri::command]
 pub async fn list_prs(state: State<'_, AppState>, repo_path: String) -> Result<Vec<PullRequest>, AppError> {
     state.github.list_prs(&repo_path).await
+}
+
+#[tauri::command]
+pub async fn github_pr_inbox(state: State<'_, AppState>) -> Result<PrInbox, AppError> {
+    state.github.pr_inbox().await
 }
 
 #[tauri::command]

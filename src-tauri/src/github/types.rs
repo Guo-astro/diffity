@@ -69,6 +69,32 @@ pub struct PullRequest {
     pub is_cross_repository: bool,
 }
 
+/// A pull request in the inbox, with the repository it lives in.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct InboxPullRequest {
+    #[serde(flatten)]
+    pub pr: PullRequest,
+    /// `owner/name` of the base repository.
+    pub repo: String,
+    /// Conversation comments (review threads are in `review_thread_count`).
+    pub comment_count: u32,
+    /// Checks and statuses on the head commit.
+    pub check_count: u32,
+}
+
+/// Open PRs that involve you, as GitHub's searches return them; a PR can appear in more than one list.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct PrInbox {
+    /// Review requested from you by name.
+    pub review_direct: Vec<InboxPullRequest>,
+    /// Review requested from you or a team you're on.
+    pub review_requested: Vec<InboxPullRequest>,
+    pub assigned: Vec<InboxPullRequest>,
+    pub authored: Vec<InboxPullRequest>,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct StashResult {

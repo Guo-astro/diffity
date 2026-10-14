@@ -260,6 +260,7 @@ pub fn run() {
             commands::github::github_post_comment,
             commands::github::find_pr,
             commands::github::list_prs,
+            commands::github::github_pr_inbox,
             commands::github::checkout_pr,
             commands::github::git_stash_push,
             commands::github::git_stash_restore,

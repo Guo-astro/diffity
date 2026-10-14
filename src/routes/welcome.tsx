@@ -14,6 +14,7 @@ import { useOpening } from '../lib/opening';
 import { openRepoAt, parentPath, useRecentRepos } from '../features/welcome/recent-repos';
 import { RepoBadge } from '../features/welcome/repo-badge';
 import { AgentsCard } from '../features/welcome/agents-card';
+import { WaitingOnYou } from '../features/pr-inbox/waiting-on-you';
 import { useTheme } from '../hooks/use-theme';
 import { BrandLogo } from '../components/icons/brand-logo';
 import { hasOverlayTitleBar } from '../components/layout/title-bar';
@@ -134,6 +135,7 @@ export function WelcomePage() {
           )}
 
           <AgentsCard />
+          <WaitingOnYou />
           <RecentList repos={recent.repos} loading={recent.loading} onOpen={openRepo} onRemove={recent.remove} />
           <p className="mt-6 text-center text-xs text-text-muted">Or drop a folder anywhere on this window</p>
         </div>

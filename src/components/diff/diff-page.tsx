@@ -30,6 +30,7 @@ import { usePageActions, useViewFiles, type PaletteAction } from '../../features
 import { statusLetter } from '../tree/file-tree-item';
 import { requestAskClaude } from '../../features/claude/ask-claude-review';
 import { requestSendToClaude } from '../../features/claude/send-comments';
+import { openPrInbox } from '../../features/palette/quick-open';
 import { OtherViewThreads, OutsideThreads } from '../comments/outside-threads';
 import { splitThreadsByView } from '../../lib/thread-views';
 import { useUncommittedPaths } from '../layout/diff-context-bar';
@@ -578,6 +579,7 @@ export function DiffPage(props: DiffPageProps) {
         run: () => setMode(guideMode ? 'files' : 'guide'),
       }] : []),
       { id: 'claude-send', title: 'Send comments to Claude…', group: 'Actions', keywords: 'ai resolve fix', icon: <SendIcon size="sm" className="text-claude" />, run: requestSendToClaude },
+      { id: 'pr-inbox', title: 'Pull requests waiting on you…', group: 'Actions', keywords: 'inbox github review requested assigned prs', icon: <GitPullRequestIcon size="sm" />, run: openPrInbox },
     ];
     if (activeFile) {
       const file = diff?.files.find((item) => getFilePath(item) === activeFile);

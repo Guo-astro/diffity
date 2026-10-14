@@ -186,7 +186,7 @@ export function FileBlockSkeleton(props: { lines?: number }) {
 }
 
 /** Network enrichment that loads behind a view that is already usable; it never drives the progress bar. */
-const BACKGROUND_KEYS = new Set(['github-details', 'pull-requests', 'github-auth', 'agents', 'setting', 'quick-open-roots', 'dir-suggestions']);
+const BACKGROUND_KEYS = new Set(['github-details', 'pull-requests', 'github-auth', 'agents', 'setting', 'quick-open-roots', 'dir-suggestions', 'pr-inbox', 'recent-remotes']);
 
 /** Thin bar along the top of the window while a page loads data for the first time or a mutation runs. */
 export function TopProgress() {

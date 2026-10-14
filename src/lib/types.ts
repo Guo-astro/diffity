@@ -403,6 +403,21 @@ export interface PullRequest {
   isCrossRepository: boolean;
 }
 
+export interface InboxPullRequest extends PullRequest {
+  /** `owner/name` of the base repository. */
+  repo: string;
+  commentCount: number;
+  checkCount: number;
+}
+
+/** Open PRs that involve you; a PR can appear in more than one list. */
+export interface PrInbox {
+  reviewDirect: InboxPullRequest[];
+  reviewRequested: InboxPullRequest[];
+  assigned: InboxPullRequest[];
+  authored: InboxPullRequest[];
+}
+
 export interface StashResult {
   sha: string | null;
   message: string;

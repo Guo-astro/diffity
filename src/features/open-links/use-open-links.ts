@@ -9,7 +9,7 @@ import { findLocalClone, parsePrUrl } from '../welcome/open-repo';
 import { openQuickOpenWith } from '../palette/quick-open';
 
 /** The repository the link came from when it is the pull request's, else a recent clone, else ⌘O offers to clone it. */
-async function openPullRequest(pr: string, path: string | null, newWindow: boolean, navigate: NavigateFunction) {
+export async function openPullRequest(pr: string, path: string | null, newWindow: boolean, navigate: NavigateFunction) {
   const parsed = parsePrUrl(pr);
   if (!parsed) {
     if (path) {

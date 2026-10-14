@@ -12,8 +12,13 @@ import { openRepoAt, shortPath, useRecentRepos } from '../welcome/recent-repos';
 import { findLocalClone, parsePrUrl, pickFolder } from '../welcome/open-repo';
 import { Spinner } from '../../components/icons/spinner';
 import { CloneIcon, FolderOpenIcon, FolderSimpleIcon, GitBranchIcon, GitHubIcon, GitPullRequestIcon, SearchIcon } from '../../components/ui/icon';
+import { filterInbox, INBOX_GROUPS, inboxCounts, type InboxGroup } from '../pr-inbox/inbox';
+import { useLocalClones, usePrInbox } from '../pr-inbox/use-pr-inbox';
+import { InboxList, OpenTabs } from '../pr-inbox/inbox-list';
 
-const useQuickOpen = create<{ open: boolean; input: string; opens: number }>(() => ({ open: false, input: '', opens: 0 }));
+type Mode = 'projects' | 'prs';
+
+const useQuickOpen = create<{ open: boolean; input: string; opens: number; mode: Mode }>(() => ({ open: false, input: '', opens: 0, mode: 'projects' }));
 const CLONE_PARENT_KEY = 'diffity-clone-parent';
 
 export function openQuickOpen() {
@@ -22,7 +27,12 @@ export function openQuickOpen() {
 
 /** Opens with `input` already typed, e.g. a pull request URL from a `diffity` link. */
 export function openQuickOpenWith(input: string) {
-  useQuickOpen.setState((state) => ({ open: true, input, opens: state.opens + 1 }));
+  useQuickOpen.setState((state) => ({ open: true, input, opens: state.opens + 1, mode: 'projects' }));
+}
+
+/** ⌘O on its pull requests side: open PRs across your repos that involve you. */
+export function openPrInbox() {
+  useQuickOpen.setState((state) => ({ open: true, input: '', opens: state.opens + 1, mode: 'prs' }));
 }
 
 function closeQuickOpen() {
@@ -108,6 +118,8 @@ export function QuickOpen() {
 function QuickOpenBody() {
   const navigate = useNavigate();
   const [input, setInput] = useState(() => useQuickOpen.getState().input);
+  const [mode, setMode] = useState<Mode>(() => useQuickOpen.getState().mode);
+  const [group, setGroup] = useState<InboxGroup | 'all'>('all');
   const [active, setActive] = useState(0);
   const [clone, setClone] = useState<{ url: string; prNumber?: number } | null>(null);
   const [cloning, setCloning] = useState<string | null>(null);
@@ -119,7 +131,12 @@ function QuickOpenBody() {
   const pathMode = input.startsWith('~') || input.startsWith('/') || input.includes('/') && !input.includes('://') && !input.startsWith('git@');
   const prUrl = parsePrUrl(input);
   const cloneUrl = !prUrl ? repoUrl(input) : null;
-  const typingPath = clone ? true : pathMode;
+  const showInbox = mode === 'prs' && !clone && !prUrl && !cloneUrl;
+  const typingPath = clone ? true : pathMode && !showInbox;
+  const inbox = usePrInbox();
+  const clones = useLocalClones();
+  const inboxItems = useMemo(() => filterInbox(inbox.items, input, group), [inbox.items, input, group]);
+  const counts = inboxCounts(inbox.items);
   const { data: suggestions } = useQuery({
     queryKey: ['dir-suggestions', input],
     queryFn: () => tauri.listDirSuggestions(input),
@@ -134,7 +151,7 @@ function QuickOpenBody() {
 
   useEffect(() => {
     setActive(0);
-  }, [input, clone]);
+  }, [input, clone, mode, group]);
 
   useEffect(() => {
     listRef.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' });
@@ -157,7 +174,7 @@ function QuickOpenBody() {
     await openRepoAt(resolved.repoRoot, navigate);
   };
 
-  const openPr = async (url: string) => {
+  const openPr = async (url: string, newWindow = false) => {
     const pr = parsePrUrl(url);
     if (!pr) {
       return;
@@ -165,7 +182,7 @@ function QuickOpenBody() {
     const local = await findLocalClone(recent.repos.map((repo) => repo.path), pr);
     if (local) {
       closeQuickOpen();
-      await openRepoAt(local, navigate, { extra: { pr: url.trim() } });
+      await openRepoAt(local, navigate, { newWindow, extra: { pr: url.trim() } });
       return;
     }
     setClone({ url: `https://github.com/${pr.owner}/${pr.repo}`, prNumber: pr.number });
@@ -304,6 +321,34 @@ function QuickOpenBody() {
       { label: 'Start from', rows: rows.filter((row) => row.key.startsWith('root:')) },
     ].filter((section) => section.rows.length > 0);
 
+  const handleInboxKey = (event: React.KeyboardEvent<HTMLInputElement>): boolean => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActive((value) => Math.min(value + 1, inboxItems.length - 1));
+      return true;
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActive((value) => Math.max(value - 1, 0));
+      return true;
+    }
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      const ids: (InboxGroup | 'all')[] = [...INBOX_GROUPS.map((item) => item.id), 'all'];
+      setGroup(ids[(ids.indexOf(group) + (event.shiftKey ? ids.length - 1 : 1)) % ids.length]);
+      return true;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      const item = inboxItems[active];
+      if (item) {
+        void openPr(item.pr.url, event.metaKey || event.ctrlKey);
+      }
+      return true;
+    }
+    return false;
+  };
+
   const goUp = () => {
     const trimmed = input.replace(/\/$/, '');
     const cut = trimmed.lastIndexOf('/');
@@ -329,6 +374,9 @@ function QuickOpenBody() {
             disabled={!!cloning}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
+              if (showInbox && handleInboxKey(event)) {
+                return;
+              }
               const row = rows[active];
               if (event.key === 'Escape') {
                 event.preventDefault();
@@ -371,7 +419,7 @@ function QuickOpenBody() {
                 row?.run();
               }
             }}
-            placeholder={clone ? 'Folder to clone into, e.g. ~/Code/' : 'Type a path (~/…), a project name, or a GitHub URL'}
+            placeholder={clone ? 'Folder to clone into, e.g. ~/Code/' : mode === 'prs' ? 'Filter pull requests, or paste a PR URL' : 'Type a path (~/…), a project name, or a GitHub URL'}
             autoComplete="off"
             autoCorrect="off"
             spellCheck={false}
@@ -380,6 +428,40 @@ function QuickOpenBody() {
           {cloning ? <Spinner className="w-3.5 h-3.5" /> : <kbd className="text-[11px] text-text-muted">esc</kbd>}
         </div>
         {cloning && <div className="px-4 py-2 border-b border-overlay-border font-mono text-[11px] text-text-secondary truncate">{cloning}</div>}
+        {!clone && !cloning && (
+          <OpenTabs
+            mode={mode}
+            group={group}
+            counts={counts}
+            signedIn={inbox.signedIn}
+            onProjects={() => {
+              setMode('projects');
+              inputRef.current?.focus();
+            }}
+            onGroup={(value) => {
+              setMode('prs');
+              setGroup(value);
+              inputRef.current?.focus();
+            }}
+            updatedAt={inbox.updatedAt}
+            refreshing={inbox.loading}
+            onRefresh={inbox.refresh}
+          />
+        )}
+        {showInbox ? (
+          <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto p-1.5">
+            <InboxList
+              inbox={inbox}
+              items={inboxItems}
+              grouped={group === 'all'}
+              filtering={input.trim().length > 0}
+              active={active}
+              clones={clones}
+              onHover={setActive}
+              onOpen={(item, newWindow) => void openPr(item.pr.url, newWindow)}
+            />
+          </div>
+        ) : (
         <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto p-1.5">
           {rows.length === 0 && <div className="px-3 py-6 text-center text-[13px] text-text-muted">No folders here</div>}
           {sections.map((section) => (
@@ -406,13 +488,16 @@ function QuickOpenBody() {
             </div>
           ))}
         </div>
+        )}
         <div className="flex items-center gap-4 h-9 px-2 border-t border-overlay-border text-[11px] text-text-muted">
           <button onClick={() => void browseForFolder(navigate)} className="inline-flex items-center gap-1.5 h-7 px-2 rounded-md text-[12px] text-text-secondary hover:text-text hover:bg-hover cursor-pointer">
             <FolderOpenIcon size="sm" />
             Browse…
             <kbd className="font-sans text-[11px] text-text-muted">{modKey}⇧O</kbd>
           </button>
-          <span className="ml-auto pr-2">Tab completes · → enters · ⌫ goes up · <GitHubIcon size={10} className="inline -mt-px" /> URLs clone</span>
+          {showInbox && inbox.signedIn
+            ? <span className="ml-auto pr-2">↵ opens · {modKey}↵ new window · Tab next group</span>
+            : <span className="ml-auto pr-2">Tab completes · → enters · ⌫ goes up · <GitHubIcon size={10} className="inline -mt-px" /> URLs clone</span>}
         </div>
       </div>
     </div>,

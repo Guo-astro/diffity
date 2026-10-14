@@ -25,6 +25,7 @@ import type {
   NewThread,
   OpenRequest,
   OverviewFile,
+  PrInbox,
   PullRequest,
   PullResult,
   PushResult,
@@ -184,6 +185,7 @@ export const gitCommitAll = (repoPath: string, message: string) => invoke<GitOpR
 export const githubPostComment = (commentId: string) => invoke<Thread>('github_post_comment', { commentId });
 export const findPr = (repoPath: string) => invoke<PullRequest | null>('find_pr', { repoPath });
 export const listPrs = (repoPath: string) => invoke<PullRequest[]>('list_prs', { repoPath });
+export const prInbox = () => invoke<PrInbox>('github_pr_inbox');
 export const checkoutPr = (repoPath: string, urlOrNumber: string) =>
   invoke<PullRequest>('checkout_pr', { repoPath, urlOrNumber });
 export const gitStashPush = (repoPath: string, message: string) =>
