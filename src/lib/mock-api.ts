@@ -261,6 +261,15 @@ function fileContents(path: string): string {
   return `export function ${path.split('/').pop()?.replace(/[^a-z0-9]/gi, '_')}() {\n  return '${path}';\n}\n`;
 }
 
+/** The newer side's commit, like the backend: HEAD (the newest mock commit) for working-tree views. */
+function mockHeadSha(ref: string): string | null {
+  const commit = /^([0-9a-f]{7,40})~1\.\.\1$/i.exec(ref)?.[1];
+  if (commit) {
+    return commits.find((item) => item.sha.startsWith(commit))?.sha ?? commit;
+  }
+  return ref.includes('..') ? null : commits[0].sha;
+}
+
 function diffFor(ref: string): DiffResult {
   const staged = ref === 'staged';
   const files: DiffFileSummary[] = FIXTURE_FILES.map((file) => ({ ...file }));
@@ -270,7 +279,7 @@ function diffFor(ref: string): DiffResult {
       label: ref === 'work' ? 'Uncommitted changes' : ref === 'staged' ? 'Staged changes' : ref === 'unstaged' ? 'Unstaged changes' : ref,
       canRevert: ref === 'work' || ref === 'unstaged' || ref === 'staged',
       baseSha: 'a1b2c3d',
-      headSha: null,
+      headSha: mockHeadSha(ref),
     },
     files: staged ? files.slice(0, 2) : files,
     patch: staged ? FIXTURE_PATCH.split('diff --git a/docs')[0] : FIXTURE_PATCH,

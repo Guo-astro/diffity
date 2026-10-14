@@ -38,7 +38,6 @@ import { focusThreadElement } from '../../lib/dom-utils';
 import { setFocusThread } from '../../lib/ui-store';
 import { ReviewStateProvider } from '../../features/review/review-state';
 import { ClaudeToolbar } from '../../features/claude/claude-toolbar';
-import { FinishReview } from '../../features/review/finish-review';
 import { DiffSkeleton, FileBlockSkeleton, hideStaticSplash } from '../layout/skeleton';
 import { CodeIcon, EditorIcon, FileIcon } from '../ui/icon';
 import { useEditorName } from '../../hooks/use-editor-name';
@@ -423,12 +422,7 @@ export function TreePage() {
             onDeleteAllComments={commentActions.deleteAllThreads}
             formatForCopy={formatForCopy}
           />
-          {threads.length > 0 && (
-            <>
-              <ClaudeToolbar diffRef={null} sessionId={sessionId} />
-              <FinishReview githubDetails={null} threads={threads} />
-            </>
-          )}
+          {threads.length > 0 && <ClaudeToolbar diffRef={null} sessionId={sessionId} threads={threads} formatForCopy={formatForCopy} />}
           <OptionsMenu theme={theme} onToggleTheme={toggleTheme} />
         </div>
       </TitleBar>

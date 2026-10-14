@@ -31,13 +31,13 @@ macOS 13.3 or later, Apple Silicon and Intel. The AI features need [Claude Code]
 
 ### Comment on your diff
 
-> Drag across line numbers or click the `+` in the gutter, write a comment, then hit **Send to Claude** to have it fix them.
+> Drag across line numbers or click the `+` in the gutter, write a comment, then click **Claude** in the toolbar and send your comments to have it fix them.
 
 <img src="./.github/screenshots/comment.gif" alt="Selecting lines in a diff and leaving a comment" />
 
 ### Let Claude fix your comments
 
-> Hit **Send N to Claude**; it works through each comment, edits the code and replies in the thread, and you review its changes like any other diff.
+> Click **Claude** and pick the comments to send. It works through each one, edits the code and replies in the thread, and you review its changes like any other diff. This works on uncommitted changes and on the commit you have checked out, including comments from a Claude review.
 
 <img src="./.github/screenshots/claude-fix.gif" alt="Sending two comments to Claude and its edits and replies landing on the diff" />
 
@@ -49,7 +49,7 @@ macOS 13.3 or later, Apple Silicon and Intel. The AI features need [Claude Code]
 
 ### Get a Claude review
 
-> Click **Ask Claude to review**, optionally add what to focus on, and its comments land on the diff as it works.
+> Click **Claude**, open **Review**, optionally add what to focus on, and its comments land on the diff as it works.
 
 <img src="./.github/screenshots/claude-review.gif" alt="Asking Claude to review and its comments appearing on the diff" />
 

@@ -29,7 +29,7 @@ import { contentsLabel, copyFileContents, copyFileDiff, copyRelativePath, handle
 import { usePageActions, useViewFiles, type PaletteAction } from '../../features/palette/palette-store';
 import { statusLetter } from '../tree/file-tree-item';
 import { requestAskClaude } from '../../features/claude/ask-claude-review';
-import { requestSendToClaude } from '../../features/review/finish-review';
+import { requestSendToClaude } from '../../features/claude/send-comments';
 import { OtherViewThreads, OutsideThreads } from '../comments/outside-threads';
 import { splitThreadsByView } from '../../lib/thread-views';
 import { useUncommittedPaths } from '../layout/diff-context-bar';

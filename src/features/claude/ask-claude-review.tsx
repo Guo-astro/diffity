@@ -10,7 +10,7 @@ import { modKey } from '../../lib/platform';
 import { Popover } from '../../components/ui/popover';
 import { buttonClaudeSolid, buttonGhost, inputField } from '../../components/ui/button-styles';
 import { SparkleIcon } from '../../components/ui/icon';
-import { canSendToClaude, enqueueClaude } from './claude-runner';
+import { enqueueClaude, useCanEditRef } from './claude-runner';
 import { SegmentedToggle } from '../../components/ui/segmented-toggle';
 import { ModelPicker } from './model-picker';
 import { useRunPick, writeRepoPick, type RunPick } from './model-setting';
@@ -21,7 +21,7 @@ export const REVIEW_FOCUSES = ['Security', 'Performance', 'Correctness', 'Naming
 type Scope = 'all' | 'file' | 'glob';
 
 /** A review only leaves comments; changes edit the working tree. */
-type Task = 'review' | 'change';
+export type Task = 'review' | 'change';
 
 /** Instructions that ask for edits rather than a review, e.g. "remove the debug logs". */
 export function readsAsChangeRequest(text: string): boolean {
@@ -95,14 +95,22 @@ interface AskClaudePanelProps {
   focusedFile?: string | null;
   onStarted?: () => void;
   onClose: () => void;
+  /** Set by a host that picks the task itself (its own tabs); the panel then drops its header. */
+  task?: Task;
+  onTaskChange?: (task: Task) => void;
 }
 
-function AskClaudePanel(props: AskClaudePanelProps) {
-  const { diffRef, sessionId, focusedFile, onStarted, onClose } = props;
+export function AskClaudePanel(props: AskClaudePanelProps) {
+  const { diffRef, sessionId, focusedFile, onStarted, onClose, task: hostTask, onTaskChange } = props;
   const repoPath = getRepoPath();
   const [text, setText] = useState('');
-  const canChange = canSendToClaude(diffRef);
-  const [task, setTask] = useState<Task>('review');
+  const canChange = useCanEditRef(repoPath, diffRef);
+  const [ownTask, setOwnTask] = useState<Task>('review');
+  const task = hostTask ?? ownTask;
+  const setTask = (value: Task) => {
+    setOwnTask(value);
+    onTaskChange?.(value);
+  };
   const changing = task === 'change' && canChange;
   const [focus, setFocus] = useState<string[]>(() => readFocus(repoPath));
   const [scope, setScope] = useState<Scope>('all');
@@ -125,9 +133,13 @@ function AskClaudePanel(props: AskClaudePanelProps) {
   }, [glob, files]);
 
   useEffect(() => {
+    setPicked(null);
+  }, [task]);
+
+  useEffect(() => {
     const frame = requestAnimationFrame(() => requestAnimationFrame(() => textRef.current?.focus()));
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [task]);
 
   const paths = scope === 'file' && focusedFile ? [focusedFile] : scope === 'glob' ? globMatches : [];
   const blocked = (scope === 'glob' && globMatches.length === 0) || (changing && !text.trim());
@@ -182,7 +194,7 @@ function AskClaudePanel(props: AskClaudePanelProps) {
 
   return (
     <form
-      className="flex flex-col gap-3 p-4"
+      className={cn('flex flex-col gap-3 p-4', hostTask && 'pt-3')}
       onSubmit={(event) => {
         event.preventDefault();
         void start();
@@ -194,6 +206,7 @@ function AskClaudePanel(props: AskClaudePanelProps) {
         }
       }}
     >
+      {!hostTask && (
       <div className="flex items-center gap-2">
         <SparkleIcon size="md" className="text-claude" />
         <h3 className="text-[13px] font-semibold text-text">Ask {agent.short}</h3>
@@ -213,6 +226,7 @@ function AskClaudePanel(props: AskClaudePanelProps) {
           />
         )}
       </div>
+      )}
       <div>
         <label className="block mb-1.5 text-xs font-medium text-text-secondary" htmlFor="claude-instructions">
           {changing ? `What should ${agent.short} change?` : `What should ${agent.short} focus on?`}

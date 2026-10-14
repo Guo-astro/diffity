@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { create } from 'zustand';
 import { useQuery } from '@tanstack/react-query';
 import { Skeleton } from '../../components/ui/skeleton';
-import { buttonClaudeSolid, buttonGhost, buttonOutline, buttonPrimary } from '../../components/ui/button-styles';
+import { buttonGhost, buttonOutline, buttonPrimary } from '../../components/ui/button-styles';
 import { cn } from '../../lib/cn';
 import * as tauri from '../../lib/tauri';
 import type { GithubPendingAction, Review, ReviewVerdict } from '../../lib/types';
@@ -24,24 +23,23 @@ import type { GitHubDetails } from '../../lib/api';
 import { openSettingsAt } from '../../lib/ui-store';
 import { getRepoPath } from '../../lib/api';
 import { mentionsAgent } from '../../lib/mentions';
-import { canSendToClaude, enqueueClaude, useActiveRun, useBusyThreadIds } from '../claude/claude-runner';
+import { useActiveRun } from '../claude/claude-runner';
+import { useAgentProblem } from '../claude/send-comments';
 import { GENERAL_THREAD_FILE_PATH, type CommentThread } from '../../components/comments/types';
 import { toast } from 'sonner';
 import { MentionTextarea } from '../../components/comments/mention-textarea';
 import { PostReviewError, triggerClaude, useReviewActions, useReviewState, type ClaudeScope } from './review-state';
 import { useOwnPr } from '../../hooks/use-repo-state';
 import { PrSyncRow } from '../pr/pr-session';
-import { ApproveIcon, CheckIcon, ChevronDownIcon, CommentIcon, GitHubIcon, GitPullRequestIcon, RequestChangesIcon, SendIcon, SparkleIcon, type GlyphProps } from '../../components/ui/icon';
+import { ApproveIcon, CheckIcon, ChevronDownIcon, CommentIcon, GitHubIcon, GitPullRequestIcon, RequestChangesIcon, SparkleIcon, type GlyphProps } from '../../components/ui/icon';
 import { Spinner } from '../../components/icons/spinner';
 import { Popover } from '../../components/ui/popover';
-import { ModelPicker } from '../claude/model-picker';
-import { useRunPick, writeRepoPick, type RunPick } from '../claude/model-setting';
-import { agentMeta, type AgentMeta } from '../claude/agents';
+import { useRunPick } from '../claude/model-setting';
+import { agentMeta } from '../claude/agents';
 
 interface FinishReviewProps {
   githubDetails: GitHubDetails | null;
   threads?: CommentThread[];
-  diffRef?: string | null;
 }
 
 const VERDICTS: { value: ReviewVerdict; label: string; description: string; icon: ComponentType<GlyphProps>; tone: string }[] = [
@@ -50,307 +48,16 @@ const VERDICTS: { value: ReviewVerdict; label: string; description: string; icon
   { value: 'requestChanges', label: 'Request changes', description: 'Must be addressed before merging', icon: RequestChangesIcon, tone: 'text-deleted' },
 ];
 
-function useAgentProblem(meta: AgentMeta, enabled: boolean): string | null {
-  const { data: agents } = useQuery({ queryKey: ['agents'], queryFn: () => tauri.listAgents(), enabled, staleTime: 30_000 });
-  if (!enabled || !agents) {
-    return null;
-  }
-  const agent = agents.find((item) => item.id === meta.id);
-  if (!agent || !agent.installed) {
-    return `${meta.name} is not installed.`;
-  }
-  if (agent.authenticated === false) {
-    return `${meta.name} is not logged in. ${meta.login}`;
-  }
-  return null;
-}
-
-export function unaddressedThreads(threads: CommentThread[]): CommentThread[] {
-  return threads.filter((thread) => {
-    if (thread.status !== 'open' || thread.pending) {
-      return false;
-    }
-    const last = thread.comments[thread.comments.length - 1];
-    return !!last && last.author.type === 'user';
-  });
-}
-
 export function FinishReview(props: FinishReviewProps) {
-  const { githubDetails, threads = [], diffRef } = props;
+  const { githubDetails, threads = [] } = props;
   const { enabled } = useReviewState();
   const ownPr = useOwnPr();
   const agentRunning = useActiveRun(getRepoPath()) !== null;
 
-  if (!enabled || agentRunning) {
+  if (!enabled || agentRunning || !githubDetails || ownPr) {
     return null;
   }
-  const send = canSendToClaude(diffRef) ? <SendToClaude threads={threads} includeGitHub={ownPr} /> : null;
-  if (!githubDetails || ownPr) {
-    return send;
-  }
-  return (
-    <>
-      {send}
-      <PullRequestReview pr={githubDetails} threads={threads} />
-    </>
-  );
-}
-
-function threadLocation(thread: CommentThread): string {
-  if (thread.filePath === GENERAL_THREAD_FILE_PATH) {
-    return 'General';
-  }
-  const range = thread.startLine === thread.endLine ? `L${thread.startLine}` : `L${thread.startLine}–${thread.endLine}`;
-  return range;
-}
-
-/** Agents' own open review comments nobody has replied to yet. */
-export function claudeReviewThreads(threads: CommentThread[]): CommentThread[] {
-  return threads.filter((thread) => {
-    if (thread.status !== 'open' || thread.pending || thread.githubThreadId || thread.filePath === GENERAL_THREAD_FILE_PATH) {
-      return false;
-    }
-    return thread.comments.length > 0 && thread.comments.every((comment) => comment.author.type === 'agent');
-  });
-}
-
-/** Open GitHub review threads whose latest comment is from a reviewer (not you or an agent). */
-export function reviewerThreads(threads: CommentThread[]): CommentThread[] {
-  return threads.filter((thread) => {
-    if (thread.status !== 'open' || thread.pending || !thread.githubThreadId) {
-      return false;
-    }
-    const last = thread.comments[thread.comments.length - 1];
-    return !!last && last.author.type === 'github';
-  });
-}
-
-export const useSendRequest = create<{ open: number }>(() => ({ open: 0 }));
-
-export function requestSendToClaude() {
-  useSendRequest.setState((state) => ({ open: state.open + 1 }));
-}
-
-function SendToClaude(props: { threads: CommentThread[]; includeGitHub?: boolean }) {
-  const { threads, includeGitHub = false } = props;
-  const { sessionId, pendingReview, prMode } = useReviewState();
-  const { submit } = useReviewActions(sessionId);
-  const busy = useBusyThreadIds();
-  const [open, setOpen] = useState(false);
-  const [note, setNote] = useState('');
-  const fallbackPick = useRunPick('fix', getRepoPath());
-  const [picked, setPicked] = useState<RunPick | null>(null);
-  const pick = picked ?? fallbackPick;
-  const agent = agentMeta(pick.agent);
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
-  const [claudePicked, setClaudePicked] = useState<Set<string> | null>(null);
-  const anchorRef = useRef<HTMLButtonElement>(null);
-  const pendingCount = prMode ? 0 : pendingReview?.pendingCount ?? 0;
-  const [postReplies, setPostReplies] = useState(false);
-  const openRequest = useSendRequest((state) => state.open);
-  const local = unaddressedThreads(threads).filter((thread) => !busy.has(thread.id) && !thread.githubThreadId);
-  const remote = includeGitHub ? reviewerThreads(threads).filter((thread) => !busy.has(thread.id)) : [];
-  const fromClaude = claudeReviewThreads(threads).filter((thread) => !busy.has(thread.id));
-  const candidates = [...local, ...remote];
-  const remoteSelected = remote.filter((thread) => !excluded.has(thread.id));
-
-  const seenRequest = useRef(openRequest);
-  useEffect(() => {
-    if (openRequest === seenRequest.current) {
-      return;
-    }
-    seenRequest.current = openRequest;
-    setOpen(true);
-  }, [openRequest]);
-  const pickedClaude = claudePicked ?? new Set(candidates.length + pendingCount === 0 ? fromClaude.map((thread) => thread.id) : []);
-  const selectedClaude = fromClaude.filter((thread) => pickedClaude.has(thread.id));
-  const selected = [...candidates.filter((thread) => !excluded.has(thread.id)), ...selectedClaude];
-  const count = candidates.length + fromClaude.length + pendingCount;
-  const sendCount = selected.length + pendingCount;
-  const claudeProblem = useAgentProblem(agent, count > 0);
-
-  const groups = useMemo(() => threadsByFile(local), [local]);
-  const claudeGroups = useMemo(() => threadsByFile(fromClaude), [fromClaude]);
-
-  if (count === 0) {
-    return null;
-  }
-
-  const send = async () => {
-    if (claudeProblem) {
-      toast.error(claudeProblem, { action: { label: 'Agent settings', onClick: () => openSettingsAt('agents') } });
-      return;
-    }
-    if (pendingCount > 0) {
-      await submit.mutateAsync({ body: '', verdict: null, claude: 'skip' });
-    }
-    setOpen(false);
-    enqueueClaude(
-      {
-        kind: 'resolve',
-        threadIds: [...new Set([...selected.map((thread) => thread.id), ...(pendingCount > 0 ? pendingReview?.threadIds ?? [] : [])])],
-        note: note.trim() || undefined,
-      },
-      { repoPath: getRepoPath(), sessionId, pick, postRepliesToGitHub: postReplies ? remoteSelected.map((thread) => thread.id) : undefined },
-    );
-    if (picked) {
-      writeRepoPick('fix', getRepoPath(), picked);
-    }
-    setNote('');
-    setExcluded(new Set());
-    setClaudePicked(null);
-  };
-
-  const toggleClaude = (id: string) => {
-    const next = new Set(pickedClaude);
-    if (next.has(id)) {
-      next.delete(id);
-    } else {
-      next.add(id);
-    }
-    setClaudePicked(next);
-  };
-
-  const allClaudePicked = selectedClaude.length === fromClaude.length;
-  const toggleAllClaude = () => {
-    setClaudePicked(new Set(allClaudePicked ? [] : fromClaude.map((thread) => thread.id)));
-  };
-
-  const toggle = (id: string) => {
-    setExcluded((current) => {
-      const next = new Set(current);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  };
-
-  return (
-    <>
-      <button
-        ref={anchorRef}
-        onClick={() => setOpen(!open)}
-        disabled={submit.isPending}
-        className={buttonClaudeSolid}
-        title={`${agent.short} answers questions and makes the requested changes for ${plural(sendCount || count, 'open comment')}`}
-        aria-expanded={open}
-      >
-        <SendIcon size="md" />
-        <span className="@max-3xl/titlebar:hidden">{sendCount > 0 ? `Send ${sendCount} to ${agent.short}` : `Send to ${agent.short}`}</span>
-        {sendCount > 0 && <span className="hidden @max-3xl/titlebar:inline tabular-nums">{sendCount}</span>}
-      </button>
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} align="end" width={420} className="p-0">
-        <form
-          className="flex flex-col font-sans"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault();
-              void send();
-            }
-          }}
-        >
-          <div className="px-4 pt-3.5 pb-2">
-            <div className="text-[13px] font-semibold text-text">Send comments to {agent.short}</div>
-            <p className="mt-0.5 text-xs text-text-secondary">{agent.short} edits your working tree to address them and replies on each thread.</p>
-          </div>
-          <div className="max-h-[300px] overflow-y-auto px-2">
-            {local.length > 0 && fromClaude.length > 0 && <div className="px-2 pt-2 pb-0.5 text-[11px] font-medium text-text-muted">Your comments</div>}
-            {groups.map(([file, items]) => (
-              <ThreadGroup key={file} file={file} threads={items} isChecked={(id) => !excluded.has(id)} onToggle={toggle} />
-            ))}
-            {fromClaude.length > 0 && (
-              <div className="pb-1">
-                <div className="flex items-center gap-1.5 px-2 pt-2 pb-0.5 text-[11px] font-medium text-text-muted">
-                  <SparkleIcon size="xs" className="text-claude" />
-                  <span className="flex-1">Agent comments</span>
-                  <button type="button" onClick={toggleAllClaude} className="text-text-secondary hover:text-text cursor-pointer">
-                    {allClaudePicked ? 'Select none' : 'Select all'}
-                  </button>
-                </div>
-                {claudeGroups.map(([file, items]) => (
-                  <ThreadGroup key={file} file={file} threads={items} isChecked={(id) => pickedClaude.has(id)} onToggle={toggleClaude} />
-                ))}
-              </div>
-            )}
-            {remote.length > 0 && (
-              <div className="pb-1">
-                <div className="flex items-center gap-1.5 px-2 pt-2 pb-1 text-[11px] font-medium text-text-muted">
-                  <GitHubIcon size={11} />
-                  Reviewer comments from GitHub
-                </div>
-                {remote.map((thread) => (
-                  <label key={thread.id} className="flex items-start gap-2.5 px-2 py-1.5 rounded-md hover:bg-hover cursor-pointer">
-                    <input type="checkbox" checked={!excluded.has(thread.id)} onChange={() => toggle(thread.id)} className="mt-0.5 accent-claude" />
-                    <span className="shrink-0 w-24 pt-px font-mono text-[11px] text-text-muted truncate" title={thread.filePath}>{thread.filePath.split('/').pop()} {threadLocation(thread)}</span>
-                    <span className="min-w-0 flex-1 text-xs leading-5 text-text line-clamp-2">
-                      <span className="font-medium">{thread.comments[thread.comments.length - 1]?.author.name}: </span>
-                      {thread.comments[thread.comments.length - 1]?.body}
-                    </span>
-                  </label>
-                ))}
-                <label className="flex items-center gap-2 px-2 pt-1.5 text-xs text-text-secondary cursor-pointer">
-                  <input type="checkbox" checked={postReplies} onChange={() => setPostReplies(!postReplies)} className="accent-claude" disabled={remoteSelected.length === 0} />
-                  Post {agent.short}’s replies to these GitHub threads
-                </label>
-              </div>
-            )}
-            {pendingCount > 0 && <div className="px-2 py-1 text-xs text-text-secondary">+ {plural(pendingCount, 'draft comment')} (submitted first)</div>}
-          </div>
-          <div className="px-4 pt-2 pb-3 border-t border-overlay-border">
-            <MentionTextarea
-              value={note}
-              onChange={setNote}
-              rows={2}
-              placeholder="Optional note for all of these, e.g. “Keep changes minimal, no new dependencies”"
-              className="block w-full px-2.5 py-1.5 text-[13px] leading-5 bg-raised text-text rounded-md border border-control-border focus:border-focus resize-y outline-none placeholder:text-text-muted"
-            />
-            {claudeProblem && <div className="mt-2 px-2.5 py-1.5 rounded-md bg-deleted/10 text-xs text-deleted">{claudeProblem}</div>}
-            <div className="mt-2.5 flex items-center gap-2">
-              <ModelPicker value={pick} onChange={setPicked} className="-ml-1.5 mr-auto" />
-              <button type="button" onClick={() => setOpen(false)} className={buttonGhost}>Cancel</button>
-              <button type="submit" disabled={selected.length + pendingCount === 0} className={buttonClaudeSolid} title="⌘↵">
-                <SendIcon size="sm" />
-                Send {selected.length + pendingCount} to {agent.short}
-              </button>
-            </div>
-          </div>
-        </form>
-      </Popover>
-    </>
-  );
-}
-
-function threadsByFile(threads: CommentThread[]): [string, CommentThread[]][] {
-  const byFile = new Map<string, CommentThread[]>();
-  for (const thread of threads) {
-    const key = thread.filePath === GENERAL_THREAD_FILE_PATH ? 'General comments' : thread.filePath;
-    byFile.set(key, [...(byFile.get(key) ?? []), thread]);
-  }
-  return [...byFile.entries()];
-}
-
-function ThreadGroup(props: { file: string; threads: CommentThread[]; isChecked: (id: string) => boolean; onToggle: (id: string) => void }) {
-  const { file, threads, isChecked, onToggle } = props;
-
-  return (
-    <div className="pb-1">
-      <div className="px-2 pt-1.5 pb-1 font-mono text-[11px] text-text-muted truncate">{file}</div>
-      {threads.map((thread) => (
-        <label key={thread.id} className="flex items-start gap-2.5 px-2 py-1.5 rounded-md hover:bg-hover cursor-pointer">
-          <input type="checkbox" checked={isChecked(thread.id)} onChange={() => onToggle(thread.id)} className="mt-0.5 accent-claude" />
-          <span className="shrink-0 w-12 pt-px font-mono text-[11px] text-text-muted">{threadLocation(thread)}</span>
-          <span className="min-w-0 flex-1 text-xs leading-5 text-text line-clamp-2">{thread.comments[thread.comments.length - 1]?.body}</span>
-        </label>
-      ))}
-    </div>
-  );
+  return <PullRequestReview pr={githubDetails} threads={threads} />;
 }
 
 interface ReviewItem {

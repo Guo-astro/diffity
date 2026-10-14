@@ -476,3 +476,18 @@ fn renames_into_an_ignored_folder_are_hidden_whole() {
     assert!(res.files.is_empty(), "{:?}", res.files);
     assert_eq!(res.hidden_files, vec!["dist/old.js".to_string()]);
 }
+
+#[test]
+fn head_commit_resolves_to_checked_out_sha() {
+    let repo = Repo::with_commit();
+    repo.write("a.txt", "one\n");
+    let older = repo.commit("older");
+    repo.write("a.txt", "two\n");
+    let head = repo.commit("head");
+    let work = diff::resolve_ref(&repo.path, "work").unwrap().head_sha;
+    let head_view = diff::resolve_ref(&repo.path, &format!("{head}~1..{head}")).unwrap().head_sha;
+    let older_view = diff::resolve_ref(&repo.path, &format!("{older}~1..{older}")).unwrap().head_sha;
+    assert_eq!(work.as_deref(), Some(head.as_str()));
+    assert_eq!(head_view, work);
+    assert_ne!(older_view, work);
+}

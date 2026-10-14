@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TREE_REF } from '../../lib/types';
-import { runLabel, runViewLabel, stopClaude, useActiveRun, useQueuedCount } from './claude-runner';
+import { runLabel, runViewLabel, stopClaude, useActiveRun, useCanEditRef, useQueuedCount } from './claude-runner';
 import { useCurrentViewRef } from '../../hooks/use-current-view';
 import { useRepoPath } from '../../hooks/use-repo';
-import { buttonClaude } from '../../components/ui/button-styles';
-import { AskClaudePopover, useAskClaudeRequest } from './ask-claude-review';
+import { buttonClaude, buttonOutline } from '../../components/ui/button-styles';
+import { AskClaudePanel, useAskClaudeRequest, type Task } from './ask-claude-review';
+import { SendCommentsPanel, useSendCandidates, useSendRequest } from './send-comments';
+import { SegmentedToggle } from '../../components/ui/segmented-toggle';
+import { plural } from '../review/review-candidates';
+import { useOwnPr } from '../../hooks/use-repo-state';
+import type { CommentThread } from '../../components/comments/types';
 import { cn } from '../../lib/cn';
 import { toast } from 'sonner';
 import { useReviewState } from '../review/review-state';
-import { SparkleIcon, StopIcon } from '../../components/ui/icon';
+import { ChevronDownIcon, CopyIcon, InfoIcon, SparkleIcon, StopIcon } from '../../components/ui/icon';
 import { Popover } from '../../components/ui/popover';
 import { Spinner } from '../../components/icons/spinner';
 import { useRunPick } from './model-setting';
@@ -21,6 +26,8 @@ interface ClaudeToolbarProps {
   sessionId: string | null;
   hasChanges?: boolean;
   focusedFile?: string | null;
+  threads?: CommentThread[];
+  formatForCopy?: () => string;
 }
 
 export function ClaudeStatus() {
@@ -95,51 +102,176 @@ export function ClaudeStatus() {
   );
 }
 
+type Tab = 'fix' | Task;
+
+const TAB_LABELS: Record<Tab, string> = { fix: 'Fix comments', review: 'Review', change: 'Make changes' };
+
+/** Shown where the agent can't edit: the view isn't the checked-out code. */
+function NotCheckedOut(props: { agent: string; onCopy?: () => void; onReview?: () => void }) {
+  const { agent, onCopy, onReview } = props;
+
+  return (
+    <div className="p-4 pt-3">
+      <div className="flex gap-2.5 px-3 py-2.5 rounded-md border border-control-border bg-fill/50">
+        <InfoIcon size="sm" className="mt-0.5 text-text-muted" />
+        <div className="min-w-0 text-xs leading-5 text-text-secondary">
+          <p><span className="font-medium text-text">{agent} can only edit your current code.</span> These changes aren’t checked out, so {agent} can review them but not change them.</p>
+          {(onCopy || onReview) && (
+            <div className="flex gap-1.5 mt-2">
+              {onCopy && <button type="button" onClick={onCopy} className={cn(buttonOutline, 'h-6 px-2 text-xs')}><CopyIcon size="xs" />Copy comments</button>}
+              {onReview && <button type="button" onClick={onReview} className={cn(buttonOutline, 'h-6 px-2 text-xs')}>Review instead</button>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NoComments(props: { agent: string; onReview?: () => void }) {
+  const { agent, onReview } = props;
+
+  return (
+    <div className="p-4 pt-3">
+      <div className="flex gap-2.5 px-3 py-2.5 rounded-md border border-control-border bg-fill/50">
+        <InfoIcon size="sm" className="mt-0.5 text-text-muted" />
+        <div className="min-w-0 text-xs leading-5 text-text-secondary">
+          <p><span className="font-medium text-text">No comments yet.</span> Add one on a line{onReview ? `, or ask ${agent} to review` : ''}.</p>
+          {onReview && (
+            <button type="button" onClick={onReview} className={cn(buttonOutline, 'mt-2 h-6 px-2 text-xs')}>Start a review</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One button for everything an agent can do here: fix open comments, review, or make a change. */
 export function ClaudeToolbar(props: ClaudeToolbarProps) {
-  const { diffRef, sessionId, hasChanges = true, focusedFile } = props;
+  const { diffRef, sessionId, hasChanges = true, focusedFile, threads = [], formatForCopy } = props;
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>('review');
   const anchorRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
   const repoPath = useRepoPath();
   const run = useActiveRun(repoPath);
-  const agent = agentMeta(useRunPick('review', repoPath).agent);
-  const { prMode } = useReviewState();
+  const { enabled: commentsEnabled, prMode } = useReviewState();
+  const ownPr = useOwnPr();
+  const candidates = useSendCandidates(threads, ownPr);
+  const editable = useCanEditRef(repoPath, diffRef);
   const requested = useAskClaudeRequest((state) => state.ref);
+  const sendRequest = useSendRequest((state) => state.open);
+  const seenSendRequest = useRef(sendRequest);
 
   const reviewRef = diffRef && diffRef !== TREE_REF && hasChanges ? diffRef : null;
+  const count = commentsEnabled ? candidates.count : 0;
+  const tabs: Tab[] = [...(commentsEnabled ? ['fix' as const] : []), ...(reviewRef ? ['review' as const, 'change' as const] : [])];
+  const defaultTab: Tab = count > 0 || !reviewRef ? 'fix' : 'review';
+  const agent = agentMeta(useRunPick(defaultTab === 'fix' ? 'fix' : 'review', repoPath).agent);
+
+  const openAt = useCallback((next: Tab) => {
+    if (run) {
+      toast.info(`${run.agentId ? agentMeta(run.agentId).short : 'The agent'} is already working. Wait for it to finish or stop it first.`);
+      return;
+    }
+    setTab(next);
+    setOpen(true);
+  }, [run]);
 
   useEffect(() => {
     if (!requested || requested !== reviewRef) {
       return;
     }
     useAskClaudeRequest.setState({ ref: null });
-    if (run) {
-      toast.info(`${run.agentId ? agentMeta(run.agentId).short : 'The agent'} is already working. Wait for it to finish or stop it first.`);
+    openAt('review');
+  }, [requested, reviewRef, openAt]);
+
+  useEffect(() => {
+    if (sendRequest === seenSendRequest.current) {
       return;
     }
-    setOpen(true);
-  }, [requested, reviewRef, run]);
+    seenSendRequest.current = sendRequest;
+    if (!commentsEnabled) {
+      return;
+    }
+    openAt('fix');
+  }, [sendRequest, commentsEnabled, openAt]);
 
   if (run) {
     return <ClaudeStatus />;
   }
-  if (!reviewRef) {
+  if (tabs.length === 0 || (!reviewRef && count === 0)) {
     return null;
   }
+
+  const copyComments = formatForCopy && count > 0
+    ? () => {
+      const text = formatForCopy();
+      if (!text) {
+        toast.info('No open comments to copy');
+        return;
+      }
+      void navigator.clipboard.writeText(text).then(() => toast.success('Copied open comments'));
+    }
+    : undefined;
+  const toReview = reviewRef ? () => setTab('review') : undefined;
+
+  const body = () => {
+    if (tab === 'fix') {
+      if (!editable) {
+        return <NotCheckedOut agent={agent.short} onCopy={copyComments} onReview={toReview} />;
+      }
+      if (count === 0) {
+        return <NoComments agent={agent.short} onReview={toReview} />;
+      }
+      return <SendCommentsPanel candidates={candidates} onClose={close} />;
+    }
+    if (!reviewRef) {
+      return null;
+    }
+    if (tab === 'change' && !editable) {
+      return <NotCheckedOut agent={agent.short} onReview={toReview} />;
+    }
+    return <AskClaudePanel diffRef={reviewRef} sessionId={sessionId} focusedFile={focusedFile} task={tab} onTaskChange={setTab} onClose={close} />;
+  };
+
+  const title = count > 0
+    ? `${plural(count, 'open comment')} ${agent.short} can work on. Or ask ${agent.short} to review or make a change.`
+    : prMode
+      ? `${agent.short} reviews this pull request and leaves its comments in Diffity only (marked ${agent.short}). Use “Add to my review” on any you want to post to GitHub.`
+      : `Ask ${agent.short} to review these changes or to make a change for you.`;
 
   return (
     <>
       <button
         ref={anchorRef}
-        onClick={() => setOpen(!open)}
-        className={cn(buttonClaude, open && 'bg-claude/16')}
-        title={prMode ? `${agent.short} reviews this pull request and leaves its comments in Diffity only (marked ${agent.short}). Use “Add to my review” on any you want to post to GitHub.` : `Ask ${agent.short} to review these changes and leave comments, or to make a change for you.`}
+        onClick={() => (open ? close() : openAt(defaultTab))}
+        className={cn(buttonClaude, 'px-2.5', open && 'bg-claude/16')}
+        title={title}
         aria-expanded={open}
       >
         <SparkleIcon size="md" />
-        <span className="@max-3xl/titlebar:hidden">Ask {agent.short}</span>
+        <span className="@max-3xl/titlebar:hidden">{agent.short}</span>
+        {count > 0 && (
+          <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-claude text-white text-[11px] font-semibold leading-[18px] text-center tabular-nums">{count}</span>
+        )}
+        <ChevronDownIcon size="xs" className="opacity-70 @max-3xl/titlebar:hidden" />
       </button>
-      <AskClaudePopover open={open} onClose={close} anchorRef={anchorRef} diffRef={reviewRef} sessionId={sessionId} focusedFile={focusedFile} />
+      <Popover open={open} onClose={close} anchorRef={anchorRef} align="end" width={420} className="p-0 overflow-visible">
+        <div className="flex items-center gap-2 px-4 pt-3.5">
+          <SparkleIcon size="md" className="text-claude" />
+          <h3 className="text-[13px] font-semibold text-text">{agent.short}</h3>
+          <span className="flex-1" />
+          {tabs.length > 1 && (
+            <SegmentedToggle<Tab>
+              value={tab}
+              onChange={setTab}
+              options={tabs.map((value) => ({ value, label: TAB_LABELS[value] }))}
+            />
+          )}
+        </div>
+        {body()}
+      </Popover>
     </>
   );
 }

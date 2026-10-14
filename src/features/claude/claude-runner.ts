@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import * as tauri from '../../lib/tauri';
 import { queryClient } from '../../lib/query-client';
@@ -98,12 +99,36 @@ export function canSendToClaude(diffRef: string | null | undefined): boolean {
   return true;
 }
 
+/** Agents edit the checked-out code, so a commit or range can be worked on only when its newer side is HEAD. */
+export async function canEditRef(repoPath: string, ref: string | null | undefined): Promise<boolean> {
+  if (!ref || canSendToClaude(ref)) {
+    return true;
+  }
+  try {
+    const [view, work] = await Promise.all([tauri.resolveRef(repoPath, ref), tauri.resolveRef(repoPath, 'work')]);
+    return !!view.headSha && view.headSha === work.headSha;
+  } catch {
+    return false;
+  }
+}
+
+export function useCanEditRef(repoPath: string, ref: string | null | undefined): boolean {
+  const quick = !ref || canSendToClaude(ref);
+  const { data } = useQuery({
+    queryKey: ['can-edit-ref', repoPath, ref],
+    queryFn: () => canEditRef(repoPath, ref),
+    enabled: !quick,
+    staleTime: 5_000,
+  });
+  return quick || data === true;
+}
+
 export function modelPurpose(action: ClaudeAction): ModelPurpose {
   return action.kind === 'review' || action.kind === 'guide' ? 'review' : 'fix';
 }
 
-function modeFor(action: ClaudeAction, ref: string | null): AgentMode {
-  if (action.kind === 'review' || action.kind === 'guide' || (ref && !canSendToClaude(ref))) {
+function modeFor(action: ClaudeAction, editable: boolean): AgentMode {
+  if (action.kind === 'review' || action.kind === 'guide' || !editable) {
     return 'review';
   }
   return 'resolve';
@@ -475,14 +500,15 @@ async function execute(run: ClaudeRun) {
   }
   const ref = run.ref ?? refForSession(sessionId) ?? threadRef(run);
   run = { ...run, ref };
+  const mode = modeFor(run.action, await canEditRef(run.context.repoPath, ref));
   const chat = await tauri.startChat({
     repoPath: run.context.repoPath,
     agentId: agent.id,
-    mode: modeFor(run.action, ref),
+    mode,
     sessionId,
     title: chatTitle(run.action),
   });
-  const skipsPrompts = runSkipsPrompts(modeFor(run.action, ref), run.action, await getPermissionSetting());
+  const skipsPrompts = runSkipsPrompts(mode, run.action, await getPermissionSetting());
   const model: RunModel = { model: pick.model, effort: pick.effort };
   const startedAt = Date.now();
   patchRun(run.id, { chatId: chat.id, sessionId, startedAt, ref, skipsPrompts, model });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { claudeReviewThreads, unaddressedThreads } from '../src/features/review/finish-review';
+import { claudeReviewThreads, unaddressedThreads } from '../src/features/claude/send-comments';
 import type { CommentThread } from '../src/components/comments/types';
 
 function thread(id: string, authors: ('user' | 'agent' | 'github')[], extra: Partial<CommentThread> = {}): CommentThread {
