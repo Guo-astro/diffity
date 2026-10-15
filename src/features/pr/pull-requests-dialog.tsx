@@ -148,7 +148,7 @@ function PullRequestsBody() {
       nav.toDiff(prRefFor(pr));
       return;
     }
-    void checkoutPullRequest(nav.repoPath, input, nav.toDiff);
+    void checkoutPullRequest(nav.repoPath, input, nav);
   };
 
   const handleKey = (event: ReactKeyboardEvent) => {

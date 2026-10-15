@@ -1,9 +1,10 @@
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::core::store::Store;
 use crate::core::types::{AuthorType, ReviewState, Thread, ThreadStatus};
-use crate::core::{AppError, Result};
+use crate::core::{git, AppError, Result};
 use serde_json::json;
 
 use crate::github::auth::{self, CLIENT_ID_KEY, TOKEN_SOURCE_KEY};
@@ -394,7 +395,6 @@ impl GithubService {
                 .map_err(|_| AppError::invalid("expected a PR number or GitHub PR URL"))?
         };
         let token = self.require_token().await?;
-        gitcli::ensure_clean(repo_path, "checking out a PR").await?;
         let pr = self.fetch_pr(&token, &slug, number).await?;
         let full = slug.full_name();
         let same_repo = pr
@@ -415,6 +415,23 @@ impl GithubService {
             }
         };
         let head = pr.head_ref_name.as_str();
+        let fallback_branch = format!("pr-{number}");
+        let local_branch = if head_remote.is_some() { head } else { fallback_branch.as_str() };
+        let worktrees = git::list_worktrees(Path::new(repo_path))?;
+        if let Some(tree) = worktrees.iter().find(|tree| !tree.is_current && tree.branch.as_deref() == Some(local_branch)) {
+            return Err(AppError::new("in_worktree", tree.path.clone()));
+        }
+        // Already on the PR's branch (e.g. its own worktree): keep local work, only fast-forward when that applies cleanly.
+        if worktrees.iter().any(|tree| tree.is_current && tree.branch.as_deref() == Some(local_branch)) {
+            if let Some(head_remote) = &head_remote {
+                let head_refspec = format!("+refs/heads/{head}:refs/remotes/{head_remote}/{head}");
+                if gitcli::run(repo_path, &["fetch", head_remote, &head_refspec]).await?.ok {
+                    let _ = gitcli::run(repo_path, &["merge", "--ff-only", &format!("{head_remote}/{head}")]).await?;
+                }
+            }
+            return Ok(with_remote(pr.to_pull_request(), &remote_name));
+        }
+        gitcli::ensure_clean(repo_path, "checking out a PR").await?;
         // A merged PR's branch is often deleted: fall back to `pull/<n>/head`.
         let mut fetched_branch = None;
         if let Some(head_remote) = head_remote {

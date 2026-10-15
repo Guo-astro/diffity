@@ -87,7 +87,7 @@ function BranchSwitcherPanel(props: { current: string | null; onDone: () => void
 
   const pickPr = (input: string) => {
     onDone();
-    void checkoutPullRequest(nav.repoPath, input, nav.toDiff);
+    void checkoutPullRequest(nav.repoPath, input, nav);
   };
 
   return (

@@ -57,7 +57,7 @@ export function useRepoNav() {
     navigate('/');
   }, [navigate]);
 
-  return { repoPath, toDiff, toLastDiff, toTree, toOverview, toWelcome };
+  return { repoPath, navigate, toDiff, toLastDiff, toTree, toOverview, toWelcome };
 }
 
 interface RepoChangeState {

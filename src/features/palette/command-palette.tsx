@@ -224,7 +224,7 @@ function PaletteBody(props: { mode: PaletteMode }) {
           group: 'Pull requests',
           icon: <GitPullRequestIcon size="sm" className={pr.isDraft ? 'text-text-muted' : 'text-added'} />,
           detail: <span className="text-[11px] text-text-muted">check out · {pr.author}</span>,
-          run: () => void checkoutPullRequest(nav.repoPath, `#${pr.number}`, nav.toDiff),
+          run: () => void checkoutPullRequest(nav.repoPath, `#${pr.number}`, nav),
         }, `pr ${pr.number} ${pr.title} ${pr.author}`);
       }
       for (const commit of commits?.commits ?? []) {

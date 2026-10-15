@@ -615,9 +615,9 @@ export function Dashboard(props: DashboardProps) {
                           }
                           stats={<StatCell additions={pr.additions} deletions={pr.deletions} bar={<DiffStatBar additions={pr.additions} deletions={pr.deletions} />} />}
                           tooltip="Check out this pull request (asks first if you have uncommitted changes)"
-                          onClick={() => void checkoutPullRequest(nav.repoPath, `#${pr.number}`, nav.toDiff)}
+                          onClick={() => void checkoutPullRequest(nav.repoPath, `#${pr.number}`, nav)}
                           actions={[
-                            { label: 'Check out and review', icon: <GitPullRequestIcon size="sm" />, onSelect: () => void checkoutPullRequest(nav.repoPath, `#${pr.number}`, nav.toDiff) },
+                            { label: 'Check out and review', icon: <GitPullRequestIcon size="sm" />, onSelect: () => void checkoutPullRequest(nav.repoPath, `#${pr.number}`, nav) },
                             { label: 'Open on GitHub', icon: <GitHubIcon size="sm" />, onSelect: () => void openUrl(pr.url) },
                           ]}
                         />

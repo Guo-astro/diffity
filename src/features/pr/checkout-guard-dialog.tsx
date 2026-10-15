@@ -62,7 +62,7 @@ export function CheckoutGuardDialog() {
       void returnFromPullRequest(guard.repoPath, nav.toDiff, { stash: true });
       return;
     }
-    void checkoutPullRequest(guard.repoPath, guard.input, nav.toDiff, { stash: true });
+    void checkoutPullRequest(guard.repoPath, guard.input, nav, { stash: true });
   };
 
   return (

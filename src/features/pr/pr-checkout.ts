@@ -1,11 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import type { NavigateFunction } from 'react-router';
 import { create } from 'zustand';
 import * as tauri from '../../lib/tauri';
 import { queryClient } from '../../lib/query-client';
 import { openSettingsAt } from '../../lib/ui-store';
 import type { GitStatus, PullRequest, PullResult, StashResult } from '../../lib/types';
 import { prBaseFor, prRefFor } from '../../lib/pr-ref';
+import { openRepoAt, shortPath } from '../welcome/recent-repos';
 
 export interface ReturnPoint {
   branch: string | null;
@@ -165,18 +167,14 @@ export async function autoSyncPrComments(repoPath: string, pr: Pick<PullRequest,
   useCommentSync.setState((state) => ({ fresh: state.fresh + result.pulled }));
 }
 
-export async function checkoutPullRequest(repoPath: string, input: string, toDiff: ToDiff, options?: { stash?: boolean }) {
+/** Checks out a PR in `repoPath`, or opens the worktree that already has its branch checked out. */
+export async function checkoutPullRequest(repoPath: string, input: string, nav: { toDiff: ToDiff; navigate: NavigateFunction }, options?: { stash?: boolean }) {
   const label = labelFor(input);
   const auth = await tauri.githubAuthStatus().catch(() => null);
   if (!auth?.authenticated) {
     toast.info('Sign in to GitHub to check out pull requests', {
       action: { label: 'Sign in to GitHub', onClick: () => openSettingsAt('github') },
     });
-    return;
-  }
-  const status = await tauri.gitStatus(repoPath);
-  if (hasTrackedChanges(status) && !options?.stash) {
-    useCheckoutState.setState({ guard: { kind: 'checkout', repoPath, input, label, status } });
     return;
   }
   useCheckoutState.setState({ guard: null, busy: label });
@@ -199,7 +197,7 @@ export async function checkoutPullRequest(repoPath: string, input: string, toDif
     queryClient.invalidateQueries();
     toast.loading(`Pulling review comments for #${pr.number}…`, { id });
     const pulled = await pullPrComments(repoPath, pr).catch((error) => `Could not pull review comments: ${tauri.errorMessage(error)}`);
-    toDiff(prRefFor(pr));
+    nav.toDiff(prRefFor(pr));
     const details = [pulled ? `${pulled}.` : null, describeStash(stash)].filter(Boolean).join(' ');
     toast.success(`Checked out #${pr.number}`, { id, description: details || undefined });
   } catch (error) {
@@ -215,6 +213,11 @@ export async function checkoutPullRequest(repoPath: string, input: string, toDif
         .gitStashRestore(repoPath, stash.sha)
         .then(() => ' Your stashed changes were put back.')
         .catch(() => ` ${describeStash(stash)}`);
+    }
+    if (tauri.isAppError(error) && error.code === 'in_worktree') {
+      toast.info(`Opening the worktree of ${label}`, { id, description: `${shortPath(error.message)}${restored}` });
+      void openRepoAt(error.message, nav.navigate, { extra: { pr: input } });
+      return;
     }
     toast.error(`Could not check out ${label}`, { id, description: `${tauri.errorMessage(error)}${restored}` });
   } finally {

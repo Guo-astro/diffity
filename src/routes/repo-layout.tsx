@@ -56,7 +56,7 @@ function usePrCheckout() {
     const next = new URLSearchParams(params);
     next.delete('pr');
     setParams(next, { replace: true });
-    void checkoutPullRequest(nav.repoPath, pr, nav.toDiff);
+    void checkoutPullRequest(nav.repoPath, pr, nav);
   }, [pr, params, setParams, nav]);
 }
 
