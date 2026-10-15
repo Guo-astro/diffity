@@ -1,3 +1,4 @@
+import { hashString } from '../../lib/hash';
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { DiffHunk } from '@/lib/diff-parser';
@@ -90,12 +91,15 @@ interface GapExpansion {
 
 const syntaxCache = new Map<string, Map<string, SyntaxToken[]>>();
 
+/** Identifies the diff's lines by content: an edit that keeps the line count must not reuse the old tokens. */
 function diffShapeKey(file: DiffFile): string {
-  let length = 0;
+  const contents: string[] = [];
   for (const hunk of file.hunks) {
-    length += hunk.lines.length;
+    for (const line of hunk.lines) {
+      contents.push(line.content);
+    }
   }
-  return `${getFilePath(file)}:${length}:${file.additions}:${file.deletions}:${file.hunks[0]?.lines[0]?.content ?? ''}`;
+  return `${getFilePath(file)}:${contents.length}:${hashString(contents.join('\n'))}`;
 }
 
 function rememberSyntax(key: string, map: Map<string, SyntaxToken[]>) {
