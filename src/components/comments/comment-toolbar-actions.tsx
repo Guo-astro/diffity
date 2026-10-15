@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCopy } from '../../hooks/use-copy';
 import { useThreadNavigation } from '../../hooks/use-thread-navigation';
 import type { CommentThread } from './types';
@@ -13,6 +13,13 @@ interface CommentToolbarActionsProps {
   formatForCopy: () => string;
   /** false: only the count and prev/next; copy and delete-all live in the surrounding ⋯ menu. */
   extras?: boolean;
+  /** `]` and `[` step through the open comments (off where they mean something else, like the guide's chapters). */
+  keys?: boolean;
+}
+
+function isTyping(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
 }
 
 export function CommentToolbarActions(props: CommentToolbarActionsProps) {
@@ -22,11 +29,33 @@ export function CommentToolbarActions(props: CommentToolbarActionsProps) {
     onDeleteAllComments,
     formatForCopy,
     extras = true,
+    keys = false,
   } = props;
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const { copied, copy } = useCopy();
   const { currentIndex, count: unresolvedCount, goToPrevious, goToNext } = useThreadNavigation(threads, onScrollToThread);
+  const stepRef = useRef({ goToPrevious, goToNext });
+  stepRef.current = { goToPrevious, goToNext };
+
+  useEffect(() => {
+    if (!keys) {
+      return;
+    }
+    const handler = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || (event.key !== '[' && event.key !== ']') || isTyping(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      if (event.key === ']') {
+        stepRef.current.goToNext();
+        return;
+      }
+      stepRef.current.goToPrevious();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [keys]);
 
   if (unresolvedCount === 0) {
     return null;
@@ -43,14 +72,14 @@ export function CommentToolbarActions(props: CommentToolbarActionsProps) {
         <button
           onClick={goToPrevious}
           className="flex items-center px-1.5 text-text-secondary hover:bg-control-hover hover:text-text transition-colors cursor-pointer"
-          title="Previous open comment"
+          title="Previous open comment ([)"
         >
           <ChevronUpIcon size="sm" />
         </button>
         <button
           onClick={goToNext}
           className="flex items-center px-1.5 text-text-secondary hover:bg-control-hover hover:text-text transition-colors cursor-pointer"
-          title="Next open comment"
+          title="Next open comment (])"
         >
           <ChevronDownIcon size="sm" />
         </button>

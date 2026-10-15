@@ -32,7 +32,12 @@ export interface DiffViewHandle {
   /** Brings a file's card into the virtualised list (no flash); a no-op when it is already mounted. */
   revealFile: (path: string) => void;
   scrollToThread: (threadId: string, filePath: string) => void;
+  /** Moves to the next (1) or previous (-1) hunk, crossing into the neighbouring file when this one has no more. */
+  scrollToHunk: (direction: 1 | -1) => void;
 }
+
+/** Where a hunk lands: just under the sticky file header. */
+const HUNK_SCROLL_OFFSET = 40;
 
 const VIRTUALIZER_OVERSCAN = 3;
 const FILE_HEADER_HEIGHT = 56;
@@ -264,6 +269,31 @@ export function DiffView(props: DiffViewProps) {
   }, []);
 
   useImperativeHandle(handle, () => ({
+    scrollToHunk: (direction: 1 | -1) => {
+      const container = scrollElementRef.current;
+      if (!container) {
+        return;
+      }
+      const top = container.getBoundingClientRect().top + HUNK_SCROLL_OFFSET;
+      const hunks = Array.from(container.querySelectorAll<HTMLElement>('[data-hunk]'));
+      const offsets = hunks.map((hunk) => hunk.getBoundingClientRect().top - top);
+      const index = direction > 0
+        ? offsets.findIndex((offset) => offset > 2)
+        : offsets.findLastIndex((offset) => offset < -2);
+      if (index >= 0) {
+        container.scrollTop += offsets[index];
+        return;
+      }
+      const edge = direction > 0 ? hunks[hunks.length - 1] : hunks[0];
+      const path = edge?.closest<HTMLElement>('[id^="file-"]')?.id.slice('file-'.length);
+      const current = path ? diff.files.findIndex((f) => getFilePath(f) === decodeURIComponent(path)) : -1;
+      const next = diff.files[current + direction];
+      if (next) {
+        scrollTargetRef.current = getFilePath(next);
+        virtualizer.scrollToIndex(current + direction, { align: 'start' });
+        settleScrollToElement(`#file-${CSS.escape(encodeURIComponent(getFilePath(next)))}`, 'start');
+      }
+    },
     scrollToFile: (path: string) => {
       const index = diff.files.findIndex((f) => getFilePath(f) === path);
       if (index >= 0) {

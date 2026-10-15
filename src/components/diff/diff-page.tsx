@@ -23,7 +23,7 @@ import { openShortcuts } from '../../lib/ui-store';
 import { useDiffStaleness } from '../../hooks/use-diff-staleness';
 import { type ViewMode, getFilePath, getAutoCollapsedPaths, deferReason } from '../../lib/diff-utils';
 import { buildFirstOpenThreadByFile, buildThreadCountsByFile } from '../../lib/comment-navigation';
-import { focusFileElement, focusThreadElement, getHunkHeaders, scrollToElement } from '../../lib/dom-utils';
+import { focusFileElement, focusThreadElement } from '../../lib/dom-utils';
 import { setFocusThread, useUi } from '../../lib/ui-store';
 import { orderLikeSidebar } from '../../lib/file-tree';
 import { contentsLabel, copyFileContents, copyFileDiff, copyRelativePath, handleCopyShortcut } from '../../lib/file-copy';
@@ -366,25 +366,8 @@ export function DiffPage(props: DiffPageProps) {
     diffViewRef.current?.scrollToFile(path);
   }, [diff, guideOpen, chapters, step, activeFile, revealInGuide]);
 
-  const navigateHunk = useCallback((direction: number) => {
-    const hunks = getHunkHeaders();
-    if (hunks.length === 0) {
-      return;
-    }
-    let target = direction > 0 ? hunks[0] : hunks[hunks.length - 1];
-
-    for (let i = 0; i < hunks.length; i++) {
-      const rect = hunks[i].getBoundingClientRect();
-      if (direction > 0 && rect.top > 100) {
-        target = hunks[i];
-        break;
-      }
-      if (direction < 0 && rect.top < -10) {
-        target = hunks[i];
-      }
-    }
-
-    scrollToElement(target);
+  const navigateHunk = useCallback((direction: 1 | -1) => {
+    diffViewRef.current?.scrollToHunk(direction);
   }, []);
 
   useKeyboard({
@@ -803,6 +786,7 @@ export function DiffPage(props: DiffPageProps) {
                     onDeleteAllComments={commentActions.deleteAllThreads}
                     formatForCopy={() => formatThreadsForCopy(threads, diff, refParam)}
                     extras={false}
+                    keys={!guideOpen}
                   />
                 }
                 comments={{

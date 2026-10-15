@@ -221,7 +221,7 @@ export function HunkBlock(props: HunkBlockProps) {
 
   return (
     <>
-      <tbody>
+      <tbody data-hunk>
         <HunkHeader hunk={hunk} expandControls={expandControls} />
         {expansionRows}
       </tbody>

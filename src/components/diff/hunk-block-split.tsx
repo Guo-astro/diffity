@@ -427,7 +427,7 @@ export function HunkBlockSplit(props: HunkBlockSplitProps) {
 
   return (
     <>
-      <tbody>
+      <tbody data-hunk>
         <HunkHeader hunk={hunk} expandControls={expandControls} />
         {expansionRows}
       </tbody>

@@ -90,6 +90,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     title: 'Comments',
     shortcuts: [
       { id: 'comments', label: 'All comments in every view', keys: ['C'] },
+      { label: 'Next or previous open comment', keys: [']', '['] },
       { label: 'Comment on a line, drag for a range', keys: ['Click'] },
       { label: 'Submit the comment', keys: [chord('↵')] },
       { label: 'Cancel the comment', keys: ['Esc'] },
