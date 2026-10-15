@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
-use crate::core::types::{Branch, Commit, GitStatus, OverviewFile, ProjectData, RecentRepo, RepoInfo};
+use crate::core::types::{Branch, Commit, GitStatus, OverviewFile, ProjectData, RecentRepo, RepoInfo, Worktree};
 use crate::core::watch::WatcherRegistry;
 use crate::core::diffignore::DiffIgnore;
 use crate::core::{editor, git, AppError};
@@ -108,6 +108,11 @@ pub async fn list_commits(
 #[tauri::command]
 pub async fn list_branches(repo_path: String) -> Result<Vec<Branch>, AppError> {
     blocking(move || git::list_branches(Path::new(&repo_path))).await
+}
+
+#[tauri::command]
+pub async fn list_worktrees(repo_path: String) -> Result<Vec<Worktree>, AppError> {
+    blocking(move || git::list_worktrees(Path::new(&repo_path))).await
 }
 
 #[tauri::command]

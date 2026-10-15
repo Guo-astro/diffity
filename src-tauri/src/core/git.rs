@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use crate::core::error::{AppError, Result};
-use crate::core::types::{Branch, Commit, GitStatus, OverviewFile, OverviewStatus, RepoInfo};
+use crate::core::types::{Branch, Commit, GitStatus, OverviewFile, OverviewStatus, RepoInfo, Worktree};
 
 pub const EMPTY_TREE_SHA: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
@@ -405,6 +405,45 @@ pub fn list_branches(repo: &Path) -> Result<Vec<Branch>> {
     }
     branches.sort_by_key(|b| (!b.is_current, b.is_remote));
     Ok(branches)
+}
+
+/// Working trees that share `repo`'s repository, the main one first. Bare, prunable and missing ones are left out.
+pub fn list_worktrees(repo: &Path) -> Result<Vec<Worktree>> {
+    require_repo(repo)?;
+    let out = run(repo, &["worktree", "list", "--porcelain"])?;
+    let current = run_trim(repo, &["rev-parse", "--show-toplevel"])
+        .ok()
+        .and_then(|top| PathBuf::from(top).canonicalize().ok());
+    Ok(parse_worktrees(&out, current.as_deref()))
+}
+
+fn parse_worktrees(out: &str, current: Option<&Path>) -> Vec<Worktree> {
+    let mut worktrees = Vec::new();
+    for (index, block) in out.split("\n\n").filter(|block| !block.trim().is_empty()).enumerate() {
+        let mut path = None;
+        let mut head = None;
+        let mut branch = None;
+        let mut skip = false;
+        for line in block.lines() {
+            let (key, value) = line.split_once(' ').unwrap_or((line, ""));
+            match key {
+                "worktree" => path = Some(value.to_string()),
+                "HEAD" => head = Some(value.get(..7).unwrap_or(value).to_string()),
+                "branch" => branch = Some(value.strip_prefix("refs/heads/").unwrap_or(value).to_string()),
+                "bare" | "prunable" => skip = true,
+                _ => {}
+            }
+        }
+        let Some(path) = path else {
+            continue;
+        };
+        if skip || !Path::new(&path).is_dir() {
+            continue;
+        }
+        let is_current = current.is_some_and(|current| Path::new(&path).canonicalize().is_ok_and(|p| p == current));
+        worktrees.push(Worktree { path, branch, head, is_main: index == 0, is_current });
+    }
+    worktrees
 }
 
 pub fn status(repo: &Path) -> Result<GitStatus> {

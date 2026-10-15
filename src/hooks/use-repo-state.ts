@@ -66,6 +66,15 @@ export function useBranches() {
   });
 }
 
+export function useWorktrees() {
+  return useQuery({
+    queryKey: ['worktrees'],
+    queryFn: () => tauri.listWorktrees(getRepoPath()),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
 /** In a fork, `upstream` holds the real base; your fork's `origin` copy can be stale. */
 const BASE_CANDIDATES = [
   'upstream/main', 'upstream/master', 'origin/main', 'origin/master', 'main', 'master',

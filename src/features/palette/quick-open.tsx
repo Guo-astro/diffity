@@ -128,6 +128,14 @@ function QuickOpenBody() {
   const recent = useRecentRepos();
   const { data: roots } = useQuery({ queryKey: ['quick-open-roots'], queryFn: tauri.quickOpenRoots, staleTime: 60_000 });
   const home = roots?.home ?? '';
+  const recentPaths = recent.repos.map((repo) => repo.path);
+  const { data: worktreeLists } = useQuery({
+    queryKey: ['recent-worktrees', recentPaths],
+    queryFn: () => Promise.all(recentPaths.map((path) => tauri.listWorktrees(path).catch(() => []))),
+    enabled: recentPaths.length > 0,
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
+  });
   const pathMode = input.startsWith('~') || input.startsWith('/') || input.includes('/') && !input.includes('://') && !input.startsWith('git@');
   const prUrl = parsePrUrl(input);
   const cloneUrl = !prUrl ? repoUrl(input) : null;
@@ -299,6 +307,32 @@ function QuickOpenBody() {
         },
       });
     }
+    const seen = new Set(recentPaths);
+    for (const trees of worktreeLists ?? []) {
+      const repoName = trees.find((tree) => tree.isMain)?.path.split('/').pop() ?? '';
+      for (const tree of trees) {
+        if (seen.has(tree.path)) {
+          continue;
+        }
+        seen.add(tree.path);
+        const name = tree.path.split('/').pop() ?? tree.path;
+        const label = tree.branch ?? tree.head ?? 'detached';
+        if (needle && !`${name} ${tree.path} ${label}`.toLowerCase().includes(needle)) {
+          continue;
+        }
+        list.push({
+          key: `worktree:${tree.path}`,
+          icon: <GitBranchIcon size="sm" className="text-text-secondary" />,
+          title: <>{name}{repoName && repoName !== name && <span className="text-text-muted"> · {repoName}</span>}</>,
+          detail: <span className="font-mono text-[11px] text-text-muted">{label}</span>,
+          complete: `${tildify(tree.path, home)}/`,
+          run: () => {
+            closeQuickOpen();
+            void openRepoAt(tree.path, navigate);
+          },
+        });
+      }
+    }
     if (!needle) {
       for (const root of [home, ...(roots?.roots ?? [])].filter(Boolean)) {
         list.push({
@@ -312,12 +346,13 @@ function QuickOpenBody() {
       }
     }
     return list;
-  }, [clone, input, suggestions, prUrl, cloneUrl, typingPath, recent.repos, roots, home, navigate]);
+  }, [clone, input, suggestions, prUrl, cloneUrl, typingPath, recent.repos, recentPaths, worktreeLists, roots, home, navigate]);
 
   const sections = clone || typingPath || prUrl || cloneUrl
     ? [{ label: clone ? 'Choose where to clone' : prUrl || cloneUrl ? 'GitHub' : suggestions?.dir ? tildify(suggestions.dir, home) : 'Folders', rows }]
     : [
       { label: 'Recent projects', rows: rows.filter((row) => row.key.startsWith('recent:')) },
+      { label: 'Worktrees', rows: rows.filter((row) => row.key.startsWith('worktree:')) },
       { label: 'Start from', rows: rows.filter((row) => row.key.startsWith('root:')) },
     ].filter((section) => section.rows.length > 0);
 

@@ -90,6 +90,7 @@ export function useRepoEvents(repoPath: string) {
         queryClient.invalidateQueries({ queryKey: ['git-status'] });
         queryClient.invalidateQueries({ queryKey: ['repo-meta'] });
         queryClient.invalidateQueries({ queryKey: ['branches'] });
+        queryClient.invalidateQueries({ queryKey: ['worktrees'] });
         queryClient.invalidateQueries({ queryKey: ['repo-threads'] });
         queryClient.invalidateQueries({ queryKey: ['repo-info'] });
       })

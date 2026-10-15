@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router';
 import { useRepoNav } from '../../hooks/use-repo';
-import { useBranches, useGitHubAuth, useGitHubPr, useHasGitHubRemote } from '../../hooks/use-repo-state';
+import { useBranches, useGitHubAuth, useGitHubPr, useHasGitHubRemote, useWorktrees } from '../../hooks/use-repo-state';
+import { openRepoAt, shortPath } from '../welcome/recent-repos';
 import { cn } from '../../lib/cn';
 import { openSettingsAt } from '../../lib/ui-store';
 import type { Branch, PullRequest } from '../../lib/types';
@@ -45,7 +47,9 @@ function prMatches(pr: PullRequest, needle: string) {
 function BranchSwitcherPanel(props: { current: string | null; onDone: () => void }) {
   const { current, onDone } = props;
   const nav = useRepoNav();
+  const navigate = useNavigate();
   const { data: branches, isLoading } = useBranches();
+  const { data: worktrees } = useWorktrees();
   const hasGitHubRemote = useHasGitHubRemote();
   const { data: auth } = useGitHubAuth();
   const { details } = useGitHubPr();
@@ -62,6 +66,16 @@ function BranchSwitcherPanel(props: { current: string | null; onDone: () => void
       remote: all.filter((branch) => branch.isRemote && !localNames.has(localNameFor(branch.name, true)) && matchesText(branch.name, needle)),
     };
   }, [branches, needle]);
+
+  const elsewhere = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const tree of worktrees ?? []) {
+      if (tree.branch && !tree.isCurrent) {
+        map.set(tree.branch, tree.path);
+      }
+    }
+    return map;
+  }, [worktrees]);
 
   const pullRequests = (prs.data ?? []).filter((pr) => prMatches(pr, needle));
   const prInput = parsePrInput(needle);
@@ -115,26 +129,40 @@ function BranchSwitcherPanel(props: { current: string | null; onDone: () => void
           </div>
         )}
         {!isLoading && local.length === 0 && <div className="h-8 px-2.5 flex items-center text-xs text-text-secondary">No matching branches</div>}
-        {local.map((branch) => (
-          <Row
-            key={branch.name}
-            icon={<GitBranchIcon className="w-3.5 h-3.5" />}
-            title={<span className="font-mono text-xs">{branch.name}</span>}
-            selected={branch.name === current}
-            meta={(branch.ahead > 0 || branch.behind > 0) && (
-              <span className="tabular-nums">
-                {branch.ahead > 0 && `↑${branch.ahead}`} {branch.behind > 0 && `↓${branch.behind}`}
-              </span>
-            )}
-            onClick={() => {
-              if (branch.name === current) {
-                onDone();
-                return;
+        {local.map((branch) => {
+          const worktree = elsewhere.get(branch.name);
+          return (
+            <Row
+              key={branch.name}
+              icon={<GitBranchIcon className="w-3.5 h-3.5" />}
+              title={<span className="font-mono text-xs">{branch.name}</span>}
+              selected={branch.name === current}
+              tooltip={worktree ? `Checked out in ${shortPath(worktree)} — opens that worktree` : undefined}
+              meta={
+                <>
+                  {(branch.ahead > 0 || branch.behind > 0) && (
+                    <span className="tabular-nums">
+                      {branch.ahead > 0 && `↑${branch.ahead}`} {branch.behind > 0 && `↓${branch.behind}`}
+                    </span>
+                  )}
+                  {worktree && <span className="px-1.5 rounded bg-fill text-[11px] text-text-secondary">worktree</span>}
+                </>
               }
-              pickBranch(branch);
-            }}
-          />
-        ))}
+              onClick={() => {
+                if (branch.name === current) {
+                  onDone();
+                  return;
+                }
+                if (worktree) {
+                  onDone();
+                  void openRepoAt(worktree, navigate);
+                  return;
+                }
+                pickBranch(branch);
+              }}
+            />
+          );
+        })}
 
         {remote.length > 0 && <div className={sectionClass}>Remote branches</div>}
         {remote.slice(0, needle ? 50 : 12).map((branch) => (

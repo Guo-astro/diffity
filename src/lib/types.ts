@@ -88,6 +88,14 @@ export interface Branch {
   behind: number;
 }
 
+export interface Worktree {
+  path: string;
+  branch: string | null;
+  head: string | null;
+  isMain: boolean;
+  isCurrent: boolean;
+}
+
 export interface GitStatus {
   branch: string | null;
   upstream: string | null;

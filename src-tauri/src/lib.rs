@@ -196,6 +196,7 @@ pub fn run() {
             commands::repo::unwatch_repo,
             commands::repo::list_commits,
             commands::repo::list_branches,
+            commands::repo::list_worktrees,
             commands::repo::git_status,
             commands::repo::repo_overview,
             commands::repo::open_in_editor,

@@ -296,3 +296,39 @@ fn overview_reports_staged_modified_and_untracked() {
     let files = git::overview(&empty.path).unwrap();
     assert_eq!(files[0].status, OverviewStatus::Staged);
 }
+
+#[test]
+fn lists_worktrees() {
+    let repo = Repo::with_commit();
+    let parent = tempfile::tempdir().unwrap();
+    let parent = parent.path().canonicalize().unwrap();
+    let feature = parent.join("feature");
+    let detached = parent.join("detached");
+    let gone = parent.join("gone");
+    common::git(&repo.path, &["worktree", "add", "-q", "-b", "feature", feature.to_str().unwrap()]);
+    common::git(&repo.path, &["worktree", "add", "-q", "--detach", detached.to_str().unwrap()]);
+    common::git(&repo.path, &["worktree", "add", "-q", "-b", "gone", gone.to_str().unwrap()]);
+    std::fs::remove_dir_all(&gone).unwrap();
+
+    let list = git::list_worktrees(&repo.path).unwrap();
+    assert_eq!(list.len(), 3);
+    assert_eq!(list[0].path, repo.path.to_string_lossy());
+    assert!(list[0].is_main && list[0].is_current);
+    assert_eq!(list[0].branch.as_deref(), Some("main"));
+    let find = |list: &[diffity_desktop_lib::core::types::Worktree], path: &std::path::Path| {
+        list.iter().find(|tree| tree.path == path.to_string_lossy()).cloned().unwrap()
+    };
+    let on_feature = find(&list, &feature);
+    assert_eq!(on_feature.branch.as_deref(), Some("feature"));
+    assert!(!on_feature.is_main && !on_feature.is_current);
+    let on_detached = find(&list, &detached);
+    assert!(on_detached.branch.is_none());
+    assert_eq!(on_detached.head.as_ref().map(String::len), Some(7));
+
+    let from_feature = git::list_worktrees(&feature).unwrap();
+    assert!(!from_feature[0].is_current);
+    assert!(find(&from_feature, &feature).is_current);
+
+    let plain = tempfile::tempdir().unwrap();
+    assert_eq!(git::list_worktrees(plain.path()).unwrap_err().code, "not_a_repo");
+}

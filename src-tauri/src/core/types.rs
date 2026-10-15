@@ -174,6 +174,19 @@ pub struct Branch {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
+pub struct Worktree {
+    pub path: String,
+    /// The checked-out branch, `None` when detached.
+    pub branch: Option<String>,
+    pub head: Option<String>,
+    /// The repository's main working tree rather than one added with `git worktree add`.
+    pub is_main: bool,
+    /// The working tree the listing was asked for.
+    pub is_current: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct GitStatus {
     pub branch: Option<String>,
     pub upstream: Option<String>,

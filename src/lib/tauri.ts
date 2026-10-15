@@ -7,6 +7,7 @@ import type {
   AppError,
   AuthorType,
   Branch,
+  Worktree,
   Chat,
   ChatMessage,
   Commit,
@@ -74,6 +75,7 @@ export const unwatchRepo = (repoPath: string) => invoke<void>('unwatch_repo', { 
 export const listCommits = (repoPath: string, count: number, skip: number, search?: string | null) =>
   invoke<Commit[]>('list_commits', { repoPath, count, skip, search: search ?? null });
 export const listBranches = (repoPath: string) => invoke<Branch[]>('list_branches', { repoPath });
+export const listWorktrees = (repoPath: string) => invoke<Worktree[]>('list_worktrees', { repoPath });
 export const gitStatus = (repoPath: string) => invoke<GitStatus>('git_status', { repoPath });
 export const repoOverview = (repoPath: string) => invoke<OverviewFile[]>('repo_overview', { repoPath });
 export const openInEditor = (repoPath: string, path: string, line?: number | null, editor?: string | null) =>
