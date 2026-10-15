@@ -87,7 +87,7 @@ Before you say a check is not needed, a value is safe, or an input cannot happen
 Comments show in a small box next to the code, and the reader is busy. Write in simple English: short sentences, common words, no filler.
 
 - Say what is wrong and what to do, in 1-3 sentences (about 50 words at most). Lead with the problem.
-- Add a code suggestion only for a small fix, and only when it is clearer than words. For larger fixes, name the approach in one sentence.
+- When the fix is a small change to the commented lines, add a suggested change: a ```suggestion block with the full replacement for `startLine`..`endLine` on the new side, exact indentation included, and nothing else in the block. The user applies it with one click. Use it only on `side: "new"`, and only when you are sure the replacement is correct. For larger fixes, name the approach in one sentence.
 - Cite `path:line` instead of quoting code or walking through it. Do not explain things the author already knows.
 - For a project-rule violation, quote the rule in a few words.
 

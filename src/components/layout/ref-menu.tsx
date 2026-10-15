@@ -6,10 +6,11 @@ import { useBaseBranch, useBranches, useGitHubPr, useGitStatus, useHasGitHubRemo
 import { openPullRequests } from '../../lib/ui-store';
 import { commitRef, descriptionForRef, fetchCommits, isWorkingTreeRef, parseCommitRef, type Commit, type GitHubDetails } from '../../lib/api';
 import { cn } from '../../lib/cn';
-import { buttonOutline, inputField } from '../ui/button-styles';
+import { buttonOutline } from '../ui/button-styles';
+import { PopoverSearch } from '../ui/popover-search';
 import { Spinner } from '../icons/spinner';
 import { useCommitDetails } from './diff-context-bar';
-import { CheckIcon, ChevronDownIcon, GitBranchIcon, GitCommitIcon, GitCompareIcon, GitPullRequestIcon, HomeIcon, PencilIcon, SearchIcon, XIcon } from '../ui/icon';
+import { CheckIcon, ChevronDownIcon, GitBranchIcon, GitCommitIcon, GitCompareIcon, GitPullRequestIcon, HomeIcon, PencilIcon, XIcon } from '../ui/icon';
 import { Popover } from '../ui/popover';
 import { Skeleton, useElapsed, useRevealClass } from '../ui/skeleton';
 import { PrRefChip } from '../../features/pr/pr-chip';
@@ -303,26 +304,16 @@ function RefMenuPanel(props: { diffRef: string; branch: string | null; onPick: (
 
   return (
     <div className="max-h-[min(560px,75vh)] flex flex-col font-sans overflow-hidden">
-      <div className="shrink-0 p-1.5 border-b border-overlay-border">
-        <div className="relative">
-          <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
-          <input
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            autoFocus
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && trimmed && looksLikeRef(trimmed)) {
-                onPick(trimmed);
-              }
-            }}
-            placeholder="Search commits, or type a sha or range"
-            className={cn(inputField, 'pl-8 border-transparent bg-transparent hover:border-transparent focus:border-transparent focus:hover:border-transparent')}
-          />
-        </div>
-      </div>
+      <PopoverSearch
+        value={search}
+        onChange={setSearch}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && trimmed && looksLikeRef(trimmed)) {
+            onPick(trimmed);
+          }
+        }}
+        placeholder="Search commits, or type a sha or range"
+      />
       <div className="flex-1 min-h-0 overflow-y-auto p-1">
         {trimmed && looksLikeRef(trimmed) && (
           <Item

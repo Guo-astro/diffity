@@ -103,6 +103,7 @@ export function renderLineWithComments(
         currentAuthor={props.currentAuthor}
         onSubmit={props.onAddThread}
         onCancel={props.onCancelPending}
+        suggestionCode={props.getOriginalCode?.(props.pendingSelection.side, props.pendingSelection.startLine, props.pendingSelection.endLine)}
       />
     );
   }

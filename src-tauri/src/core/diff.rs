@@ -68,6 +68,7 @@ fn root_commit_plan(r: &str, sha: String) -> DiffPlan {
             r#ref: r.to_string(),
             label: r.to_string(),
             can_revert: false,
+            can_edit: false,
             base_sha: None,
             head_sha: Some(sha.clone()),
         },
@@ -97,6 +98,7 @@ fn range_plan(repo: &Path, r: &str, left: &str, right: &str) -> Result<DiffPlan>
             r#ref: r.to_string(),
             label: r.to_string(),
             can_revert: false,
+            can_edit: false,
             base_sha: Some(base.clone()),
             head_sha: Some(right_sha.clone()),
         },
@@ -117,6 +119,16 @@ fn range_plan(repo: &Path, r: &str, left: &str, right: &str) -> Result<DiffPlan>
 ///
 /// Repos without commits diff against the empty tree.
 pub fn plan(repo: &Path, r: &str) -> Result<DiffPlan> {
+    let mut plan = build_plan(repo, r)?;
+    plan.resolved.can_edit = match &plan.new {
+        Source::WorkTree => true,
+        Source::Commit(sha) => git::head_sha(repo)?.as_deref() == Some(sha.as_str()),
+        _ => false,
+    };
+    Ok(plan)
+}
+
+fn build_plan(repo: &Path, r: &str) -> Result<DiffPlan> {
     git::require_repo(repo)?;
     let r = r.trim();
     if r.is_empty() {
@@ -130,6 +142,7 @@ pub fn plan(repo: &Path, r: &str) -> Result<DiffPlan> {
             r#ref: r.to_string(),
             label: label.to_string(),
             can_revert: true,
+            can_edit: false,
             base_sha: head.clone(),
             head_sha: head.clone(),
         },
@@ -179,6 +192,7 @@ pub fn plan(repo: &Path, r: &str) -> Result<DiffPlan> {
             r#ref: r.to_string(),
             label: format!("Changes from {r}"),
             can_revert: false,
+            can_edit: false,
             base_sha: Some(base.clone()),
             head_sha: Some(head),
         },

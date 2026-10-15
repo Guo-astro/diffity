@@ -651,7 +651,7 @@ dialog {
   transition: opacity 0.2s;
 }
 
-/* Toasts: fixed width, text wraps, actions on their own row; swipe right to dismiss. */
+/* Toasts: fixed width, text wraps, actions sit at the end of the row; swipe right to dismiss. */
 [data-sonner-toaster] {
   --width: 360px;
 }
@@ -659,10 +659,8 @@ dialog {
 [data-sonner-toast][data-styled='true'] {
   -webkit-user-select: none;
   user-select: none;
-  flex-wrap: wrap;
   align-items: flex-start;
   column-gap: 8px;
-  row-gap: 8px;
 }
 
 [data-sonner-toast][data-styled='true'] [data-icon] {
@@ -671,7 +669,8 @@ dialog {
 }
 
 [data-sonner-toast][data-styled='true'] [data-content] {
-  flex: 1 1 calc(100% - 28px);
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 [data-sonner-toast][data-styled='true'] [data-title],
@@ -693,6 +692,8 @@ dialog {
 
 [data-sonner-toast][data-styled='true'] [data-button] {
   margin: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 [data-sonner-toast][data-styled='true'] [data-action] {
@@ -701,10 +702,6 @@ dialog {
 
 [data-sonner-toast][data-styled='true'] [data-cancel] {
   order: 2;
-}
-
-[data-sonner-toast][data-styled='true'] [data-icon] ~ [data-action] {
-  margin-left: 24px;
 }
 
 [data-find-paint='a'] [data-find-line] {

@@ -30,6 +30,7 @@ export interface ResolvedRef {
   ref: string;
   label: string;
   canRevert: boolean;
+  canEdit: boolean;
   baseSha: string | null;
   headSha: string | null;
 }

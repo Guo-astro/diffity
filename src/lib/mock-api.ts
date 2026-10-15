@@ -278,6 +278,7 @@ function diffFor(ref: string): DiffResult {
       ref,
       label: ref === 'work' ? 'Uncommitted changes' : ref === 'staged' ? 'Staged changes' : ref === 'unstaged' ? 'Unstaged changes' : ref,
       canRevert: ref === 'work' || ref === 'unstaged' || ref === 'staged',
+      canEdit: ref === 'work' || ref === 'unstaged',
       baseSha: 'a1b2c3d',
       headSha: mockHeadSha(ref),
     },

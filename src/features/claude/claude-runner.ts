@@ -15,6 +15,7 @@ import { agentByName, agentMeta, type AgentMeta } from './agents';
 import { mentionedAgent } from '../../lib/mentions';
 import { finishActivity, recordComments, recordEvent, startActivity } from './run-activity';
 import { isGuideOnScreen } from '../guide/guide-on-screen';
+import { repoBase } from '../../hooks/use-repo';
 
 export type ClaudeAction = Extract<
   AgentAction,
@@ -416,8 +417,17 @@ export function openRunResult(repoPath: string, ref: string | null, threadIds: s
   goToThread(repoPath, { ref, threadId: onDiff[0] ?? null });
 }
 
+/** Whether the diff of `ref` is the view on screen, so a message about it need not name it. */
+function diffOnScreen(repoPath: string, ref: string): boolean {
+  const [path, query = ''] = window.location.hash.replace(/^#/, '').split('?');
+  if (path !== `${repoBase(repoPath)}/diff`) {
+    return false;
+  }
+  return (new URLSearchParams(query).get('ref') || 'work') === ref;
+}
+
 function finishedMessage(run: ClaudeRun, added: number, name: string): string {
-  const where = run.ref ? ` on ${runViewLabel(run.context.repoPath, run.ref)}` : '';
+  const where = run.ref && !diffOnScreen(run.context.repoPath, run.ref) ? ` on ${runViewLabel(run.context.repoPath, run.ref)}` : '';
   if (run.action.kind === 'review') {
     if (added === 0) {
       return `${name} finished reviewing${where} — no comments`;

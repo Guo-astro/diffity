@@ -76,6 +76,9 @@ pub struct ResolvedRef {
     pub r#ref: String,
     pub label: String,
     pub can_revert: bool,
+    /// The new side is what is on disk (the working tree, or the checked-out HEAD), so suggestions can be applied.
+    #[serde(default)]
+    pub can_edit: bool,
     pub base_sha: Option<String>,
     pub head_sha: Option<String>,
 }

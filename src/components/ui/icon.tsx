@@ -407,6 +407,8 @@ export const XIcon = softStroke(() => <path d="M6 6l12 12M18 6 6 18" fill="none"
 
 export const PlusIcon = softStroke(() => <path d="M12 4.5v15M4.5 12h15" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
 
+export const PlusMinusIcon = softStroke(() => <path d="M12 3.5v9M7.5 8h9M7.5 19h9" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
+
 export const MinusIcon = softStroke(() => <path d="M4.5 12h15" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
 
 export const WrapIcon = softStroke(() => <path d="M4 6h16M4 12h12.5a3.5 3.5 0 0 1 0 7H13m2-2.2L12.8 19l2.2 2.2M4 18h5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />);
@@ -432,6 +434,10 @@ export const ChevronDownIcon = softStroke(() => <path d="M6 9l6 6 6-6" fill="non
 export const ChevronRightIcon = softStroke(() => <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
 
 export const ChevronUpIcon = softStroke(() => <path d="M6 15l6-6 6 6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
+
+export const UnfoldIcon = softStroke(() => <path d="M8 8.5l4-4 4 4M8 15.5l4 4 4-4M12 4.5v15" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
+
+export const FoldIcon = softStroke(() => <path d="M8 4.5l4 4 4-4M8 19.5l4-4 4 4M5 12h14" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
 
 export const ChevronLeftIcon = softStroke(() => <path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />);
 

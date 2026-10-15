@@ -6,12 +6,12 @@ import { openRepoAt, shortPath } from '../welcome/recent-repos';
 import { cn } from '../../lib/cn';
 import { openSettingsAt } from '../../lib/ui-store';
 import type { Branch, PullRequest } from '../../lib/types';
-import { inputField } from '../../components/ui/button-styles';
+import { PopoverSearch } from '../../components/ui/popover-search';
 import { Spinner } from '../../components/icons/spinner';
 import { ChecksStatus, PrStateIcon } from './pr-meta';
 import { checkoutPullRequest, labelFor, localNameFor, parsePrInput, switchBranch, useCheckoutState } from './pr-checkout';
 import { usePullRequests } from './pull-requests-dialog';
-import { CheckIcon, ChevronUpDownIcon, GitBranchIcon, GitPullRequestIcon, SearchIcon } from '../../components/ui/icon';
+import { CheckIcon, ChevronUpDownIcon, GitBranchIcon, GitPullRequestIcon } from '../../components/ui/icon';
 import { Popover } from '../../components/ui/popover';
 
 const sectionClass = 'px-2.5 pt-2.5 pb-1 text-[11px] font-medium text-text-secondary';
@@ -92,26 +92,16 @@ function BranchSwitcherPanel(props: { current: string | null; onDone: () => void
 
   return (
     <div className="max-h-[min(460px,70vh)] flex flex-col font-sans overflow-hidden text-text">
-      <div className="shrink-0 p-2 border-b border-overlay-border">
-        <div className="relative">
-          <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted pointer-events-none" />
-          <input
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            autoFocus
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && prInput && prsEnabled) {
-                pickPr(prInput);
-              }
-            }}
-            placeholder={prsEnabled ? 'Branch, #PR or PR URL' : 'Switch branch'}
-            className={cn(inputField, 'pl-8')}
-          />
-        </div>
-      </div>
+      <PopoverSearch
+        value={search}
+        onChange={setSearch}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && prInput && prsEnabled) {
+            pickPr(prInput);
+          }
+        }}
+        placeholder={prsEnabled ? 'Branch, #PR or PR URL' : 'Switch branch'}
+      />
       <div className="flex-1 min-h-0 overflow-y-auto p-1">
         {prInput && prsEnabled && (
           <Row

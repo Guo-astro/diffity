@@ -102,6 +102,8 @@ export const diffFingerprint = (repoPath: string, ref: string, showIgnored = fal
   invoke<string>('diff_fingerprint', { repoPath, ref, showIgnored });
 export const revertFile = (repoPath: string, path: string) => invoke<void>('revert_file', { repoPath, path });
 export const revertHunk = (repoPath: string, patch: string) => invoke<void>('revert_hunk', { repoPath, patch });
+export const applySuggestion = (repoPath: string, path: string, startLine: number, endLine: number, expected: string, replacement: string) =>
+  invoke<{ startLine: number; endLine: number }>('apply_suggestion', { repoPath, path, startLine, endLine, expected, replacement });
 
 // files
 export const listTree = (repoPath: string) => invoke<TreeEntry[]>('list_tree', { repoPath });

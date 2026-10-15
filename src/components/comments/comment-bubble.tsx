@@ -36,7 +36,7 @@ export function formatRelativeTime(dateStr: string): string {
   return date.toLocaleDateString();
 }
 
-function AuthorAvatar(props: { name: string; avatarUrl?: string; type: 'user' | 'agent' | 'github' }) {
+export function AuthorAvatar(props: { name: string; avatarUrl?: string; type: 'user' | 'agent' | 'github' }) {
   const { name, avatarUrl, type } = props;
 
   if (avatarUrl) {

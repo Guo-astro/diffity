@@ -13,7 +13,7 @@ import type { CommentThread } from '../../components/comments/types';
 import { cn } from '../../lib/cn';
 import { toast } from 'sonner';
 import { useReviewState } from '../review/review-state';
-import { ChevronDownIcon, CopyIcon, InfoIcon, SparkleIcon, StopIcon } from '../../components/ui/icon';
+import { ChevronDownIcon, CopyIcon, SparkleIcon, StopIcon } from '../../components/ui/icon';
 import { Popover } from '../../components/ui/popover';
 import { Spinner } from '../../components/icons/spinner';
 import { useRunPick } from './model-setting';
@@ -111,19 +111,16 @@ function NotCheckedOut(props: { agent: string; onCopy?: () => void; onReview?: (
   const { agent, onCopy, onReview } = props;
 
   return (
-    <div className="p-4 pt-3">
-      <div className="flex gap-2.5 px-3 py-2.5 rounded-md border border-control-border bg-fill/50">
-        <InfoIcon size="sm" className="mt-0.5 text-text-muted" />
-        <div className="min-w-0 text-xs leading-5 text-text-secondary">
-          <p><span className="font-medium text-text">{agent} can only edit your current code.</span> These changes aren’t checked out, so {agent} can review them but not change them.</p>
-          {(onCopy || onReview) && (
-            <div className="flex gap-1.5 mt-2">
-              {onCopy && <button type="button" onClick={onCopy} className={cn(buttonOutline, 'h-6 px-2 text-xs')}><CopyIcon size="xs" />Copy comments</button>}
-              {onReview && <button type="button" onClick={onReview} className={cn(buttonOutline, 'h-6 px-2 text-xs')}>Review instead</button>}
-            </div>
-          )}
+    <div className="px-4 py-3.5">
+      <p className="text-xs leading-5 text-text-secondary">
+        <span className="font-medium text-text">{agent} can only edit your current code.</span> These changes aren’t checked out, so {agent} can review them but not change them.
+      </p>
+      {(onCopy || onReview) && (
+        <div className="flex gap-1.5 mt-2.5">
+          {onCopy && <button type="button" onClick={onCopy} className={cn(buttonOutline, 'h-6 px-2 text-xs')}><CopyIcon size="xs" />Copy comments</button>}
+          {onReview && <button type="button" onClick={onReview} className={cn(buttonOutline, 'h-6 px-2 text-xs')}>Review instead</button>}
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -132,16 +129,13 @@ function NoComments(props: { agent: string; onReview?: () => void }) {
   const { agent, onReview } = props;
 
   return (
-    <div className="p-4 pt-3">
-      <div className="flex gap-2.5 px-3 py-2.5 rounded-md border border-control-border bg-fill/50">
-        <InfoIcon size="sm" className="mt-0.5 text-text-muted" />
-        <div className="min-w-0 text-xs leading-5 text-text-secondary">
-          <p><span className="font-medium text-text">No comments yet.</span> Add one on a line{onReview ? `, or ask ${agent} to review` : ''}.</p>
-          {onReview && (
-            <button type="button" onClick={onReview} className={cn(buttonOutline, 'mt-2 h-6 px-2 text-xs')}>Start a review</button>
-          )}
-        </div>
-      </div>
+    <div className="flex items-center gap-3 px-4 py-3.5">
+      <p className="min-w-0 flex-1 text-xs text-text-secondary">
+        <span className="text-text">No comments to fix.</span> Add one on a line{onReview ? ', or' : '.'}
+      </p>
+      {onReview && (
+        <button type="button" onClick={onReview} className={cn(buttonOutline, 'shrink-0 h-6 px-2 text-xs')}>Review with {agent}</button>
+      )}
     </div>
   );
 }

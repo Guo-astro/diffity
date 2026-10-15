@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::core::suggestion::{self, AppliedSuggestion};
 use crate::core::{diff, diffignore};
 use crate::core::types::{DiffResult, FileVersions, ResolvedRef};
 use crate::core::AppError;
@@ -69,6 +70,18 @@ pub async fn diff_fingerprint(
 #[tauri::command]
 pub async fn revert_file(repo_path: String, path: String) -> Result<(), AppError> {
     blocking(move || diff::revert_file(Path::new(&repo_path), &path)).await
+}
+
+#[tauri::command]
+pub async fn apply_suggestion(
+    repo_path: String,
+    path: String,
+    start_line: u32,
+    end_line: u32,
+    expected: String,
+    replacement: String,
+) -> Result<AppliedSuggestion, AppError> {
+    blocking(move || suggestion::apply(Path::new(&repo_path), &path, start_line, end_line, &expected, &replacement)).await
 }
 
 #[tauri::command]

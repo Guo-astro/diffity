@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import { SuggestionTargetContext } from '../../features/suggestions/suggestion-block';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import type { DiffFile } from '@/lib/diff-parser';
 import { useLocation, useNavigate, useSearchParams } from 'react-router';
@@ -162,6 +163,8 @@ export function DiffPage(props: DiffPageProps) {
   const initializedDiffRef = useRef<typeof diff>(diff);
   const commentedSeenRef = useRef(filesWithComments);
   const canRevert = !!info?.capabilities?.revert;
+  const canEdit = !!info?.capabilities?.edit;
+  const suggestionTarget = useMemo(() => ({ canEdit }), [canEdit]);
   const { isStale, resetStaleness } = useDiffStaleness(rawDiff?.fingerprint, refParam, showIgnored, !!info?.capabilities?.staleness);
   const { details: githubDetails } = useGitHubPr();
   const ownPr = useOwnPr();
@@ -700,6 +703,7 @@ export function DiffPage(props: DiffPageProps) {
 
   return (
     <ReviewStateProvider sessionId={reviewsEnabled ? sessionId : null} prMode={!!githubDetails && !ownPr} ownPrNumber={ownPr && githubDetails && refParam === prDiffRef(githubDetails) ? githubDetails.prNumber : null}>
+    <SuggestionTargetContext.Provider value={suggestionTarget}>
     <div className="flex flex-col h-screen bg-frame text-text font-sans">
       <Toolbar
         theme={theme}
@@ -883,6 +887,7 @@ export function DiffPage(props: DiffPageProps) {
         stale={isStale ? { onRefresh: handleRefreshDiff } : null}
       />
     </div>
+    </SuggestionTargetContext.Provider>
     </ReviewStateProvider>
   );
 }

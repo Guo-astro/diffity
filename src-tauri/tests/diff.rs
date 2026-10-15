@@ -31,6 +31,7 @@ fn work_includes_tracked_staged_and_untracked() {
         let res = diff::get_diff(&repo.path, r, false).unwrap();
         assert_eq!(res.resolved.label, "Uncommitted changes");
         assert!(res.resolved.can_revert);
+        assert!(res.resolved.can_edit);
         assert_eq!(file(&res, "README.md").status, FileStatus::Modified);
         assert_eq!(file(&res, "README.md").additions, 1);
         assert_eq!(file(&res, "staged.txt").status, FileStatus::Added);
@@ -51,6 +52,7 @@ fn staged_and_unstaged() {
     assert!(has(&staged, "staged.txt"));
     assert!(!has(&staged, "README.md"));
     assert!(!has(&staged, "new.txt"));
+    assert!(!staged.resolved.can_edit);
 
     let unstaged = diff::get_diff(&repo.path, "unstaged", false).unwrap();
     assert_eq!(unstaged.resolved.label, "Unstaged changes");
@@ -80,6 +82,7 @@ fn single_ref_diffs_merge_base_against_working_tree() {
     assert_eq!(res.resolved.label, "Changes from main");
     assert_eq!(res.resolved.base_sha.as_deref(), Some(base.as_str()));
     assert!(!res.resolved.can_revert);
+    assert!(res.resolved.can_edit);
     assert!(has(&res, "feature.txt"));
     assert!(has(&res, "wip.txt"));
     assert!(!has(&res, "main-only.txt"));
@@ -490,4 +493,12 @@ fn head_commit_resolves_to_checked_out_sha() {
     assert_eq!(work.as_deref(), Some(head.as_str()));
     assert_eq!(head_view, work);
     assert_ne!(older_view, work);
+}
+
+#[test]
+fn only_ranges_ending_at_head_are_editable() {
+    let (repo, _base, feature, _main) = diverged();
+    assert!(diff::get_diff(&repo.path, "main...HEAD", false).unwrap().resolved.can_edit);
+    assert!(diff::get_diff(&repo.path, &format!("main...{feature}"), false).unwrap().resolved.can_edit);
+    assert!(!diff::get_diff(&repo.path, "feature...main", false).unwrap().resolved.can_edit);
 }

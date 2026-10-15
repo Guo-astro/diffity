@@ -3,9 +3,14 @@ import type { CommentThread as CommentThreadType } from './types';
 import type { CommentAuthor, CommentSide, SubmitOptions } from './types';
 import { isThreadResolved } from './types';
 import { ThreadBadge } from '../ui/thread-badge';
-import { ThreadCard } from './thread-card';
-import { CommentIcon } from '../ui/icon';
+import { ThreadCard, ThreadMenu } from './thread-card';
+import { ConfirmDialog } from '../ui/confirm-dialog';
+import { CheckCircleIcon, CommentIcon, FoldIcon, UnfoldIcon } from '../ui/icon';
+import { cn } from '../../lib/cn';
+import { commentPreview } from './comment-preview';
+import { AuthorAvatar } from './comment-bubble';
 import { useViewState } from '../../lib/view-state';
+import { appliedSuggestion } from '../../features/suggestions/suggestion';
 
 interface CommentThreadProps {
   thread: CommentThreadType;
@@ -55,6 +60,14 @@ export function CommentThread(props: CommentThreadProps) {
   const resolved = isThreadResolved(thread);
   const wasResolved = useRef(resolved);
   const [justChanged, setJustChanged] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const requestDelete = () => {
+    if (thread.comments.length > 1) {
+      setConfirmDelete(true);
+      return;
+    }
+    onDeleteThread(thread.id);
+  };
 
   useEffect(() => {
     if (wasResolved.current === resolved) {
@@ -76,23 +89,58 @@ export function CommentThread(props: CommentThreadProps) {
   }, [setIsCollapsed]);
 
   const isOutdated =
-    thread.anchorContent && currentCode && thread.anchorContent !== currentCode;
+    thread.anchorContent && currentCode && thread.anchorContent !== currentCode
+    && !appliedSuggestion(thread.comments.map((comment) => comment.body), currentCode);
 
   if (isCollapsed) {
+    const first = thread.comments[0];
+    const replies = thread.comments.length - 1;
     const collapsedContent = (
-      <td colSpan={colSpan} className="px-3 py-1 font-sans">
-        <button
-          onClick={() => setIsCollapsed(false)}
-          className={`thread-card ${justChanged ? 'animate-fade-in ' : ''}inline-flex items-center gap-1.5 px-2 py-1 text-xs text-text-muted hover:text-text-secondary hover:bg-hover rounded-md transition-colors cursor-pointer`}
-        >
-          <CommentIcon className='w-3.5 h-3.5' />
-          <span>
-            {thread.comments.length} comment
-            {thread.comments.length !== 1 ? 's' : ''}
-          </span>
-          <StatusBadge status={thread.status} />
+      <td colSpan={colSpan} className="px-4 py-1.5 font-sans">
+        <div className={cn('thread-card flex items-center gap-2 max-w-[720px] h-9 pl-3 pr-1.5 rounded-lg border border-border bg-bg-secondary text-xs', justChanged && 'animate-fade-in')}>
+          {resolved
+            ? <CheckCircleIcon className={cn('w-3.5 h-3.5 shrink-0', thread.status === 'resolved' ? 'text-added' : 'text-text-muted')} />
+            : <CommentIcon className="w-3.5 h-3.5 shrink-0 text-text-muted" />}
+          {thread.status === 'dismissed' && <ThreadBadge variant='dismissed' />}
           {isOutdated && <ThreadBadge variant='outdated' />}
-        </button>
+          {first && (
+            <span className="shrink-0" title={first.author.name}>
+              <AuthorAvatar name={first.author.name} avatarUrl={first.author.avatarUrl} type={first.author.type} />
+            </span>
+          )}
+          <span className="min-w-0 flex-1 truncate text-text-muted">{first ? commentPreview(first.body) : ''}</span>
+          {replies > 0 && <span className="shrink-0 text-text-muted">{replies} repl{replies === 1 ? 'y' : 'ies'}</span>}
+          <span className="flex items-center gap-1 shrink-0">
+            {resolved && (
+              <button
+                onClick={() => onUnresolve(thread.id)}
+                className="h-6 px-2 rounded-md text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
+              >
+                Reopen
+              </button>
+            )}
+            <button
+              onClick={() => setIsCollapsed(false)}
+              className="h-6 px-2 inline-flex items-center gap-1.5 rounded-md text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
+            >
+              <UnfoldIcon size="xs" />
+              Show
+            </button>
+            <ThreadMenu items={[{ label: 'Delete thread', onSelect: requestDelete, danger: true }]} />
+          </span>
+          {confirmDelete && (
+            <ConfirmDialog
+              title="Delete thread"
+              message={`Delete this thread and its ${thread.comments.length} comments? This cannot be undone.`}
+              confirmLabel="Delete"
+              onConfirm={() => {
+                setConfirmDelete(false);
+                onDeleteThread(thread.id);
+              }}
+              onCancel={() => setConfirmDelete(false)}
+            />
+          )}
+        </div>
       </td>
     );
 
@@ -145,7 +193,17 @@ export function CommentThread(props: CommentThreadProps) {
             {isOutdated && <ThreadBadge variant='outdated' />}
           </>
         }
-        menuItems={[{ label: 'Collapse', onSelect: () => setIsCollapsed(true) }]}
+        headerRight={resolved && (
+          <button
+            onClick={() => setIsCollapsed(true)}
+            className="h-6 px-2 inline-flex items-center gap-1.5 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
+          >
+            <FoldIcon size="xs" />
+            Hide
+          </button>
+        )}
+        menuItems={resolved ? [] : [{ label: 'Collapse', onSelect: () => setIsCollapsed(true) }]}
+        currentCode={currentCode}
       />
     </td>
   );

@@ -209,6 +209,7 @@ pub fn run() {
             commands::diff::diff_fingerprint,
             commands::diff::revert_file,
             commands::diff::revert_hunk,
+            commands::diff::apply_suggestion,
             commands::diff::get_diff_ignore_rules,
             commands::diff::set_diff_ignore_rules,
             commands::files::list_tree,

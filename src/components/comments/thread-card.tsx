@@ -8,7 +8,7 @@ import { agentByName, agentMeta } from '../../features/claude/agents';
 import { pickForAgent, useRunPick } from '../../features/claude/model-setting';
 import { AskClaudeThreadButton } from '../../features/claude/ask-claude-thread';
 import { useReviewState } from '../../features/review/review-state';
-import { EllipsisIcon, GitHubIcon, GitPullRequestIcon, SparkleIcon } from '../ui/icon';
+import { EllipsisVerticalIcon, GitHubIcon, GitPullRequestIcon, SparkleIcon } from '../ui/icon';
 import { Popover, useMenu } from '../ui/popover';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -20,6 +20,7 @@ import { useViewState } from '../../lib/view-state';
 import { Spinner } from '../icons/spinner';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useState } from 'react';
+import { SuggestionThreadContext } from '../../features/suggestions/suggestion-block';
 
 interface ThreadCardProps {
   thread: CommentThreadType;
@@ -37,9 +38,11 @@ interface ThreadCardProps {
   children?: React.ReactNode;
   /** Narrow cards: secondary actions move into the ⋯ menu. */
   compact?: boolean;
+  /** What the thread's lines read now (from the diff), for suggested changes. */
+  currentCode?: string;
 }
 
-function ThreadMenu(props: { items: { label: string; onSelect: () => void; danger?: boolean }[] }) {
+export function ThreadMenu(props: { items: { label: string; onSelect: () => void; danger?: boolean }[] }) {
   const { items } = props;
   const menu = useMenu();
 
@@ -52,7 +55,7 @@ function ThreadMenu(props: { items: { label: string; onSelect: () => void; dange
         title="More"
         aria-label="More thread actions"
       >
-        <EllipsisIcon size="sm" />
+        <EllipsisVerticalIcon size="sm" />
       </button>
       <Popover open={menu.open} onClose={menu.close} anchorRef={menu.anchorRef} align="end" width={200}>
         {items.map((item) => (
@@ -120,6 +123,7 @@ export function ThreadCard(props: ThreadCardProps) {
     className,
     children,
     compact = false,
+    currentCode,
   } = props;
   const review = useReviewState();
   const replyKey = `reply:${thread.id}`;
@@ -189,7 +193,6 @@ export function ThreadCard(props: ThreadCardProps) {
           <OriginBadge thread={thread} prMode={review.prMode} prUrl={details?.pr?.url ?? null} />
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {headerRight}
           {!compact && canPromote && (
             <button
               onClick={() => void promote()}
@@ -211,6 +214,7 @@ export function ThreadCard(props: ThreadCardProps) {
               {resolved ? 'Reopen' : 'Resolve'}
             </button>
           )}
+          {headerRight}
           <ThreadMenu
             items={[
               ...menuItems,
@@ -236,7 +240,7 @@ export function ThreadCard(props: ThreadCardProps) {
         />
       )}
       {children}
-      <div>
+      <SuggestionThreadContext.Provider value={{ thread, currentCode }}>
         {thread.comments.map((comment) => (
           <CommentBubble
             key={comment.id}
@@ -245,7 +249,7 @@ export function ThreadCard(props: ThreadCardProps) {
             onDelete={() => onDeleteComment(comment.id)}
           />
         ))}
-      </div>
+      </SuggestionThreadContext.Provider>
       {activity !== 'idle' && (
         <div className="flex items-center gap-2 pl-10 pr-3 pb-2 text-xs text-text-muted">
           <span className="flex justify-center shrink-0">
@@ -273,6 +277,7 @@ export function ThreadCard(props: ThreadCardProps) {
               isReply
               draftKey={replyKey}
               threadPending={!!thread.pending}
+              suggestionCode={thread.side === 'new' ? currentCode ?? thread.anchorContent ?? undefined : undefined}
               replyAgent={review.enabled ? lastAgentName : null}
             />
           </div>

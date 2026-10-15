@@ -7,6 +7,7 @@ pub mod mentions;
 pub mod quick_open;
 pub mod repo_threads;
 pub mod store;
+pub mod suggestion;
 pub mod tree;
 pub mod types;
 pub mod watch;

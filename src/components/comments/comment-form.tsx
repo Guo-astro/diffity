@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import type { SubmitOptions } from './types';
 import { MentionTextarea } from './mention-textarea';
 import { useReviewState } from '../../features/review/review-state';
@@ -8,7 +8,10 @@ import { mentionedAgent, mentionsAgent } from '../../lib/mentions';
 import { agentMeta } from '../../features/claude/agents';
 import { useRunPick } from '../../features/claude/model-setting';
 import { useGitHubPr } from '../../hooks/use-repo-state';
-import { buttonGhost, buttonOutline, buttonPrimary } from '../ui/button-styles';
+import { buttonGhost, buttonIconSmall, buttonOutline, buttonPrimary } from '../ui/button-styles';
+import { insertSuggestion } from '../../features/suggestions/suggestion';
+import { cn } from '../../lib/cn';
+import { PlusMinusIcon } from '../ui/icon';
 
 interface CommentFormProps {
   onSubmit: (body: string, options: SubmitOptions) => void;
@@ -24,6 +27,8 @@ interface CommentFormProps {
   /** Persists unsent text (per repo) so it survives refreshes and reloads; cleared on submit or cancel. */
   draftKey?: string;
   isReply?: boolean;
+  /** The commented new-side lines: shows "Suggest change", which inserts them as a ```suggestion block to edit. */
+  suggestionCode?: string;
 }
 
 const DRAFT_PREFIX = 'diffity-draft:';
@@ -92,6 +97,7 @@ export function CommentForm(props: CommentFormProps) {
     draftKey,
     isReply = false,
     replyAgent = null,
+    suggestionCode,
   } = props;
   const [sendToClaude, setSendToClaude] = useState(true);
   const reviewState = useReviewState();
@@ -116,6 +122,15 @@ export function CommentForm(props: CommentFormProps) {
     }
   }, [autoFocus]);
 
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [body]);
+
   const submit = (pending: boolean) => {
     const trimmed = body.trim();
     if (!trimmed) {
@@ -132,6 +147,19 @@ export function CommentForm(props: CommentFormProps) {
     }
     onSubmit(trimmed, { pending: false, postToGitHub: prNumber });
     setBody('');
+  };
+
+  const suggestChange = () => {
+    const textarea = textareaRef.current;
+    if (suggestionCode === undefined || !textarea) {
+      return;
+    }
+    const next = insertSuggestion(body, textarea.selectionStart ?? body.length, suggestionCode);
+    setBody(next.body);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(next.cursor, next.cursor);
+    });
   };
 
   const cancel = () => {
@@ -210,26 +238,11 @@ export function CommentForm(props: CommentFormProps) {
     );
   };
 
-  return (
-    <div className="rounded-lg border border-border bg-bg-secondary pt-2">
-      {lineLabel && (
-        <div className="px-3 pb-1.5">
-          <span className="text-xs text-text-secondary font-medium">{lineLabel}</span>
-        </div>
-      )}
-      <div className="mx-2 mb-2">
-        <MentionTextarea
-          ref={textareaRef}
-          value={body}
-          onChange={setBody}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          rows={3}
-          className="block w-full px-3 py-2 text-[13px] leading-5 bg-bg text-text rounded-md border border-border focus:border-focus resize-y outline-none placeholder:text-text-muted min-h-[72px]"
-        />
-      </div>
-      {review.enabled && replyAgent && !mentionsAgent(body) && (
-        <div className="px-3 pb-2 text-xs text-text-muted" title={`${modKey}Enter submits`}>
+  const hint = !review.enabled
+    ? null
+    : replyAgent && !mentionsAgent(body)
+      ? (
+        <>
           {sendToClaude ? `${replyAgent} will reply` : 'Saved in Diffity only'}
           {' · '}
           <button
@@ -239,14 +252,36 @@ export function CommentForm(props: CommentFormProps) {
           >
             {sendToClaude ? `don’t send to ${replyAgent}` : `send to ${replyAgent}`}
           </button>
+        </>
+      )
+      : destinationHint({ reviewMode, prNumber, mentioned: mentioned ? agentMeta(mentioned).short : null, fallback: defaultAgent.short, handle: defaultAgent.handle, ownPr: review.ownPrNumber });
+
+  return (
+    <div className="rounded-lg border border-border bg-bg transition-colors focus-within:border-focus">
+      <MentionTextarea
+        ref={textareaRef}
+        value={body}
+        onChange={setBody}
+        onKeyDown={handleKeyDown}
+        placeholder={lineLabel ? `${lineLabel}…` : placeholder}
+        rows={2}
+        className="block w-full max-h-80 px-3 pt-2.5 pb-1.5 text-[13px] leading-5 bg-transparent text-text border-0 resize-none outline-none placeholder:text-text-muted min-h-[64px] overflow-y-auto"
+      />
+      <div className="flex items-center gap-2 px-3 pb-2">
+        {suggestionCode !== undefined && (
+          <button
+            type="button"
+            onClick={suggestChange}
+            className={cn(buttonIconSmall, '-ml-1.5')}
+            title="Suggest a change: inserts these lines for you to edit. Applies in one click, and shows as a suggestion on GitHub."
+            aria-label="Suggest a change"
+          >
+            <PlusMinusIcon className="w-3.5 h-3.5" />
+          </button>
+        )}
+        <div className="min-w-0 flex-1 truncate text-xs text-text-muted" title={`${modKey}Enter submits`}>
+          {hint}
         </div>
-      )}
-      {review.enabled && !(replyAgent && !mentionsAgent(body)) && (
-        <div className="px-3 pb-2 text-xs text-text-muted" title={`${modKey}Enter submits`}>
-          {destinationHint({ reviewMode, prNumber, mentioned: mentioned ? agentMeta(mentioned).short : null, fallback: defaultAgent.short, handle: defaultAgent.handle, ownPr: review.ownPrNumber })}
-        </div>
-      )}
-      <div className="flex items-center justify-end gap-2 px-2 pb-2">
         <button onClick={cancel} className={buttonGhost}>
           Cancel
         </button>

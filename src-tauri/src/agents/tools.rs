@@ -298,12 +298,22 @@ fn visible_json(thread: Thread) -> Value {
     }
 }
 
+/// A GitHub-style suggested change: a fenced block whose info string is `suggestion`.
+fn has_suggestion(body: &str) -> bool {
+    body.lines().any(|line| line.trim_start().strip_prefix("```").is_some_and(|info| info.trim() == "suggestion"))
+}
+
 async fn add_comment(backend: &dyn ReviewBackend, b: &Binding, a: CommentArgs) -> Result<Value> {
     let severity = parse_severity(a.severity.as_deref())?;
     let side = parse_side(a.side.as_deref())?;
     let body = a.body.trim();
     if body.is_empty() {
         return Err(AppError::invalid("body is required"));
+    }
+    if side == Side::Old && has_suggestion(body) {
+        return Err(AppError::invalid(
+            "a ```suggestion block replaces new-side lines; put it on `side: \"new\"` lines, or describe the fix in words",
+        ));
     }
     let file = a.file.trim().trim_start_matches("./").to_string();
     if !in_scope(b, &file) {
@@ -746,6 +756,18 @@ mod tests {
         assert!(kept.contains("+q"));
         assert!(!kept.contains("src/a.ts"));
         assert_eq!(filter_patch(patch, &["src/c.ts".to_string()]), "");
+    }
+
+    #[tokio::test]
+    async fn add_comment_rejects_suggestions_on_removed_lines() {
+        let (_store, backend, binding) = setup();
+        let body = "Use a constant.\n```suggestion\nconst x = 1;\n```";
+        let err = call(&backend, &binding, "add_comment", json!({ "file": "src/app.ts", "startLine": 1, "side": "old", "body": body }))
+            .await
+            .unwrap_err();
+        assert!(err.message.contains("suggestion"), "{}", err.message);
+        assert!(has_suggestion(body));
+        assert!(!has_suggestion("```ts\nconst x = 1;\n```"));
     }
 
     #[tokio::test]

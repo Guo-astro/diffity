@@ -9,6 +9,7 @@ import { useThemeStore } from '../../hooks/use-theme';
 import { MermaidDiagram } from '../mermaid-diagram';
 import { rehypeMentions } from '../../lib/mentions';
 import { tokensToHtml } from '../../lib/syntax-token';
+import { SuggestionBlock } from '../../features/suggestions/suggestion-block';
 
 interface MarkdownContentProps {
   content: string;
@@ -70,6 +71,10 @@ export const MarkdownContent = memo(function MarkdownContent(props: MarkdownCont
 
       if (lang === 'mermaid') {
         return <MermaidDiagram chart={codeString} />;
+      }
+
+      if (lang === 'suggestion') {
+        return <SuggestionBlock code={codeString} />;
       }
 
       if (!lang) {

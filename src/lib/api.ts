@@ -59,7 +59,7 @@ export interface RepoInfo {
   branch: string;
   root: string;
   description: string;
-  capabilities?: { reviews: boolean; revert: boolean; staleness: boolean };
+  capabilities?: { reviews: boolean; revert: boolean; edit?: boolean; staleness: boolean };
   sessionId?: string | null;
   github?: GitHubRemote | null;
   editor?: 'vscode' | null;
@@ -209,7 +209,7 @@ export async function fetchRepoInfo(ref?: string): Promise<RepoInfo> {
     branch: repo.branch ?? '',
     root: repo.path,
     description: descriptionForRef(effectiveRef),
-    capabilities: { reviews: true, revert: resolved.canRevert, staleness: true },
+    capabilities: { reviews: true, revert: resolved.canRevert, edit: resolved.canEdit, staleness: true },
     sessionId: session.id,
     github: parseGitHubRemote(repo.remoteUrl),
     editor: 'vscode',

@@ -56,7 +56,7 @@ pub fn all() -> Vec<Tool> {
                     "startLine": { "type": "integer", "minimum": 0, "description": "First line (1-based) on the chosen side. Use 0 for a file-level comment." },
                     "endLine": { "type": "integer", "minimum": 0, "description": "Last line of the range. Defaults to startLine." },
                     "side": { "type": "string", "enum": ["new", "old"], "description": "\"new\" (default) for added or unchanged code, \"old\" for removed code." },
-                    "body": { "type": "string", "description": "Markdown comment in simple English: the problem and the fix in 1-3 short sentences." },
+                    "body": { "type": "string", "description": "Markdown comment in simple English: the problem and the fix in 1-3 short sentences. For a small fix on the new side, add a ```suggestion block holding the full replacement for startLine..endLine (exact indentation); the user can apply it in one click." },
                     "severity": {
                         "type": "string",
                         "enum": ["must-fix", "suggestion", "nit", "question"],
