@@ -423,7 +423,7 @@ export function TreePage() {
             formatForCopy={formatForCopy}
           />
           {threads.length > 0 && <ClaudeToolbar diffRef={null} sessionId={sessionId} threads={threads} formatForCopy={formatForCopy} />}
-          <OptionsMenu theme={theme} onToggleTheme={toggleTheme} />
+          <OptionsMenu theme={theme} onToggleTheme={toggleTheme} showAgentHistory />
         </div>
       </TitleBar>
       <Workspace>

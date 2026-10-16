@@ -274,9 +274,19 @@ export function createAgentMockHandlers(deps: AgentMockDeps): Record<string, (ar
         { content: action.kind === 'review' ? 'Leave review comments' : 'Answer the question', status: 'pending' },
       ],
     });
-    emit({ type: 'toolCall', id: 't1', title: 'get_diff', kind: 'read', status: 'in_progress', locations: [] });
+    emit({ type: 'toolCall', id: 't0', title: 'ToolSearch', kind: 'other', status: 'in_progress', locations: [] });
+    await wait(200);
+    emit({ type: 'toolCallUpdate', id: 't0', status: 'completed' });
+    emit({ type: 'toolCall', id: 't1', title: 'mcp__diffity__get_diff', kind: 'other', status: 'in_progress', locations: [] });
     await wait(500);
     emit({ type: 'toolCallUpdate', id: 't1', status: 'completed' });
+    emit({ type: 'toolCall', id: 't1b', title: 'Terminal', kind: 'execute', status: 'in_progress', locations: [] });
+    emit({ type: 'toolCallUpdate', id: 't1b', status: 'in_progress', title: `cd ${abs('')} && git log --oneline -5 && cat package.json 2>/dev/null | head -40` });
+    await wait(400);
+    emit({ type: 'toolCallUpdate', id: 't1b', status: 'completed' });
+    emit({ type: 'toolCall', id: 't1d', title: 'grep -rn "openActivity\\b\\|toggleActivity\\|selected:" src --include=*.ts | grep -v "^src/features/claude/activity-panel.tsx"; grep -n "byRepo" src/features/claude/run-activity.ts | head -20', kind: 'execute', status: 'completed', locations: [] });
+    emit({ type: 'toolCall', id: 't1e', title: 'sed -n 205,240p src/features/claude/run-activity.ts', kind: 'execute', status: 'completed', locations: [] });
+    emit({ type: 'toolCall', id: 't1c', title: 'Read /private/tmp/claude-501/tool-results/mcp-diffity-get_diff-1792159442041.txt (1 - 500)', kind: 'read', status: 'completed', locations: [] });
     emit({
       type: 'toolCall',
       id: 't2',

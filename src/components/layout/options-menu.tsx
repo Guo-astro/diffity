@@ -4,7 +4,8 @@ import { useNavigate } from 'react-router';
 import { openSettings, openShortcuts } from '../../lib/ui-store';
 import { modKey } from '../../lib/platform';
 import { buttonIconOutline } from '../ui/button-styles';
-import { EllipsisIcon, FolderOpenIcon, GitHubIcon, KeyboardIcon, MoonIcon, SettingsIcon, SunIcon } from '../ui/icon';
+import { EllipsisIcon, FolderOpenIcon, GitHubIcon, HistoryIcon, KeyboardIcon, MoonIcon, SettingsIcon, SunIcon } from '../ui/icon';
+import { openActivityHistory } from '../../features/claude/run-activity';
 
 export const menuItemClass = 'flex items-center gap-2.5 w-full h-8 px-2.5 rounded-md text-[13px] text-text hover:bg-hover transition-colors cursor-pointer text-left [&>svg]:text-text-secondary';
 
@@ -13,10 +14,12 @@ interface OptionsMenuProps {
   onToggleTheme: () => void;
   renderExtraItems?: (close: () => void) => ReactNode;
   onShowHelp?: () => void;
+  /** Inside a project, where past agent runs can be opened. */
+  showAgentHistory?: boolean;
 }
 
 export function OptionsMenu(props: OptionsMenuProps) {
-  const { theme, onToggleTheme, renderExtraItems, onShowHelp } = props;
+  const { theme, onToggleTheme, renderExtraItems, onShowHelp, showAgentHistory } = props;
   const [showMenu, setShowMenu] = useState(false);
   const navigate = useNavigate();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -35,6 +38,18 @@ export function OptionsMenu(props: OptionsMenuProps) {
       <Popover open={showMenu} onClose={close} anchorRef={menuRef} align="end" width={248}>
         <>
           {renderExtraItems && renderExtraItems(close)}
+          {showAgentHistory && (
+            <button
+              className={menuItemClass}
+              onClick={() => {
+                close();
+                openActivityHistory();
+              }}
+            >
+              <HistoryIcon className="w-3.5 h-3.5" />
+              Agent history
+            </button>
+          )}
           <button
             className={menuItemClass}
             onClick={() => {

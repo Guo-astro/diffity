@@ -31,12 +31,23 @@ export interface RunActivity extends ActivityLog {
 interface ActivityState {
   byRepo: Record<string, RunActivity>;
   open: boolean;
+  /** The past run picked from history; null follows the current or latest run. */
+  selected: string | null;
+  showHistory: boolean;
 }
 
-export const useRunActivity = create<ActivityState>(() => ({ byRepo: {}, open: false }));
+export const useRunActivity = create<ActivityState>(() => ({ byRepo: {}, open: false, selected: null, showHistory: false }));
 
 export function openActivity() {
-  useRunActivity.setState({ open: true });
+  useRunActivity.setState({ open: true, selected: null, showHistory: false });
+}
+
+export function openActivityHistory() {
+  useRunActivity.setState({ open: true, showHistory: true });
+}
+
+export function showRun(chatId: string | null) {
+  useRunActivity.setState({ selected: chatId, showHistory: false });
 }
 
 export function closeActivity() {
@@ -44,7 +55,7 @@ export function closeActivity() {
 }
 
 export function toggleActivity() {
-  useRunActivity.setState((state) => ({ open: !state.open }));
+  useRunActivity.setState((state) => (state.open ? { open: false } : { open: true, selected: null, showHistory: false }));
 }
 
 /** Folds events into the log: streamed thought and text chunks join the item before them, tool updates patch their call. */
@@ -70,14 +81,17 @@ export function applyEvents(log: ActivityLog, events: AgentEvent[], at: number |
           items.push({ kind: 'thought', id: `thought-${items.length}`, text: event.delta, startedAt: at, endedAt: null });
         }
         break;
-      case 'text':
-        if (last?.kind === 'text' && last.messageId === event.messageId) {
-          items[items.length - 1] = { ...last, text: last.text + event.delta };
+      case 'text': {
+        const index = openText(items, event.messageId);
+        if (index !== -1) {
+          const item = items[index] as Extract<ActivityItem, { kind: 'text' }>;
+          items[index] = { ...item, text: item.text + event.delta };
         } else {
           closeThought();
           items.push({ kind: 'text', id: `text-${items.length}`, messageId: event.messageId, text: event.delta });
         }
         break;
+      }
       case 'toolCall': {
         closeThought();
         const index = findTool(items, event.id);
@@ -107,6 +121,20 @@ export function applyEvents(log: ActivityLog, events: AgentEvent[], at: number |
     }
   }
   return { items, plan };
+}
+
+/** The message a text chunk continues; comments the agent posts mid-message land after it without splitting it. */
+function openText(items: ActivityItem[], messageId: string): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind === 'text') {
+      return item.messageId === messageId ? index : -1;
+    }
+    if (item.kind !== 'comment') {
+      return -1;
+    }
+  }
+  return -1;
 }
 
 function findTool(items: ActivityItem[], id: string): number {
@@ -175,12 +203,16 @@ export function currentFile(log: ActivityLog, repoPath: string): string | null {
   return null;
 }
 
-/** The agent's last message, which for a review is its wrap-up. */
-export function finalText(log: ActivityLog): string | null {
+/** The agent's closing message and where it sits, when the run ends on one; for a review it's the wrap-up. */
+export function wrapUp(log: ActivityLog): { text: string; index: number } | null {
   for (let index = log.items.length - 1; index >= 0; index -= 1) {
     const item = log.items[index];
     if (item.kind === 'text') {
-      return item.text.trim() || null;
+      const text = item.text.trim();
+      return text ? { text, index } : null;
+    }
+    if (item.kind !== 'comment') {
+      return null;
     }
   }
   return null;

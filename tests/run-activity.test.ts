@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvents, currentFile, filesRead, finalText, logFromMessages, modelFromMessages, toolCount } from '../src/features/claude/run-activity';
+import { applyEvents, currentFile, filesRead, logFromMessages, modelFromMessages, toolCount, wrapUp } from '../src/features/claude/run-activity';
 import type { ChatMessage } from '../src/lib/types';
 
 const empty = { items: [], plan: [] };
@@ -16,7 +16,15 @@ describe('run activity', () => {
     expect(log.items.map((item) => item.kind)).toEqual(['thought', 'text', 'text']);
     expect(log.items[0]).toMatchObject({ text: 'Look at the runner.', startedAt: 1000, endedAt: 1000 });
     expect(log.items[1]).toMatchObject({ text: 'All good.' });
-    expect(finalText(log)).toBe('Done.');
+    expect(wrapUp(log)).toEqual({ text: 'Done.', index: 2 });
+  });
+
+  it('keeps a message whole when comments land in the middle of it', () => {
+    let log = applyEvents(empty, [{ type: 'text', messageId: 'm1', delta: 'Left ' }], 1000);
+    log = { ...log, items: [...log.items, { kind: 'comment', id: 'c1', filePath: 'a.ts', line: 1, body: 'x', at: 1000 }] };
+    log = applyEvents(log, [{ type: 'text', messageId: 'm1', delta: 'two comments.' }], 2000);
+    expect(log.items.map((item) => item.kind)).toEqual(['text', 'comment']);
+    expect(wrapUp(log)).toEqual({ text: 'Left two comments.', index: 0 });
   });
 
   it('applies chunks across batches', () => {

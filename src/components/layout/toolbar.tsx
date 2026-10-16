@@ -146,6 +146,7 @@ export function Toolbar(props: ToolbarProps) {
           theme={theme}
           onToggleTheme={onToggleTheme}
           onShowHelp={onShowHelp}
+          showAgentHistory
           renderExtraItems={(close) => <PrMenuItems diffRef={diffRef ?? null} close={close} />}
         />
       </div>

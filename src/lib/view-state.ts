@@ -69,7 +69,8 @@ export function useViewState<T>(key: string, initial: T | (() => T)): [T, Dispat
       }
       const value = typeof next === 'function' ? (next as (value: T) => T)(prev.value) : next;
       writeScoped(full, value);
-      return { full, value };
+      // Scrolling sets the active file on every frame; returning prev lets React skip the re-render.
+      return Object.is(value, prev.value) ? prev : { full, value };
     });
   }, [full]);
 

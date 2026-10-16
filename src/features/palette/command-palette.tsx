@@ -27,10 +27,10 @@ import { checkoutPullRequest } from '../pr/pr-checkout';
 import { prDiffRef } from '../../components/layout/ref-menu';
 import {
   AlertCircleIcon, ChangesIcon, CommentIcon, EditorIcon, FetchIcon, FileIcon, FilesIcon, GitCommitIcon, GitPullRequestIcon,
-  HomeIcon, KeyboardIcon, MoonIcon, WrapIcon, SparkleIcon, PullIcon, PushIcon, RefreshIcon, RevealIcon, SearchIcon, SettingsIcon, SidebarIcon,
+  HistoryIcon, HomeIcon, KeyboardIcon, MoonIcon, WrapIcon, SparkleIcon, PullIcon, PushIcon, RefreshIcon, RevealIcon, SearchIcon, SettingsIcon, SidebarIcon,
 } from '../../components/ui/icon';
 import { checkForUpdatesAndTell } from '../updates/updater';
-import { openActivity } from '../claude/run-activity';
+import { openActivity, openActivityHistory } from '../claude/run-activity';
 import {
   closePalette, fuzzyScore, recentActionIds, recentFiles, rememberAction, rememberFile, usePalette,
   type PaletteAction, type PaletteMode,
@@ -67,6 +67,7 @@ function useGlobalActions(): PaletteAction[] {
     { id: 'go-files', title: 'Browse files', group: 'Go to', icon: <FilesIcon size="sm" />, run: () => nav.toTree() },
     { id: 'comments', title: 'Show all comments', group: 'Go to', hint: shortcutHint('comments'), icon: <CommentIcon size="sm" />, run: openComments },
     { id: 'agent-activity', title: 'Show agent activity', group: 'Go to', keywords: 'claude codex opencode review thinking tools transcript', icon: <SparkleIcon size="sm" />, run: openActivity },
+    { id: 'agent-history', title: 'Show agent history', group: 'Go to', keywords: 'claude codex opencode past runs previous activity', icon: <HistoryIcon size="sm" />, run: openActivityHistory },
     { id: 'toggle-sidebar', title: 'Toggle sidebar', group: 'View', hint: shortcutHint('toggle-sidebar'), icon: <SidebarIcon size="sm" />, run: toggleSidebar },
     { id: 'toggle-theme', title: theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', group: 'View', keywords: 'theme dark light appearance', icon: <MoonIcon size="sm" />, run: toggleTheme },
     { id: 'toggle-wrap', title: wrapLines ? 'Stop wrapping long lines' : 'Wrap long lines', group: 'View', keywords: 'wrap word wrap nowrap horizontal scroll lines', icon: <WrapIcon size="sm" />, run: () => setWrapLines(!wrapLines) },
