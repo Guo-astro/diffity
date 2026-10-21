@@ -19,6 +19,10 @@ import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useState } from 'react';
 import { SuggestionThreadContext } from '../../features/suggestions/suggestion-block';
 import { PromoteForm } from '../../features/review/promote-form';
+import { useCurrentViewRef } from '../../hooks/use-current-view';
+import { useRepoNav } from '../../hooks/use-repo';
+import { useUncommittedPaths } from '../layout/diff-context-bar';
+import { uncommittedTwin } from '../layout/ref-menu';
 import { useReviewThreads } from '../../hooks/use-review-threads';
 
 interface ThreadCardProps {
@@ -105,6 +109,40 @@ function OriginBadge(props: { thread: CommentThreadType; prMode: boolean; prUrl:
     return null;
   }
   return <span className={cn(base, 'bg-fill text-text-secondary')} title="Only in Diffity; not part of your GitHub review">Local</span>;
+}
+
+/**
+ * A view that ends at a commit (a PR, a commit) can't show an agent's edits until they're committed, so the reply
+ * says "fixed" next to old code. Points to where the edit is.
+ */
+function UncommittedChangeNote(props: { filePath: string }) {
+  const { filePath } = props;
+  const viewRef = useCurrentViewRef();
+  const uncommitted = useUncommittedPaths();
+  const nav = useRepoNav();
+
+  if (!viewRef || !viewRef.includes('..') || !uncommitted?.has(filePath)) {
+    return null;
+  }
+  // A branch or PR view's All changes mode includes uncommitted edits; elsewhere only Uncommitted changes has them.
+  const twin = uncommittedTwin(viewRef);
+  const target = `/r/${encodeURIComponent(nav.repoPath)}/diff?${new URLSearchParams({ ref: twin ?? 'work', file: filePath }).toString()}`;
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-10 pr-3 pb-2 text-xs text-text-secondary">
+      <span className="min-w-0">
+        <span className="inline-block w-1.5 h-1.5 mr-1.5 rounded-full bg-modified align-middle -mt-px" aria-hidden />
+        Changed locally, not committed yet
+      </span>
+      <button
+        type="button"
+        onClick={() => nav.navigate(target)}
+        className="text-text underline decoration-text-muted/50 underline-offset-2 hover:decoration-text cursor-pointer"
+        title={twin ? 'Switch to All changes, which includes uncommitted edits' : 'Open this file in Uncommitted changes'}
+      >
+        {twin ? 'Show in All changes' : 'Show change'}
+      </button>
+    </div>
+  );
 }
 
 export function ThreadCard(props: ThreadCardProps) {
@@ -241,6 +279,7 @@ export function ThreadCard(props: ThreadCardProps) {
           />
         ))}
       </SuggestionThreadContext.Provider>
+      {lastByClaude && activity === 'idle' && <UncommittedChangeNote filePath={thread.filePath} />}
       {activity !== 'idle' && (
         <div className="flex items-center gap-2 pl-10 pr-3 pb-2 text-xs text-text-muted">
           <span className="flex justify-center shrink-0">

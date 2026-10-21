@@ -6,7 +6,6 @@ import { modKey } from '../../lib/platform';
 import { getRepoPathOrNull } from '../../lib/api';
 import { mentionedAgent, mentionsAgent } from '../../lib/mentions';
 import { agentMeta } from '../../features/claude/agents';
-import { useRunPick } from '../../features/claude/model-setting';
 import { useGitHubPr } from '../../hooks/use-repo-state';
 import { buttonGhost, buttonIconSmall, buttonOutline, buttonPrimary } from '../ui/button-styles';
 import { insertSuggestion } from '../../features/suggestions/suggestion';
@@ -67,18 +66,13 @@ export function hasDraft(sessionId: string | null, key: string): boolean {
   return readDraft(`${sessionId ?? 'none'}:${key}`).trim().length > 0;
 }
 
-function destinationHint(input: { reviewMode: boolean; prNumber: number | null; mentioned: string | null; fallback: string; handle: string; ownPr?: number | null }): string {
-  const { reviewMode, prNumber, mentioned, fallback, handle, ownPr } = input;
-  if (ownPr) {
-    return mentioned ? `A note on your PR #${ownPr}, kept in Diffity · ${mentioned} will reply` : `A note for ${fallback} on your PR #${ownPr}, kept in Diffity`;
-  }
+/** Said only when it isn't obvious: a draft waits for the review, and a mentioned agent will reply. */
+function destinationHint(input: { reviewMode: boolean; prNumber: number | null; mentioned: string | null }): string | null {
+  const { reviewMode, prNumber, mentioned } = input;
   if (reviewMode && prNumber) {
-    return mentioned ? `Goes into your review on PR #${prNumber} · ${mentioned} will reply` : `Goes into your review on PR #${prNumber}, posted when you submit`;
+    return mentioned ? `${mentioned} will reply` : `Posted to #${prNumber} when you submit`;
   }
-  if (mentioned) {
-    return `Saved in Diffity · ${mentioned} will reply`;
-  }
-  return `Saved in Diffity only · @${handle} asks ${fallback}`;
+  return mentioned ? `${mentioned} will reply` : null;
 }
 
 const primaryClass = buttonPrimary;
@@ -103,7 +97,6 @@ export function CommentForm(props: CommentFormProps) {
   const reviewState = useReviewState();
   const storageKey = draftKey ? `${reviewState.sessionId ?? 'none'}:${draftKey}` : undefined;
   const [body, setBodyState] = useState(() => readDraft(storageKey));
-  const defaultAgent = agentMeta(useRunPick('fix', getRepoPathOrNull() ?? '').agent);
   const mentioned = mentionedAgent(body);
   const setBody = (value: string) => {
     setBodyState(value);
@@ -243,18 +236,18 @@ export function CommentForm(props: CommentFormProps) {
     : replyAgent && !mentionsAgent(body)
       ? (
         <>
-          {sendToClaude ? `${replyAgent} will reply` : 'Saved in Diffity only'}
+          {sendToClaude ? `${replyAgent} will reply` : `Not sent to ${replyAgent}`}
           {' · '}
           <button
             type="button"
             onClick={() => setSendToClaude(!sendToClaude)}
             className="underline decoration-text-muted/50 underline-offset-2 hover:text-text cursor-pointer"
           >
-            {sendToClaude ? `don’t send to ${replyAgent}` : `send to ${replyAgent}`}
+            {sendToClaude ? 'don’t send' : 'send'}
           </button>
         </>
       )
-      : destinationHint({ reviewMode, prNumber, mentioned: mentioned ? agentMeta(mentioned).short : null, fallback: defaultAgent.short, handle: defaultAgent.handle, ownPr: review.ownPrNumber });
+      : destinationHint({ reviewMode, prNumber, mentioned: mentioned ? agentMeta(mentioned).short : null });
 
   return (
     <div className="rounded-lg border border-border bg-bg transition-colors focus-within:border-focus">

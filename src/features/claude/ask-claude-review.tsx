@@ -20,8 +20,10 @@ import { useRepoNav } from '../../hooks/use-repo';
 import { prBaseFor, prRefFor } from '../../lib/pr-ref';
 import { useCommitDetails } from '../../components/layout/diff-context-bar';
 import { viewLabel } from '../../lib/thread-location';
+import { FocusChips } from './review-focus-chips';
+import { focusesForRepo, reviewRequest, useCustomFocuses } from './review-focuses';
 
-export const REVIEW_FOCUSES = ['Security', 'Performance', 'Correctness', 'Naming', 'Tests', 'Types'] as const;
+export { REVIEW_FOCUSES } from './review-focuses';
 
 type Scope = 'all' | 'file' | 'glob';
 
@@ -158,6 +160,7 @@ export function AskClaudePanel(props: AskClaudePanelProps) {
   };
   const changing = task === 'change' && canChange;
   const [focus, setFocus] = useState<string[]>(() => readFocus(repoPath));
+  const customFocuses = focusesForRepo(useCustomFocuses().all, repoPath);
   const [scope, setScope] = useState<Scope>('all');
   const [glob, setGlob] = useState('');
   const reviewPick = useRunPick('review', repoPath);
@@ -205,22 +208,19 @@ export function AskClaudePanel(props: AskClaudePanelProps) {
       return;
     }
     writeFocus(repoPath, focus);
+    const request = reviewRequest(focus, customFocuses, text);
     enqueueClaude(
       {
         kind: 'review',
         ref: diffRef,
-        focus: focus.length > 0 ? focus.join(', ') : undefined,
-        instructions: text.trim() || undefined,
+        focus: request.focus,
+        instructions: request.instructions,
         paths: paths.length > 0 ? paths : undefined,
       },
       { repoPath, sessionId: session, pick },
     );
     onClose();
     onStarted?.();
-  };
-
-  const toggle = (value: string) => {
-    setFocus((current) => (current.includes(value) ? current.filter((item) => item !== value) : [...current, value]));
   };
 
   const scopeOption = (value: Scope, label: ReactNode, disabled = false) => (
@@ -299,25 +299,7 @@ export function AskClaudePanel(props: AskClaudePanelProps) {
         )}
       </div>
       {!changing && (
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Focus areas">
-        {REVIEW_FOCUSES.map((value) => {
-          const active = focus.includes(value);
-          return (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={active}
-              onClick={() => toggle(value)}
-              className={cn(
-                'h-6 px-2.5 rounded-full border text-xs transition-colors cursor-pointer',
-                active ? 'border-claude/40 bg-claude/12 text-claude font-medium' : 'border-control-border bg-raised text-text-secondary hover:text-text',
-              )}
-            >
-              {value}
-            </button>
-          );
-        })}
-      </div>
+      <FocusChips repoPath={repoPath} selected={focus} onSelectedChange={setFocus} />
       )}
       <div className="flex flex-col gap-0.5">
         <span className="text-xs font-medium text-text-secondary mb-0.5">Scope</span>
