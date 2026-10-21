@@ -183,12 +183,20 @@ pub fn shared_session_ref(r#ref: &str) -> String {
 }
 
 /// The scope a view of `ref` belongs to in `repo_path`: the checked-out branch (or commit when detached)
-/// for branch-relative refs, empty otherwise.
+/// for branch-relative refs and uncommitted changes, empty otherwise. Uncommitted changes are per branch because
+/// checking out another branch (a PR) needs a clean tree, so comments left on them belong to the branch they were on.
 pub fn session_scope(repo_path: &str, r#ref: &str) -> String {
-    if !is_branch_relative(r#ref) {
+    if !is_branch_relative(r#ref) && !WORKING_TREE_REFS.contains(&r#ref) {
         return String::new();
     }
     current_scope(repo_path)
+}
+
+/// A session of uncommitted changes from before those were kept per branch. Nothing records which branch its
+/// comments were left on, so no branch claims it (`get_or_create_scoped_session`) and it is never posted to a PR;
+/// each comment is kept on a branch by hand (`keep_thread_on_branch`).
+pub fn is_legacy_session(r#ref: &str, scope: &str) -> bool {
+    scope.is_empty() && WORKING_TREE_REFS.contains(&r#ref)
 }
 
 /// The checked-out branch, or `detached@<sha>`; empty outside a git repo.
@@ -284,7 +292,21 @@ CREATE TABLE IF NOT EXISTS guides (
 );
 "#;
 
-const SCHEMA_VERSION: i64 = 6;
+/// A draft made from an agent's comment ("Add to my review") links back to it; the agent's comment is resolved once
+/// the draft is posted, and the link goes away with the draft.
+fn migrate_v7(conn: &Connection) -> Result<()> {
+    let has_column: bool = conn.query_row(
+        "SELECT count(*) > 0 FROM pragma_table_info('threads') WHERE name = 'promoted_from'",
+        [],
+        |r| r.get(0),
+    )?;
+    if !has_column {
+        conn.execute_batch("ALTER TABLE threads ADD COLUMN promoted_from TEXT NULL REFERENCES threads(id) ON DELETE SET NULL;")?;
+    }
+    Ok(())
+}
+
+const SCHEMA_VERSION: i64 = 7;
 
 pub struct Store {
     conn: Mutex<Connection>,
@@ -340,6 +362,9 @@ impl Store {
             }
             if version < 6 {
                 conn.execute_batch(MIGRATION_V6)?;
+            }
+            if version < 7 {
+                migrate_v7(conn)?;
             }
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
             Ok(())
@@ -450,7 +475,7 @@ pub enum UpsertOutcome {
     Unchanged,
 }
 
-const THREAD_COLS: &str = "id, session_id, file_path, side, start_line, end_line, status, severity, anchor_content, github_thread_id, created_at, updated_at, review_id, view_ref";
+const THREAD_COLS: &str = "id, session_id, file_path, side, start_line, end_line, status, severity, anchor_content, github_thread_id, created_at, updated_at, review_id, view_ref, promoted_from";
 const COMMENT_COLS: &str = "id, thread_id, author_type, author_name, body, github_comment_id, created_at, pending, review_id";
 const REVIEW_COLS: &str = "id, session_id, state, body, verdict, created_at, submitted_at";
 
@@ -475,6 +500,7 @@ fn row_to_thread(r: &Row) -> rusqlite::Result<Thread> {
         pending: false,
         review_id: r.get(12)?,
         view_ref: r.get(13)?,
+        promoted_from: r.get(14)?,
     })
 }
 
@@ -748,7 +774,7 @@ impl Store {
 
     pub fn get_or_create_scoped_session(&self, repo_path: &str, r#ref: &str, scope: &str) -> Result<ReviewSession> {
         let conn = self.conn()?;
-        if !scope.is_empty() {
+        if !scope.is_empty() && !WORKING_TREE_REFS.contains(&r#ref) {
             conn.execute(
                 "UPDATE review_sessions SET scope = ?3 WHERE repo_path = ?1 AND ref = ?2 AND scope = '' \
                  AND NOT EXISTS (SELECT 1 FROM review_sessions WHERE repo_path = ?1 AND ref = ?2 AND scope = ?3)",
@@ -820,7 +846,7 @@ impl Store {
              WHERE s.repo_path = ?1 ORDER BY t.updated_at DESC, t.rowid DESC"
         ))?;
         let rows = stmt
-            .query_map([repo_path], |r| Ok((row_to_thread(r)?, r.get::<_, String>(14)?, r.get::<_, String>(15)?)))?
+            .query_map([repo_path], |r| Ok((row_to_thread(r)?, r.get::<_, String>(15)?, r.get::<_, String>(16)?)))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         rows.into_iter()
             .map(|(thread, r#ref, scope)| {
@@ -897,14 +923,23 @@ impl Store {
         if pending && author_type != AuthorType::User {
             return Err(AppError::invalid("only user comments can be pending"));
         }
+        if let Some(source) = &input.promoted_from {
+            let taken: bool = tx
+                .query_row("SELECT 1 FROM threads WHERE promoted_from = ?1", [source], |_| Ok(true))
+                .optional()?
+                .unwrap_or(false);
+            if taken {
+                return Err(AppError::invalid("this comment is already in your review"));
+            }
+        }
         let review_id = if pending {
             Some(ensure_pending_review(&tx, &input.session_id)?)
         } else {
             None
         };
         tx.execute(
-            "INSERT INTO threads (id, session_id, file_path, side, start_line, end_line, status, severity, anchor_content, created_at, updated_at, review_id, view_ref)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, ?9, ?10, COALESCE(?11, (SELECT ref FROM review_sessions WHERE id = ?2)))",
+            "INSERT INTO threads (id, session_id, file_path, side, start_line, end_line, status, severity, anchor_content, created_at, updated_at, review_id, view_ref, promoted_from)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'open', ?7, ?8, ?9, ?9, ?10, COALESCE(?11, (SELECT ref FROM review_sessions WHERE id = ?2)), ?12)",
             params![
                 id,
                 input.session_id,
@@ -916,7 +951,8 @@ impl Store {
                 input.anchor_content,
                 ts,
                 review_id,
-                input.view_ref
+                input.view_ref,
+                input.promoted_from
             ],
         )?;
         let author_name = input
@@ -1025,6 +1061,58 @@ impl Store {
         }
         tx.commit()?;
         Ok(session_id)
+    }
+
+    /// Resolves the agent comments that posted drafts were made from (`promoted_from`). Returns their sessions.
+    pub fn resolve_promoted_sources(&self, posted_thread_ids: &[String]) -> Result<Vec<String>> {
+        let conn = self.conn()?;
+        let mut sessions = Vec::new();
+        for id in posted_thread_ids {
+            let source: Option<(String, String)> = conn
+                .query_row(
+                    "SELECT s.id, s.session_id FROM threads t JOIN threads s ON s.id = t.promoted_from \
+                     WHERE t.id = ?1 AND s.status = 'open'",
+                    [id],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            let Some((source_id, session_id)) = source else {
+                continue;
+            };
+            conn.execute(
+                "UPDATE threads SET status = 'resolved', updated_at = ?2 WHERE id = ?1",
+                params![source_id, now()],
+            )?;
+            sessions.push(session_id);
+        }
+        Ok(sessions)
+    }
+
+    /// Moves a thread of a legacy session (`is_legacy_session`) into the checked-out branch's session of its view.
+    /// A draft of a GitHub review stays a local comment. Returns the sessions it left and joined.
+    pub fn keep_thread_on_branch(&self, thread_id: &str) -> Result<(String, String)> {
+        let (from, view_ref) = {
+            let conn = self.conn()?;
+            conn.query_row("SELECT session_id, view_ref FROM threads WHERE id = ?1", [thread_id], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+            })
+            .optional()?
+            .ok_or_else(|| AppError::not_found(format!("thread {thread_id} not found")))?
+        };
+        let session = self.get_session_by_id(&from)?;
+        if !is_legacy_session(&session.r#ref, &session.scope) {
+            return Err(AppError::invalid("this comment already belongs to a branch"));
+        }
+        let into = self.get_or_create_session(&session.repo_path, view_ref.as_deref().unwrap_or(&session.r#ref))?.id;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "UPDATE threads SET session_id = ?2, review_id = NULL, updated_at = ?3 WHERE id = ?1",
+            params![thread_id, into, now()],
+        )?;
+        tx.execute("UPDATE comments SET review_id = NULL, pending = 0 WHERE thread_id = ?1", [thread_id])?;
+        tx.commit()?;
+        Ok((from, into))
     }
 
     /// Deletes a thread and its comments. Returns the owning session id.

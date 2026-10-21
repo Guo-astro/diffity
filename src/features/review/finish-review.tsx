@@ -23,7 +23,6 @@ import type { GitHubDetails } from '../../lib/api';
 import { openSettingsAt } from '../../lib/ui-store';
 import { getRepoPath } from '../../lib/api';
 import { mentionsAgent } from '../../lib/mentions';
-import { useActiveRun } from '../claude/claude-runner';
 import { useAgentProblem } from '../claude/send-comments';
 import { GENERAL_THREAD_FILE_PATH, type CommentThread } from '../../components/comments/types';
 import { toast } from 'sonner';
@@ -50,14 +49,17 @@ const VERDICTS: { value: ReviewVerdict; label: string; description: string; icon
 
 export function FinishReview(props: FinishReviewProps) {
   const { githubDetails, threads = [] } = props;
-  const { enabled } = useReviewState();
+  const { enabled, pendingReview } = useReviewState();
   const ownPr = useOwnPr();
-  const agentRunning = useActiveRun(getRepoPath()) !== null;
 
-  if (!enabled || agentRunning || !githubDetails || ownPr) {
+  if (!enabled || !githubDetails) {
     return null;
   }
-  return <PullRequestReview pr={githubDetails} threads={threads} />;
+  // On your own PR comments are notes for the agent, so the button only shows once you add drafts to post.
+  if (ownPr && (pendingReview?.pendingCount ?? 0) === 0) {
+    return null;
+  }
+  return <PullRequestReview pr={githubDetails} threads={threads} ownPr={ownPr} />;
 }
 
 interface ReviewItem {
@@ -248,8 +250,8 @@ function CandidateList(props: { items: CandidateItem[]; excluded: Set<string>; o
   );
 }
 
-function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] }) {
-  const { pr, threads } = props;
+function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[]; ownPr: boolean }) {
+  const { pr, threads, ownPr } = props;
   const repoPath = getRepoPath();
   const { sessionId, pendingReview } = useReviewState();
   const { submit, post, discard } = useReviewActions(sessionId);
@@ -260,7 +262,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
   const [postToGitHub, setPostToGitHub] = useState(true);
   const [sendClaude, setSendClaudeState] = useState(() => readClaudePref(repoPath));
   const [scopeChoice, setScopeChoice] = useState<'all' | 'mentions' | null>(null);
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState<GithubPendingAction | null>(null);
   const [postError, setPostError] = useState<PostReviewError | null>(null);
   const [savedReview, setSavedReview] = useState<Review | null>(null);
@@ -290,7 +292,13 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
     () => toCandidateItems(candidatesQuery.data?.candidates ?? [], prRefFor(pr.pr)),
     [candidatesQuery.data, pr.baseRef],
   );
+  // Drafts start checked; on your own PR local comments (notes for the agent) start unchecked.
+  const excluded = useMemo(
+    () => new Set(candidateItems.filter((item) => (item.draft || !ownPr) === toggled.has(item.id)).map((item) => item.id)),
+    [candidateItems, ownPr, toggled],
+  );
   const selected = selectedItems(candidateItems, excluded);
+  const verdicts = ownPr ? VERDICTS.filter((option) => option.value === 'comment') : VERDICTS;
   const postableCount = candidateItems.filter((item) => !item.blockedReason).length;
   const blockedCount = candidateItems.length - postableCount;
   const githubPending = candidatesQuery.data?.githubPending ?? null;
@@ -313,7 +321,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
   };
 
   const toggle = (id: string) => {
-    setExcluded((current) => {
+    setToggled((current) => {
       const next = new Set(current);
       if (next.has(id)) {
         next.delete(id);
@@ -359,7 +367,7 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
     setBody('');
     setVerdict('comment');
     setScopeChoice(null);
-    setExcluded(new Set());
+    setToggled(new Set());
     setPendingAction(null);
     setPostError(null);
     setSavedReview(null);
@@ -463,10 +471,10 @@ function PullRequestReview(props: { pr: GitHubDetails; threads: CommentThread[] 
             checked={postToGitHub}
             onToggle={() => setPostToGitHub(!postToGitHub)}
             title={<><GitHubIcon size="sm" className="text-text-secondary" />Post to GitHub</>}
-            hint={`Added to pull request #${pr.prNumber} as your review.`}
+            hint={ownPr ? `Posted to your pull request #${pr.prNumber} as review comments.` : `Added to pull request #${pr.prNumber} as your review.`}
           >
             <div role="radiogroup" aria-label="Verdict">
-              {VERDICTS.map((option) => (
+              {verdicts.map((option) => (
                 <RadioRow
                   key={option.value}
                   checked={verdict === option.value}

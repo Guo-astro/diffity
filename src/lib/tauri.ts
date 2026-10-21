@@ -133,6 +133,7 @@ export const addReply = (
 export const editComment = (commentId: string, body: string) => invoke<void>('edit_comment', { commentId, body });
 export const deleteComment = (commentId: string) => invoke<void>('delete_comment', { commentId });
 export const deleteThread = (threadId: string) => invoke<void>('delete_thread', { threadId });
+export const keepThreadOnBranch = (threadId: string) => invoke<void>('keep_thread_on_branch', { threadId });
 export const deleteAllThreads = (sessionId: string) => invoke<void>('delete_all_threads', { sessionId });
 export const setThreadStatus = (threadId: string, status: ThreadStatus, summary?: string | null) =>
   invoke<Thread>('set_thread_status', { threadId, status, summary: summary ?? null });
@@ -192,6 +193,8 @@ export const listPrs = (repoPath: string) => invoke<PullRequest[]>('list_prs', {
 export const prInbox = () => invoke<PrInbox>('github_pr_inbox');
 export const checkoutPr = (repoPath: string, urlOrNumber: string) =>
   invoke<PullRequest>('checkout_pr', { repoPath, urlOrNumber });
+export const updatePrBranch = (repoPath: string, prNumber: number, reset: boolean) =>
+  invoke<void>('update_pr_branch', { repoPath, prNumber, reset });
 export const gitStashPush = (repoPath: string, message: string) =>
   invoke<StashResult>('git_stash_push', { repoPath, message });
 export const gitStashRestore = (repoPath: string, sha: string) => invoke<void>('git_stash_restore', { repoPath, sha });

@@ -163,6 +163,7 @@ export interface Thread {
   reviewId: string | null;
   /** The view the thread was left in (`main`, `main...HEAD`, …); its line numbers belong to that view's diff. */
   viewRef: string | null;
+  promotedFrom?: string | null;
 }
 
 export interface NewThread {
@@ -180,6 +181,8 @@ export interface NewThread {
   pending?: boolean;
   /** The view the thread is left in; defaults to the session's ref. */
   viewRef?: string | null;
+  /** The agent's comment this draft is made from; one draft per comment. */
+  promotedFrom?: string | null;
 }
 
 export type ReviewState = 'pending' | 'submitted';
@@ -526,6 +529,8 @@ export interface RepoThread {
   movedTo: CommitPointer | null;
   /** Branch a PR or branch view's thread was left on, when another branch is checked out now. */
   otherBranch?: string;
+  /** Left on uncommitted changes before those were kept per branch, so which branch it belongs to is unknown. */
+  unassigned?: boolean;
 }
 
 export interface ThreadsChangedPayload {

@@ -11,7 +11,7 @@ Object.assign(globalThis, {
 
 const { setRepoPath } = await import('../src/lib/api');
 const { readViewState, writeViewState } = await import('../src/lib/view-state');
-const { lastViewLocationFor, rememberLocation } = await import('../src/lib/repo-locations');
+const { lastLocationFor, lastViewLocationFor, rememberLocation } = await import('../src/lib/repo-locations');
 
 describe('view state', () => {
   beforeEach(() => {
@@ -36,5 +36,12 @@ describe('view state', () => {
     expect(lastViewLocationFor('/a', 'diff')).toBe(`${base}/diff?ref=abc123`);
     expect(lastViewLocationFor('/a', 'tree')).toBe(`${base}/tree?path=src%2Fapp.ts&type=file`);
     expect(lastViewLocationFor('/b', 'diff')).toBeNull();
+  });
+
+  it('never remembers a PR link, so returning to the repository does not check it out again', () => {
+    const base = `/r/${encodeURIComponent('/a')}`;
+    rememberLocation('/a', `${base}/diff?pr=https%3A%2F%2Fgithub.com%2Fo%2Fr%2Fpull%2F7&ref=work`);
+    expect(lastLocationFor('/a')).toBe(`${base}/diff?ref=work`);
+    expect(lastViewLocationFor('/a', 'diff')).toBe(`${base}/diff?ref=work`);
   });
 });

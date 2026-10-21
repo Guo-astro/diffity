@@ -38,7 +38,7 @@ import { useUncommittedPaths } from '../layout/diff-context-bar';
 import type { CommentThread, LineSelection } from '../comments/types';
 import { DiffBar, hiddenFilesLabel } from './view-options';
 import { repoBase } from '../../hooks/use-repo';
-import { errorMessage, getRepoPath } from '../../lib/api';
+import { errorMessage, getRepoPath, parseCommitRef } from '../../lib/api';
 import { enterLargeDiffScope } from '../../lib/large-diff';
 import { readViewMemory, writeViewMemory } from '../../lib/view-memory';
 import { readViewState, useViewState, writeViewState } from '../../lib/view-state';
@@ -681,11 +681,21 @@ export function DiffPage(props: DiffPageProps) {
   }
 
   const isEmpty = diff.files.length === 0;
+  const viewedCommit = parseCommitRef(refParam);
+  const promoteBlocked = githubDetails && viewedCommit && !githubDetails.pr.headSha.startsWith(viewedCommit)
+    ? `This commit isn't the latest commit of PR #${githubDetails.prNumber}, so comments on it can't be posted there. Review the PR diff instead.`
+    : null;
   const composerMoved = pendingSelection !== null && !selectionInDiff(diff, pendingSelection);
   const allPaths = diff.files.map((file) => getFilePath(file));
 
   return (
-    <ReviewStateProvider sessionId={reviewsEnabled ? sessionId : null} prMode={!!githubDetails && !ownPr} ownPrNumber={ownPr && githubDetails && refParam === prDiffRef(githubDetails) ? githubDetails.prNumber : null}>
+    <ReviewStateProvider
+      sessionId={reviewsEnabled ? sessionId : null}
+      prMode={!!githubDetails && !ownPr}
+      ownPrNumber={ownPr && githubDetails && refParam === prDiffRef(githubDetails) ? githubDetails.prNumber : null}
+      promotePr={githubDetails?.prNumber ?? null}
+      promoteBlocked={promoteBlocked}
+    >
     <SuggestionTargetContext.Provider value={suggestionTarget}>
     <div className="flex flex-col h-screen bg-frame text-text font-sans">
       <Toolbar

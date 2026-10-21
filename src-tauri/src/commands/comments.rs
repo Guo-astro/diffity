@@ -91,6 +91,14 @@ pub async fn delete_thread(app: AppHandle, state: State<'_, AppState>, thread_id
 }
 
 #[tauri::command]
+pub async fn keep_thread_on_branch(app: AppHandle, state: State<'_, AppState>, thread_id: String) -> Result<(), AppError> {
+    let (from, into) = state.store.keep_thread_on_branch(&thread_id)?;
+    emit_threads_changed(&app, &from);
+    emit_threads_changed(&app, &into);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn delete_all_threads(
     app: AppHandle,
     state: State<'_, AppState>,

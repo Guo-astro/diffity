@@ -6,18 +6,18 @@ import { useRepoPath } from '../../hooks/use-repo';
 import { inView, useRepoThreads } from '../../hooks/use-repo-threads';
 import { closeComments, useUi } from '../../lib/ui-store';
 import { threadPath } from '../../lib/thread-location';
-import { groupThreads } from '../../lib/repo-thread-groups';
+import { groupThreads, isCurrentGroup } from '../../lib/repo-thread-groups';
 import { TREE_REF, type RepoThread } from '../../lib/types';
 import { cn } from '../../lib/cn';
 import { ThreadBadge } from '../../components/ui/thread-badge';
 import { SegmentedToggle } from '../../components/ui/segmented-toggle';
 import { formatRelativeTime } from '../../components/comments/comment-bubble';
-import { GENERAL_THREAD_FILE_PATH } from '../../components/comments/types';
+import { GENERAL_THREAD_FILE_PATH, SEVERITY_LABELS } from '../../components/comments/types';
 import { InlineMarkdown } from '../../components/comments/inline-markdown';
 import { CheckIcon, ChevronIcon, CommentIcon, FileIcon, GitCommitIcon, GitCompareIcon, PencilIcon, SparkleIcon, TrashIcon, UndoIcon, XIcon } from '../../components/ui/icon';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { deleteThread, errorMessage, updateThreadStatus } from '../../lib/api';
+import { deleteThread, errorMessage, keepThreadOnBranch, updateThreadStatus } from '../../lib/api';
 import { ConfirmDialog } from '../../components/ui/confirm-dialog';
 import { enqueueClaude, useThreadActivity, useThreadRunAgent } from '../claude/claude-runner';
 import { agentMeta } from '../claude/agents';
@@ -127,13 +127,6 @@ function ViewIcon(props: { viewRef: string }) {
   return <PencilIcon className={className} />;
 }
 
-const severityLabels: Record<string, string> = {
-  'must-fix': 'Must fix',
-  suggestion: 'Suggestion',
-  nit: 'Nit',
-  question: 'Question',
-};
-
 /** Full conversation of a thread whose code is no longer in its view, so it can't be read in the diff. */
 function OutdatedThreadBody(props: { thread: RepoThread }) {
   const { thread } = props;
@@ -178,8 +171,8 @@ function ThreadRow(props: ThreadRowProps) {
   const queryClient = useQueryClient();
   const line = lineLabel(thread);
   const note = anchorNote(thread);
-  const outdated = thread.anchor !== 'current' && thread.anchor !== 'unknown';
-  const openable = thread.anchor === 'current' || outdated;
+  const outdated = !thread.unassigned && thread.anchor !== 'current' && thread.anchor !== 'unknown';
+  const openable = thread.unassigned || thread.anchor === 'current' || outdated;
   const [expanded, setExpanded] = useState(false);
   const isAgent = thread.authorType === 'agent';
   const isOpen = thread.status === 'open';
@@ -189,9 +182,9 @@ function ThreadRow(props: ThreadRowProps) {
   const repoAgent = agentMeta(fixPick.agent);
   const runAgentId = useThreadRunAgent(thread.id);
   const runAgentName = runAgentId ? agentMeta(runAgentId).short : null;
-  const canAskClaude = isOpen && !thread.pending && thread.anchor !== 'current' && thread.anchor !== 'unknown' && activity === 'idle';
+  const canAskClaude = isOpen && !thread.unassigned && !thread.pending && thread.anchor !== 'current' && thread.anchor !== 'unknown' && activity === 'idle';
   const open = () => {
-    if (thread.anchor === 'current') {
+    if (thread.anchor === 'current' && !thread.unassigned) {
       onOpen(thread);
       return;
     }
@@ -208,6 +201,20 @@ function ThreadRow(props: ThreadRowProps) {
       },
       (error) => toast.error(errorMessage(error)),
     );
+  };
+  const [keeping, setKeeping] = useState(false);
+  const keep = () => {
+    setKeeping(true);
+    keepThreadOnBranch(thread.id)
+      .then(
+        () => toast.success('Kept on this branch'),
+        (error) => toast.error('Could not move the comment', { description: errorMessage(error) }),
+      )
+      .finally(() => {
+        setKeeping(false);
+        queryClient.invalidateQueries({ queryKey: ['repo-threads'] });
+        queryClient.invalidateQueries({ queryKey: ['threads'] });
+      });
   };
   const toggleStatus = () => {
     updateThreadStatus(thread.id, isOpen ? 'resolved' : 'open').then(
@@ -238,7 +245,7 @@ function ThreadRow(props: ThreadRowProps) {
         'group flex gap-2.5 px-3 py-2.5 rounded-lg bg-bg border border-border transition-colors outline-none focus-visible:border-focus',
         openable ? 'hover:border-control-border hover:bg-bg-secondary cursor-pointer' : 'cursor-default',
       )}
-      title={openable ? (thread.anchor === 'current' ? 'Open this comment' : expanded ? 'Hide the conversation' : 'Show the whole conversation') : undefined}
+      title={openable ? (thread.anchor === 'current' && !thread.unassigned ? 'Open this comment' : expanded ? 'Hide the conversation' : 'Show the whole conversation') : undefined}
     >
       <span
         className={cn(
@@ -254,12 +261,12 @@ function ThreadRow(props: ThreadRowProps) {
           <span className="text-xs text-text-secondary truncate">{thread.authorName}</span>
           {thread.severity && (
             <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-bg-tertiary text-text-secondary shrink-0">
-              {severityLabels[thread.severity] ?? thread.severity}
+              {SEVERITY_LABELS[thread.severity] ?? thread.severity}
             </span>
           )}
           {thread.pending && <ThreadBadge variant="pending" />}
           {thread.status !== 'open' && <ThreadBadge variant={thread.status} />}
-          {thread.anchor !== 'current' && <ThreadBadge variant="outdated" />}
+          {thread.anchor !== 'current' && !thread.unassigned && <ThreadBadge variant="outdated" />}
           <span className="ml-auto text-xs text-text-muted shrink-0 group-hover:hidden group-focus-within:hidden">{formatRelativeTime(thread.updatedAt)}</span>
           {canAskClaude && (
             <button
@@ -311,12 +318,13 @@ function ThreadRow(props: ThreadRowProps) {
             {activity === 'working' ? `${runAgentName ?? 'Agent'} is working…` : runAgentName ? `Queued for ${runAgentName}` : 'Queued'}
           </div>
         )}
-        {(thread.replyCount > 0 || note) && (
+        {thread.unassigned && <UnassignedHint thread={thread} keeping={keeping} onKeep={keep} />}
+        {(thread.replyCount > 0 || (note && !thread.unassigned)) && (
           <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 mt-1 text-xs text-text-secondary">
             {thread.replyCount > 0 && !expanded && (
               <span>{thread.replyCount} repl{thread.replyCount === 1 ? 'y' : 'ies'}</span>
             )}
-            {note && <span className="text-text-secondary">{note}</span>}
+            {note && !thread.unassigned && <span className="text-text-secondary">{note}</span>}
             {thread.movedTo && (
               <button
                 onClick={(event) => {
@@ -343,6 +351,29 @@ function ThreadRow(props: ThreadRowProps) {
       />
     )}
     </>
+  );
+}
+
+/** Which branch an unassigned comment likely belongs to (its lines are in this branch's changes), and the way to keep it. */
+function UnassignedHint(props: { thread: RepoThread; keeping: boolean; onKeep: () => void }) {
+  const { thread, keeping, onKeep } = props;
+  const matches = thread.anchor === 'current' || !!thread.movedTo;
+
+  return (
+    <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1.5 text-xs text-text-secondary">
+      <span>{matches ? 'Probably this branch: its lines are in these changes' : 'Its lines aren’t in this branch’s changes'}</span>
+      <button
+        onClick={(event) => {
+          event.stopPropagation();
+          onKeep();
+        }}
+        disabled={keeping}
+        className="inline-flex items-center gap-1 h-5 px-1.5 rounded text-xs font-medium text-text bg-fill hover:bg-hover cursor-pointer disabled:opacity-60 disabled:cursor-default"
+        title="Show it with this branch’s uncommitted changes"
+      >
+        {keeping ? 'Moving…' : 'Keep on this branch'}
+      </button>
+    </div>
   );
 }
 
@@ -474,7 +505,7 @@ function CommentsPanelBody() {
     if (stored !== undefined) {
       return stored;
     }
-    if (group.ref === currentRef && !group.otherBranch) {
+    if (isCurrentGroup(group, currentRef) || group.unassigned) {
       return true;
     }
     return group.files.some((file) => file.threads.some((thread) => thread.status === 'open' && thread.authorType === 'agent'));
@@ -559,12 +590,12 @@ function CommentsPanelBody() {
                   <ChevronIcon expanded={expanded} />
                   <ViewIcon viewRef={group.ref} />
                   <span className="text-xs font-medium text-text truncate" title={group.ref}>{group.label}</span>
-                  {group.ref === currentRef && !group.otherBranch && (
+                  {isCurrentGroup(group, currentRef) && (
                     <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-fill text-text-secondary shrink-0">This view</span>
                   )}
                   <span className="text-xs text-text-muted shrink-0 tabular-nums">{group.count}</span>
                 </button>
-                {group.ref !== currentRef && !group.otherBranch && (
+                {group.ref !== currentRef && !group.otherBranch && !group.unassigned && (
                   <button
                     onClick={() => openView(group.ref)}
                     className="h-6 px-2 -mr-1 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover cursor-pointer shrink-0"

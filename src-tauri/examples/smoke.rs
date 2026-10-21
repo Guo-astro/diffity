@@ -168,6 +168,7 @@ async fn main() -> anyhow::Result<()> {
             author_name: None,
             pending: None,
             view_ref: None,
+            promoted_from: None,
         })?;
         println!("[thread] created {} mentionsAgent={}", thread.id, thread.comments[0].mentions_agent);
         (String::new(), AgentAction::Thread { thread_id: thread.id })
@@ -194,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
             author_name: None,
             pending: None,
             view_ref: None,
+            promoted_from: None,
         })?;
         println!("[thread] created {}", thread.id);
         (

@@ -38,14 +38,17 @@ export function useGitHubAuth() {
 /** The open pull request for the current branch (null when signed out, no GitHub remote or no PR). */
 export function useGitHubPr() {
   const hasRemote = useHasGitHubRemote();
+  const status = useGitStatus();
+  const branch = status.data?.branch ?? null;
+  // Keyed by branch so a checkout (in the app or a terminal) never shows the previous branch's PR.
   const query = useQuery({
-    queryKey: ['github-details'],
+    queryKey: ['github-details', branch],
     queryFn: fetchGitHubDetails,
-    enabled: hasRemote,
+    enabled: hasRemote && !status.isPending,
     staleTime: 60_000,
     retry: false,
   });
-  return { details: query.data ?? null, loading: hasRemote && query.isLoading, hasRemote };
+  return { details: query.data ?? null, loading: hasRemote && (status.isPending || query.isLoading), hasRemote };
 }
 
 /** The checked-out PR is yours (you authored it), so review comments are notes for Claude rather than a GitHub review. */

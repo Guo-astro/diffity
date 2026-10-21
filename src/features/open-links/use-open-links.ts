@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate, type NavigateFunction } from 'react-router';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { isTauri } from '../../lib/platform';
+import { NAVIGATE_EVENT } from '../../lib/window';
 import * as tauri from '../../lib/tauri';
 import type { OpenRequest } from '../../lib/types';
 import { openRepoAt } from '../welcome/recent-repos';
@@ -75,8 +76,15 @@ export function useOpenLinks() {
       void drain();
     }
     const unlisten = current.listen('open-requests', () => void drain());
+    const unlistenNavigate = current.listen<string>(NAVIGATE_EVENT, (event) => {
+      if (!event.payload.startsWith('/r/')) {
+        return;
+      }
+      navigateRef.current(event.payload);
+    });
     return () => {
       void unlisten.then((fn) => fn());
+      void unlistenNavigate.then((fn) => fn());
     };
   }, []);
 }

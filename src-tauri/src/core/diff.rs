@@ -80,7 +80,7 @@ fn root_commit_plan(r: &str, sha: String) -> DiffPlan {
     }
 }
 
-fn range_plan(repo: &Path, r: &str, left: &str, right: &str) -> Result<DiffPlan> {
+fn range_plan(repo: &Path, r: &str, left: &str, right: &str, symmetric: bool) -> Result<DiffPlan> {
     if git::verify_commit(repo, left)?.is_none() {
         if let Some(root) = root_parent_of(repo, left)? {
             let right_sha = verify(repo, right)?;
@@ -91,8 +91,13 @@ fn range_plan(repo: &Path, r: &str, left: &str, right: &str) -> Result<DiffPlan>
     }
     let left_sha = verify(repo, left)?;
     let right_sha = verify(repo, right)?;
-    let base = git::merge_base(repo, &left_sha, &right_sha)?
+    let mut base = git::merge_base(repo, &left_sha, &right_sha)?
         .ok_or_else(|| AppError::invalid_ref(format!("'{left}' and '{right}' have no common ancestor")))?;
+    if symmetric && base == right_sha && left_sha != right_sha {
+        if let Some(fork) = git::merged_fork_point(repo, &left_sha, &right_sha)? {
+            base = fork;
+        }
+    }
     Ok(DiffPlan {
         resolved: ResolvedRef {
             r#ref: r.to_string(),
@@ -115,7 +120,8 @@ fn range_plan(repo: &Path, r: &str, left: &str, right: &str) -> Result<DiffPlan>
 /// - `work`/`.`: HEAD vs working tree, including untracked files.
 /// - `staged`: HEAD vs index. `unstaged`: index vs working tree, including untracked files.
 /// - `<ref>`: merge-base(ref, HEAD) vs working tree, including untracked files.
-/// - `<a>..<b>` and `<a>...<b>`: merge-base(a, b) vs b.
+/// - `<a>..<b>` and `<a>...<b>`: merge-base(a, b) vs b. For `...`, a `b` already merged into `a` diffs from where
+///   it forked, so a merged PR still shows its changes.
 ///
 /// Repos without commits diff against the empty tree.
 pub fn plan(repo: &Path, r: &str) -> Result<DiffPlan> {
@@ -177,10 +183,10 @@ fn build_plan(repo: &Path, r: &str) -> Result<DiffPlan> {
         _ => {}
     }
     if let Some((left, right)) = split_range(r, "...") {
-        return range_plan(repo, r, left, right);
+        return range_plan(repo, r, left, right, true);
     }
     if let Some((left, right)) = split_range(r, "..") {
-        return range_plan(repo, r, left, right);
+        return range_plan(repo, r, left, right, false);
     }
     let sha = verify(repo, r)?;
     let Some(head) = head else {

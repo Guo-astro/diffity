@@ -323,19 +323,33 @@ impl GithubService {
             .await?;
         let full = slug.full_name();
         let head_repo = branch_head_repo(repo_path, &branch).await.map(|s| s.full_name());
-        let found = data
+        let candidates: Vec<_> = data
             .repository
             .map(|r| r.pull_requests.into_items())
             .unwrap_or_default()
             .into_iter()
-            .find(|pr| {
+            .filter(|pr| {
                 pr.head_ref_name == branch
                     && pr.head_repo_full_name().is_some_and(|name| {
                         name.eq_ignore_ascii_case(&full)
                             || head_repo.as_deref().is_some_and(|h| name.eq_ignore_ascii_case(h))
                     })
-            });
-        Ok(found.map(|pr| with_remote(pr.to_pull_request(), &remote_name)))
+            })
+            .collect();
+        if let Some(open) = candidates.iter().find(|pr| pr.state == "OPEN") {
+            return Ok(Some(with_remote(open.to_pull_request(), &remote_name)));
+        }
+        // A merged or closed PR still belongs to the branch until it gets commits the PR never had; a branch name
+        // reused for new work must not show the old PR.
+        let head = gitcli::head_sha(repo_path).await?;
+        for pr in candidates {
+            let unchanged = pr.head_ref_oid.eq_ignore_ascii_case(&head)
+                || gitcli::is_ancestor(repo_path, &head, &pr.head_ref_oid).await.unwrap_or(false);
+            if unchanged {
+                return Ok(Some(with_remote(pr.to_pull_request(), &remote_name)));
+            }
+        }
+        Ok(None)
     }
 
     pub async fn list_prs(&self, repo_path: &str) -> Result<Vec<PullRequest>> {
@@ -396,54 +410,37 @@ impl GithubService {
         };
         let token = self.require_token().await?;
         let pr = self.fetch_pr(&token, &slug, number).await?;
-        let full = slug.full_name();
-        let same_repo = pr
-            .head_repo_full_name()
-            .is_some_and(|name| name.eq_ignore_ascii_case(&full));
         // The PR diff is `<remote>/<base>...HEAD`, so the base must be current too.
         let base = pr.base_ref_name.as_str();
         let base_refspec = format!("+refs/heads/{base}:refs/remotes/{remote_name}/{base}");
         gitcli::run_ok(repo_path, &["fetch", &remote_name, &base_refspec]).await?;
-        // Check out the real branch when its repository is one of our remotes (the PR's own repo, or
-        // your fork in a fork setup), so pushing works; otherwise `pull/<n>/head`.
-        let head_remote = if same_repo {
-            Some(remote_name.clone())
-        } else {
-            match pr.head_repo_full_name().and_then(|name| remote::parse_remote_url(&format!("https://github.com/{name}"))) {
-                Some(head_slug) => gitcli::remote_for(repo_path, &head_slug).await?,
-                None => None,
-            }
-        };
-        let head = pr.head_ref_name.as_str();
-        let fallback_branch = format!("pr-{number}");
-        let local_branch = if head_remote.is_some() { head } else { fallback_branch.as_str() };
+        let branch = pr_branch(repo_path, &remote_name, &slug, &pr, number).await?;
         let worktrees = git::list_worktrees(Path::new(repo_path))?;
-        if let Some(tree) = worktrees.iter().find(|tree| !tree.is_current && tree.branch.as_deref() == Some(local_branch)) {
+        if let Some(tree) = worktrees.iter().find(|tree| !tree.is_current && tree.branch.as_deref() == Some(branch.local.as_str())) {
             return Err(AppError::new("in_worktree", tree.path.clone()));
         }
-        // Already on the PR's branch (e.g. its own worktree): keep local work, only fast-forward when that applies cleanly.
-        if worktrees.iter().any(|tree| tree.is_current && tree.branch.as_deref() == Some(local_branch)) {
-            if let Some(head_remote) = &head_remote {
-                let head_refspec = format!("+refs/heads/{head}:refs/remotes/{head_remote}/{head}");
-                if gitcli::run(repo_path, &["fetch", head_remote, &head_refspec]).await?.ok {
-                    let _ = gitcli::run(repo_path, &["merge", "--ff-only", &format!("{head_remote}/{head}")]).await?;
-                }
+        // Already on the PR's branch (e.g. its own worktree): keep local work, only fast-forward when that applies
+        // cleanly. A copy that can't fast-forward (a rebased PR) is flagged in the PR view, see `update_pr_branch`.
+        if worktrees.iter().any(|tree| tree.is_current && tree.branch.as_deref() == Some(branch.local.as_str())) {
+            if let Some(sha) = fetch_pr_head(repo_path, &remote_name, number, &branch).await? {
+                let _ = gitcli::run(repo_path, &["merge", "--ff-only", &sha]).await?;
             }
             return Ok(with_remote(pr.to_pull_request(), &remote_name));
         }
         gitcli::ensure_clean(repo_path, "checking out a PR").await?;
         // A merged PR's branch is often deleted: fall back to `pull/<n>/head`.
+        let head = branch.head.as_str();
         let mut fetched_branch = None;
-        if let Some(head_remote) = head_remote {
+        if let Some(head_remote) = &branch.head_remote {
             let head_refspec = format!("+refs/heads/{head}:refs/remotes/{head_remote}/{head}");
-            if gitcli::run(repo_path, &["fetch", &head_remote, &head_refspec]).await?.ok {
+            if gitcli::run(repo_path, &["fetch", head_remote, &head_refspec]).await?.ok {
                 fetched_branch = Some(format!("{head_remote}/{head}"));
             }
         }
         if let Some(remote_ref) = fetched_branch {
             if gitcli::branch_exists(repo_path, head).await? {
                 gitcli::run_ok(repo_path, &["checkout", head]).await?;
-                gitcli::run_ok(repo_path, &["merge", "--ff-only", &remote_ref]).await?;
+                let _ = gitcli::run(repo_path, &["merge", "--ff-only", &remote_ref]).await?;
             } else {
                 gitcli::run_ok(repo_path, &["checkout", "-b", head, "--track", &remote_ref]).await?;
             }
@@ -456,6 +453,40 @@ impl GithubService {
             gitcli::run_ok(repo_path, &["config", &key, &number.to_string()]).await?;
         }
         Ok(with_remote(pr.to_pull_request(), &remote_name))
+    }
+
+    /// Brings the checked-out PR branch to the PR's latest head: a fast-forward, or with `reset` a hard reset when
+    /// the PR was rebased (the old commits stay in the reflog). Fails with `ahead` when you have commits the PR lacks.
+    pub async fn update_pr_branch(&self, repo_path: &str, number: u64, reset: bool) -> Result<()> {
+        let PrRemote { name: remote_name, slug } = self.pr_remote(repo_path).await?;
+        let token = self.require_token().await?;
+        let pr = self.fetch_pr(&token, &slug, number).await?;
+        let branch = pr_branch(repo_path, &remote_name, &slug, &pr, number).await?;
+        if gitcli::current_branch(repo_path).await?.as_deref() != Some(branch.local.as_str()) {
+            return Err(AppError::invalid(format!("PR #{number} is not the checked-out branch")));
+        }
+        gitcli::ensure_clean(repo_path, "updating the pull request").await?;
+        let Some(sha) = fetch_pr_head(repo_path, &remote_name, number, &branch).await? else {
+            return Err(AppError::new("git", format!("Could not fetch the latest commits of PR #{number}")));
+        };
+        if gitcli::is_ancestor(repo_path, "HEAD", &sha).await? {
+            gitcli::run_ok(repo_path, &["merge", "--ff-only", &sha]).await?;
+            return Ok(());
+        }
+        if gitcli::is_ancestor(repo_path, &sha, "HEAD").await? {
+            return Err(AppError::new(
+                "ahead",
+                format!("Your branch has commits PR #{number} doesn't. Push them to update the pull request."),
+            ));
+        }
+        if !reset {
+            return Err(AppError::new(
+                "diverged",
+                format!("PR #{number} was rewritten (rebased or force-pushed), so your copy can't fast-forward."),
+            ));
+        }
+        gitcli::run_ok(repo_path, &["reset", "--hard", &sha]).await?;
+        Ok(())
     }
 
     pub async fn stash_push(&self, repo_path: &str, message: &str) -> Result<StashResult> {
@@ -521,7 +552,7 @@ impl GithubService {
         .map_err(|e| AppError::internal(e.to_string()))??;
         let head_mismatch = (!head.eq_ignore_ascii_case(&pr.head_ref_oid)).then(|| {
             format!(
-                "Your local branch is at {} but PR #{pr_number}'s head is {}. Pull or push so they match, then try again.",
+                "Your local branch is at {} but PR #{pr_number}'s head is {}. Update it from the notice above the diff (or push your commits), then try again.",
                 short(&head),
                 short(&pr.head_ref_oid)
             )
@@ -1096,6 +1127,56 @@ const PR_BRANCH_CONFIG: &str = "diffityPr";
 fn with_remote(mut pr: PullRequest, remote: &str) -> PullRequest {
     pr.base_remote = Some(remote.to_string());
     pr
+}
+
+/// Where a PR's commits come from and the local branch it is reviewed on.
+struct PrBranch {
+    /// Our remote for the PR's head repository when its real branch is checked out (so pushing works).
+    head_remote: Option<String>,
+    head: String,
+    local: String,
+}
+
+/// The real branch when its repository is one of our remotes (the PR's own repo, or your fork in a fork setup)
+/// and no local branch of that name tracks something else (your own `main`, another fork's `fix`); otherwise
+/// `pr-<n>`, checked out from `pull/<n>/head`.
+async fn pr_branch(repo_path: &str, remote_name: &str, slug: &RepoSlug, pr: &PrNode, number: u64) -> Result<PrBranch> {
+    let full = slug.full_name();
+    let same_repo = pr.head_repo_full_name().is_some_and(|name| name.eq_ignore_ascii_case(&full));
+    let remote = if same_repo {
+        Some(remote_name.to_string())
+    } else {
+        match pr.head_repo_full_name().and_then(|name| remote::parse_remote_url(&format!("https://github.com/{name}"))) {
+            Some(head_slug) => gitcli::remote_for(repo_path, &head_slug).await?,
+            None => None,
+        }
+    };
+    let head = pr.head_ref_name.clone();
+    let head_remote = match remote {
+        Some(remote) => match gitcli::upstream_of(repo_path, &head).await? {
+            Some((tracked, merge)) if tracked != remote || merge != format!("refs/heads/{head}") => None,
+            _ => Some(remote),
+        },
+        None => None,
+    };
+    let local = if head_remote.is_some() { head.clone() } else { format!("pr-{number}") };
+    Ok(PrBranch { head_remote, head, local })
+}
+
+/// Fetches the PR's latest head (its branch, else `pull/<n>/head`) and returns the commit, `None` when neither fetches.
+async fn fetch_pr_head(repo_path: &str, remote_name: &str, number: u64, branch: &PrBranch) -> Result<Option<String>> {
+    if let Some(head_remote) = &branch.head_remote {
+        let tracking = format!("refs/remotes/{head_remote}/{}", branch.head);
+        let refspec = format!("+refs/heads/{}:{tracking}", branch.head);
+        if gitcli::run(repo_path, &["fetch", head_remote, &refspec]).await?.ok {
+            return Ok(Some(gitcli::run_ok(repo_path, &["rev-parse", &tracking]).await?));
+        }
+    }
+    let pull_ref = format!("pull/{number}/head");
+    if !gitcli::run(repo_path, &["fetch", remote_name, &pull_ref]).await?.ok {
+        return Ok(None);
+    }
+    Ok(Some(gitcli::run_ok(repo_path, &["rev-parse", "FETCH_HEAD"]).await?))
 }
 
 struct PrRemote {

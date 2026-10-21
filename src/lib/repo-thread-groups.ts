@@ -7,20 +7,38 @@ export interface ViewGroup {
   ref: string;
   /** Set for a PR or branch view of a branch other than the checked-out one. */
   otherBranch?: string;
+  /** Comments from before uncommitted changes were kept per branch (`RepoThread.unassigned`). */
+  unassigned?: boolean;
   label: string;
   latest: string;
   files: { path: string; threads: RepoThread[] }[];
   count: number;
 }
 
+function groupKey(thread: RepoThread): string {
+  if (thread.otherBranch) {
+    return `${thread.ref}\n${thread.otherBranch}`;
+  }
+  if (thread.unassigned) {
+    return `${thread.ref}\nunassigned`;
+  }
+  return thread.ref;
+}
+
+/** The group of the view on screen, on the checked-out branch. */
+export function isCurrentGroup(group: ViewGroup, currentRef: string | null): boolean {
+  return group.ref === currentRef && !group.otherBranch && !group.unassigned;
+}
+
 /** Groups threads by view (current view first, then most recently active) and by file (general first). */
 export function groupThreads(threads: RepoThread[], currentRef: string | null): ViewGroup[] {
-  const byRef = new Map<string, { ref: string; otherBranch?: string; label: string; latest: string; threads: RepoThread[] }>();
+  const byRef = new Map<string, { ref: string; otherBranch?: string; unassigned?: boolean; label: string; latest: string; threads: RepoThread[] }>();
   for (const thread of threads) {
-    const key = thread.otherBranch ? `${thread.ref}\n${thread.otherBranch}` : thread.ref;
+    const key = groupKey(thread);
     const group = byRef.get(key);
     if (!group) {
-      byRef.set(key, { ref: thread.ref, otherBranch: thread.otherBranch, label: thread.refLabel, latest: thread.updatedAt, threads: [thread] });
+      const label = thread.unassigned ? `${thread.refLabel} · from before comments were per branch` : thread.refLabel;
+      byRef.set(key, { ref: thread.ref, otherBranch: thread.otherBranch, unassigned: thread.unassigned, label, latest: thread.updatedAt, threads: [thread] });
       continue;
     }
     group.threads.push(thread);
@@ -47,9 +65,9 @@ export function groupThreads(threads: RepoThread[], currentRef: string | null): 
         return a.localeCompare(b);
       })
       .map(([path, list]) => ({ path, threads: list.sort((x, y) => x.startLine - y.startLine) }));
-    groups.push({ key, ref: group.ref, otherBranch: group.otherBranch, label: group.label, latest: group.latest, files, count: group.threads.length });
+    groups.push({ key, ref: group.ref, otherBranch: group.otherBranch, unassigned: group.unassigned, label: group.label, latest: group.latest, files, count: group.threads.length });
   }
-  const isCurrent = (group: ViewGroup) => group.ref === currentRef && !group.otherBranch;
+  const isCurrent = (group: ViewGroup) => isCurrentGroup(group, currentRef);
   return groups.sort((a, b) => {
     if (isCurrent(a)) {
       return -1;

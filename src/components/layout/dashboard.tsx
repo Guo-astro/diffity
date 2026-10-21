@@ -425,7 +425,7 @@ export function Dashboard(props: DashboardProps) {
   };
 
   const signedOutEarly = hasRemote && !!auth && !auth.authenticated;
-  const openThreads = (repoThreads ?? []).filter(isOpenThread);
+  const openThreads = (repoThreads ?? []).filter((thread) => isOpenThread(thread) && !thread.otherBranch && !thread.unassigned);
   const threadGroups = new Map<string, { label: string; count: number; claude: number }>();
   for (const thread of openThreads) {
     const group = threadGroups.get(thread.ref) ?? { label: thread.refLabel, count: 0, claude: 0 };

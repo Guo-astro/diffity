@@ -15,14 +15,27 @@ function readLocations(): Record<string, string> {
   }
 }
 
-/** Remembers the view (page + ref) last shown for a repository, so switching back restores it. */
+function withoutParams(location: string, names: string[]): string {
+  const [path, query = ''] = location.split('?');
+  const params = new URLSearchParams(query);
+  for (const name of names) {
+    params.delete(name);
+  }
+  const search = params.toString();
+  return search ? `${path}?${search}` : path;
+}
+
+/**
+ * Remembers the view (page + ref) last shown for a repository, so switching back restores it. A PR link (`pr`) is
+ * not kept: returning to the repository must not check that PR out again.
+ */
 export function rememberLocation(repoPath: string, location: string) {
   if (!location.startsWith(repoBase(repoPath))) {
     return;
   }
   try {
     const all = readLocations();
-    all[repoPath] = location;
+    all[repoPath] = withoutParams(location, ['pr']);
     localStorage.setItem(LOCATIONS_KEY, JSON.stringify(all));
   } catch {
     return;
@@ -62,15 +75,9 @@ function rememberViewLocation(repoPath: string, location: string) {
   if (!view) {
     return;
   }
-  const [path, query = ''] = location.split('?');
-  const params = new URLSearchParams(query);
-  for (const name of TRANSIENT_PARAMS) {
-    params.delete(name);
-  }
-  const search = params.toString();
   try {
     const all = readViewLocations();
-    all[repoPath] = { ...all[repoPath], [view]: search ? `${path}?${search}` : path };
+    all[repoPath] = { ...all[repoPath], [view]: withoutParams(location, TRANSIENT_PARAMS) };
     localStorage.setItem(VIEW_LOCATIONS_KEY, JSON.stringify(all));
   } catch {
     return;

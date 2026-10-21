@@ -1,15 +1,21 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import dayjs from 'dayjs';
 import { Skeleton } from '../ui/skeleton';
 import { SegmentedToggle } from '../ui/segmented-toggle';
 import { buttonGhost } from '../ui/button-styles';
 import { fetchCommit, fetchDiff, parseCommitRef } from '../../lib/api';
+import * as tauri from '../../lib/tauri';
+import { queryClient } from '../../lib/query-client';
+import type { PullRequest } from '../../lib/types';
+import { ConfirmDialog } from '../ui/confirm-dialog';
+import { Spinner } from '../icons/spinner';
 import { cn } from '../../lib/cn';
 import { getFilePath } from '../../lib/diff-utils';
 import { useCopy } from '../../hooks/use-copy';
 import { useRepoNav } from '../../hooks/use-repo';
-import { useGitHubPr, useGitStatus } from '../../hooks/use-repo-state';
+import { useGitHubPr, useGitStatus, useRepoMeta } from '../../hooks/use-repo-state';
 import { AuthorAvatar } from './commit-list';
 import { isAllChangesRef, isPrShapedRef, prDiffRef, rangeParts, shortBase, uncommittedTwin } from './ref-menu';
 import { CheckIcon, CopyIcon, GitCompareIcon } from '../ui/icon';
@@ -128,6 +134,64 @@ function PrUncommittedNotice(props: { base: string }) {
   );
 }
 
+/** The checked-out copy of the PR isn't at its latest commit (new pushes, or a rebase), so the diff is old. */
+function PrBehindNotice(props: { pr: PullRequest }) {
+  const { pr } = props;
+  const nav = useRepoNav();
+  const { data: meta } = useRepoMeta();
+  const { data: status } = useGitStatus();
+  const [busy, setBusy] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const local = meta?.headSha ?? null;
+
+  if (!local || !pr.headSha || local === pr.headSha) {
+    return null;
+  }
+  // Unpushed commits of your own: the Push button covers it.
+  if (status?.upstream && status.ahead > 0 && status.behind === 0) {
+    return null;
+  }
+  const update = async (reset: boolean) => {
+    setConfirmReset(false);
+    setBusy(true);
+    try {
+      await tauri.updatePrBranch(nav.repoPath, pr.number, reset);
+      queryClient.invalidateQueries();
+      toast.success(`Updated to the latest commit of #${pr.number}`);
+    } catch (error) {
+      if (tauri.isAppError(error) && error.code === 'diverged') {
+        setConfirmReset(true);
+        return;
+      }
+      toast.error(`Could not update #${pr.number}`, { description: tauri.errorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border bg-bg-secondary text-[13px] text-text-secondary">
+      <span className="w-1.5 h-1.5 rounded-full bg-deleted shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 truncate" title="Reviews and comments use your local copy, and GitHub only takes comments on the PR's latest commit">
+        Your copy is at <code className="font-mono text-xs text-text">{local.slice(0, 7)}</code>, but #{pr.number} is at <code className="font-mono text-xs text-text">{pr.headSha.slice(0, 7)}</code>. This diff may be out of date.
+      </span>
+      <button onClick={() => void update(false)} disabled={busy} className={cn(buttonGhost, 'h-6 px-2 text-xs text-text')}>
+        {busy && <Spinner />}
+        Update
+      </button>
+      {confirmReset && (
+        <ConfirmDialog
+          title={`Reset to the latest #${pr.number}?`}
+          message={`PR #${pr.number} was rebased or force-pushed, so your copy can't simply move forward. Reset this branch to the PR's latest commit? Your old commits stay in git's reflog.`}
+          confirmLabel="Reset"
+          onConfirm={() => void update(true)}
+          onCancel={() => setConfirmReset(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 /**
  * Switches a branch view between all changes (`main`) and commits only (`main...HEAD`) while the tree is dirty.
  * Both modes share one review, so comments and Viewed marks carry over. Lives in the title bar so it stays in sight.
@@ -180,7 +244,12 @@ export function DiffContextHeader(props: { diffRef: string }) {
     return <CommitHeader sha={commitSha} />;
   }
   if (isPr && details) {
-    return <PrUncommittedNotice base={prBaseFor(details.pr)} />;
+    return (
+      <>
+        <PrBehindNotice pr={details.pr} />
+        <PrUncommittedNotice base={prBaseFor(details.pr)} />
+      </>
+    );
   }
   if (mayBePr || (!diffRef.includes('..') && !isAllChangesRef(diffRef))) {
     return null;

@@ -272,7 +272,7 @@ pub fn pr_fields() -> &'static str {
 pub fn find_pr_query() -> String {
     format!(
         "query($owner:String!,$name:String!,$branch:String!){{repository(owner:$owner,name:$name){{\
-         pullRequests(states:OPEN,headRefName:$branch,first:20,orderBy:{{field:UPDATED_AT,direction:DESC}}){{nodes{{{}}}}}}}}}",
+         pullRequests(states:[OPEN,MERGED,CLOSED],headRefName:$branch,first:20,orderBy:{{field:UPDATED_AT,direction:DESC}}){{nodes{{{}}}}}}}}}",
         pr_fields()
     )
 }

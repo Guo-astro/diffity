@@ -121,6 +121,21 @@ pub async fn branch_exists(repo: &str, branch: &str) -> Result<bool> {
     Ok(run(repo, &["show-ref", "--verify", "--quiet", &refname]).await?.ok)
 }
 
+/// The remote and ref local `branch` tracks (`branch.<name>.remote` / `.merge`), `None` without an upstream.
+pub async fn upstream_of(repo: &str, branch: &str) -> Result<Option<(String, String)>> {
+    let remote = run(repo, &["config", "--get", &format!("branch.{branch}.remote")]).await?;
+    let merge = run(repo, &["config", "--get", &format!("branch.{branch}.merge")]).await?;
+    if !remote.ok || !merge.ok {
+        return Ok(None);
+    }
+    Ok(Some((remote.output.trim().to_string(), merge.output.trim().to_string())))
+}
+
+/// `git merge-base --is-ancestor ancestor descendant`.
+pub async fn is_ancestor(repo: &str, ancestor: &str, descendant: &str) -> Result<bool> {
+    Ok(run(repo, &["merge-base", "--is-ancestor", ancestor, descendant]).await?.ok)
+}
+
 async fn stash_top(repo: &str) -> Result<Option<String>> {
     let out = run(repo, &["rev-parse", "--verify", "--quiet", "refs/stash"]).await?;
     Ok(out.ok.then(|| out.output.trim().to_string()).filter(|sha| !sha.is_empty()))
@@ -278,5 +293,19 @@ mod tests {
         assert_eq!(checkout(repo, "--orphan").await.unwrap_err().code, "invalid");
         std::fs::write(dir.path().join("a.txt"), "dirty\n").unwrap();
         assert_eq!(checkout(repo, "other").await.unwrap_err().code, "dirty");
+    }
+
+    #[tokio::test]
+    async fn reads_upstream_and_ancestry() {
+        let dir = scratch();
+        let repo = dir.path().to_str().unwrap();
+        assert_eq!(upstream_of(repo, "main").await.unwrap(), None);
+        git(dir.path(), &["config", "branch.main.remote", "fork"]);
+        git(dir.path(), &["config", "branch.main.merge", "refs/heads/main"]);
+        assert_eq!(upstream_of(repo, "main").await.unwrap(), Some(("fork".into(), "refs/heads/main".into())));
+        std::fs::write(dir.path().join("a.txt"), "two\n").unwrap();
+        git(dir.path(), &["commit", "-qam", "two"]);
+        assert!(is_ancestor(repo, "other", "main").await.unwrap());
+        assert!(!is_ancestor(repo, "main", "other").await.unwrap());
     }
 }

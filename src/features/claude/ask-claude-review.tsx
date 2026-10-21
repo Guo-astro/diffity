@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { useQuery } from '@tanstack/react-query';
 import { create } from 'zustand';
 import { cn } from '../../lib/cn';
-import { getRepoPath } from '../../lib/api';
+import { getRepoPath, parseCommitRef } from '../../lib/api';
 import * as tauri from '../../lib/tauri';
 import { diffOptions } from '../../queries/diff';
 import { getFilePath } from '../../lib/diff-utils';
@@ -15,6 +15,11 @@ import { SegmentedToggle } from '../../components/ui/segmented-toggle';
 import { ModelPicker } from './model-picker';
 import { useRunPick, writeRepoPick, type RunPick } from './model-setting';
 import { agentMeta } from './agents';
+import { useGitHubPr } from '../../hooks/use-repo-state';
+import { useRepoNav } from '../../hooks/use-repo';
+import { prBaseFor, prRefFor } from '../../lib/pr-ref';
+import { useCommitDetails } from '../../components/layout/diff-context-bar';
+import { viewLabel } from '../../lib/thread-location';
 
 export const REVIEW_FOCUSES = ['Security', 'Performance', 'Correctness', 'Naming', 'Tests', 'Types'] as const;
 
@@ -87,6 +92,46 @@ export const useAskClaudeRequest = create<{ ref: string | null }>(() => ({ ref: 
 
 export function requestAskClaude(ref: string) {
   useAskClaudeRequest.setState({ ref });
+}
+
+/** What the agent will read, named plainly, so a commit or an old view is never mistaken for the pull request. */
+function ReviewTarget(props: { diffRef: string; onClose: () => void }) {
+  const { diffRef, onClose } = props;
+  const nav = useRepoNav();
+  const { details } = useGitHubPr();
+  const commitSha = parseCommitRef(diffRef);
+  const { data: commit } = useCommitDetails(commitSha);
+  const pr = details?.pr ?? null;
+  const isPr = !!pr && (diffRef === prRefFor(pr) || diffRef === prBaseFor(pr));
+  let label = viewLabel(diffRef);
+  if (isPr && pr) {
+    label = `Pull request #${pr.number} · ${pr.title}`;
+  } else if (commitSha) {
+    const subject = commit?.message.split('\n')[0];
+    label = subject ? `Commit ${commitSha.slice(0, 7)} · ${subject}` : `Commit ${commitSha.slice(0, 7)}`;
+  }
+  const reviewPr = pr && !isPr ? () => {
+    onClose();
+    nav.toDiff(prRefFor(pr));
+    requestAskClaude(prRefFor(pr));
+  } : null;
+
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className="shrink-0 text-text-secondary">Reviews</span>
+        <span className="min-w-0 truncate font-medium text-text" title={diffRef}>{label}</span>
+      </div>
+      {reviewPr && pr && (
+        <div className="flex items-center gap-1.5 min-w-0 text-text-muted">
+          <span className="min-w-0 truncate">Only this view, not all of pull request #{pr.number}.</span>
+          <button type="button" onClick={reviewPr} className="shrink-0 text-text-secondary hover:text-text underline underline-offset-2 cursor-pointer">
+            Review #{pr.number} instead
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 interface AskClaudePanelProps {
@@ -227,6 +272,7 @@ export function AskClaudePanel(props: AskClaudePanelProps) {
         )}
       </div>
       )}
+      {!changing && <ReviewTarget diffRef={diffRef} onClose={onClose} />}
       <div>
         <label className="block mb-1.5 text-xs font-medium text-text-secondary" htmlFor="claude-instructions">
           {changing ? `What should ${agent.short} change?` : `What should ${agent.short} focus on?`}

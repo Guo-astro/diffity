@@ -14,7 +14,6 @@ export function useRepoThreads() {
     queryFn: () => tauri.listRepoThreads(repoPath),
     enabled: !!repoPath,
     staleTime: 5_000,
-    placeholderData: (previous) => previous,
   });
 }
 

@@ -165,6 +165,27 @@ pub fn merge_base(repo: &Path, a: &str, b: &str) -> Result<Option<String>> {
     Ok(out.map(|b| String::from_utf8_lossy(&b).trim().to_string()).filter(|s| !s.is_empty()))
 }
 
+/// Where `head` forked from `base` before it was merged into it: once a branch is merged with a merge commit, its
+/// merge-base with `base` is the branch tip itself, which would make `base...head` empty. Walks `base`'s first
+/// parents back to the merge that brought `head` in and takes the merge-base with the merge's first parent.
+/// `None` when `head` isn't merged that way (not merged, or fast-forwarded).
+pub fn merged_fork_point(repo: &Path, base: &str, head: &str) -> Result<Option<String>> {
+    let range = format!("{head}..{base}");
+    let Some(out) = run_opt(repo, &["rev-list", "--first-parent", "--ancestry-path", "--reverse", &range])? else {
+        return Ok(None);
+    };
+    let Some(merge) = String::from_utf8_lossy(&out).lines().next().map(str::to_string) else {
+        return Ok(None);
+    };
+    let Some(before) = verify_commit(repo, &format!("{merge}^1"))? else {
+        return Ok(None);
+    };
+    if before == head {
+        return Ok(None);
+    }
+    merge_base(repo, &before, head)
+}
+
 pub fn current_branch(repo: &Path) -> Result<Option<String>> {
     let out = run_opt(repo, &["symbolic-ref", "--quiet", "--short", "HEAD"])?;
     Ok(out.map(|b| String::from_utf8_lossy(&b).trim().to_string()).filter(|s| !s.is_empty()))

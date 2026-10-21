@@ -10,17 +10,16 @@ import { AskClaudeThreadButton } from '../../features/claude/ask-claude-thread';
 import { useReviewState } from '../../features/review/review-state';
 import { EllipsisVerticalIcon, GitHubIcon, GitPullRequestIcon, SparkleIcon } from '../ui/icon';
 import { Popover, useMenu } from '../ui/popover';
-import { useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
 import * as api from '../../lib/api';
 import { useGitHubPr } from '../../hooks/use-repo-state';
-import { DEFAULT_AUTHOR } from './types';
 import { hasDraft } from './comment-form';
 import { useViewState } from '../../lib/view-state';
 import { Spinner } from '../icons/spinner';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useState } from 'react';
 import { SuggestionThreadContext } from '../../features/suggestions/suggestion-block';
+import { PromoteForm } from '../../features/review/promote-form';
+import { useReviewThreads } from '../../hooks/use-review-threads';
 
 interface ThreadCardProps {
   thread: CommentThreadType;
@@ -151,34 +150,16 @@ export function ThreadCard(props: ThreadCardProps) {
   };
 
   const { details } = useGitHubPr();
-  const queryClient = useQueryClient();
-  const canPromote = review.prMode && claudeThread && !resolved && !!details && !!review.sessionId;
-
-  const promote = async () => {
-    const first = thread.comments[0];
-    if (!first || !review.sessionId || !details) {
+  const { data: sessionThreads } = useReviewThreads(review.sessionId);
+  const promotedDraft = claudeThread ? sessionThreads?.find((item) => item.promotedFrom === thread.id) : undefined;
+  const [composingPromote, setComposingPromote] = useState(false);
+  const canPromote = review.promotePr !== null && claudeThread && !resolved && !!review.sessionId && !promotedDraft;
+  const promoteTitle = review.promoteBlocked ?? `Write a draft for your GitHub review from ${lastAgentName ?? 'the agent'}'s comment`;
+  const startPromote = () => {
+    if (review.promoteBlocked) {
       return;
     }
-    try {
-      await api.createThread({
-        sessionId: review.sessionId,
-        filePath: thread.filePath,
-        side: thread.side,
-        startLine: thread.startLine,
-        endLine: thread.endLine,
-        body: first.body,
-        author: DEFAULT_AUTHOR,
-        anchorContent: thread.anchorContent ?? undefined,
-        options: { pending: true },
-        viewRef: thread.viewRef,
-      });
-      await api.updateThreadStatus(thread.id, 'resolved');
-      queryClient.invalidateQueries({ queryKey: ['threads', review.sessionId] });
-      queryClient.invalidateQueries({ queryKey: ['reviews', review.sessionId] });
-      toast.success(`Added to your review on PR #${details.prNumber}`, { description: 'It is a draft until you submit the review. Edit it first if you like.' });
-    } catch (error) {
-      toast.error('Could not add it to your review', { description: api.errorMessage(error) });
-    }
+    setComposingPromote(true);
   };
 
   const askClaude = () => {
@@ -193,11 +174,21 @@ export function ThreadCard(props: ThreadCardProps) {
           <OriginBadge thread={thread} prMode={review.prMode} prUrl={details?.pr?.url ?? null} />
         </div>
         <div className="flex items-center gap-1 shrink-0">
+          {promotedDraft && !resolved && (
+            <span
+              className="inline-flex items-center gap-1 h-6 px-2 text-xs text-text-secondary"
+              title={`Your draft from this comment is in your review. This comment is resolved when the review is posted; delete the draft to undo.`}
+            >
+              <GitPullRequestIcon size="xs" className="text-added" />
+              In your review
+            </span>
+          )}
           {!compact && canPromote && (
             <button
-              onClick={() => void promote()}
-              className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer"
-              title={`Copy ${lastAgentName ?? 'the agent'}'s comment into your GitHub review as a draft you can edit`}
+              onClick={startPromote}
+              disabled={composingPromote || !!review.promoteBlocked}
+              className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-xs text-text-secondary hover:text-text hover:bg-hover transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-text-secondary"
+              title={promoteTitle}
             >
               <GitPullRequestIcon size="xs" className="text-added" />
               Add to my review
@@ -221,7 +212,7 @@ export function ThreadCard(props: ThreadCardProps) {
               ...(compact && onResolve && onUnresolve && !resolved ? [{ label: 'Resolve', onSelect: onResolve }] : []),
               ...(compact && onUnresolve && resolved ? [{ label: 'Reopen', onSelect: onUnresolve }] : []),
               ...(canAskClaude && (compact || !showAskClaude || canPromote) ? [{ label: `Ask ${askAgent.short}`, onSelect: askClaude }] : []),
-              ...(compact && canPromote ? [{ label: 'Add to my review', onSelect: () => void promote() }] : []),
+              ...(compact && canPromote && !review.promoteBlocked ? [{ label: 'Add to my review', onSelect: startPromote }] : []),
               { label: 'Delete thread', onSelect: requestDelete, danger: true },
             ]}
           />
@@ -262,7 +253,16 @@ export function ThreadCard(props: ThreadCardProps) {
           {activity === 'working' ? `${runAgentName ?? 'Agent'} is working…` : runAgentName ? `Queued for ${runAgentName}` : 'Queued'}
         </div>
       )}
-      {onReply && (
+      {composingPromote && canPromote && review.sessionId && review.promotePr !== null && (
+        <PromoteForm
+          thread={thread}
+          sessionId={review.sessionId}
+          prNumber={review.promotePr}
+          agentName={agentByName(thread.comments[0]?.author.name ?? '')?.short ?? thread.comments[0]?.author.name ?? 'The agent'}
+          onClose={() => setComposingPromote(false)}
+        />
+      )}
+      {onReply && !composingPromote && (
         showReply ? (
           <div className="px-3 pb-3">
             <CommentForm

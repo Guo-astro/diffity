@@ -327,7 +327,9 @@ pub fn list_repo_threads(store: &Store, repo_path: &str) -> Result<Vec<RepoThrea
                 .filter(|c| c.index.contains(&thread))
                 .map(|c| c.pointer.clone());
         }
-        out.push(to_repo_thread(&session, label.clone(), thread, anchor, moved_to));
+        let mut item = to_repo_thread(&session, label.clone(), thread, anchor, moved_to);
+        item.unassigned = crate::core::store::is_legacy_session(&session.r#ref, &session.scope);
+        out.push(item);
     }
     Ok(out)
 }
@@ -373,6 +375,7 @@ fn to_repo_thread(
         anchor,
         moved_to,
         other_branch: None,
+        unassigned: false,
     }
 }
 

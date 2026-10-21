@@ -1,7 +1,11 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { emitTo } from '@tauri-apps/api/event';
 import { hashString } from './hash';
 import { isTauri } from './platform';
+
+/** Asks a repository's window to show a route (a link with a PR, ref or file, opened while that window was already open). */
+export const NAVIGATE_EVENT = 'navigate-to';
 
 export type RepoPage = 'diff' | 'tree' | 'overview';
 
@@ -15,6 +19,9 @@ export async function openRepoInNewWindow(path: string, extra?: Record<string, s
   const label = `repo-${hashString(path).slice(0, 12)}`;
   const existing = await WebviewWindow.getByLabel(label).catch(() => null);
   if (existing) {
+    if (extra && Object.keys(extra).length > 0) {
+      await emitTo(label, NAVIGATE_EVENT, repoRoute(path, extra, page)).catch(() => undefined);
+    }
     await existing.setFocus();
     return;
   }

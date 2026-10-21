@@ -104,6 +104,23 @@ fn two_and_three_dot_ranges() {
 }
 
 #[test]
+fn merged_branch_still_shows_its_changes() {
+    let (repo, base, feature, _main) = diverged();
+    repo.git(&["checkout", "-q", "main"]);
+    repo.git(&["merge", "-q", "--no-ff", "-m", "Merge feature", "feature"]);
+    repo.write("after.txt", "after\n");
+    repo.commit("after the merge");
+    repo.git(&["checkout", "-q", "feature"]);
+    let res = diff::get_diff(&repo.path, "main...HEAD", false).unwrap();
+    assert_eq!(res.resolved.base_sha.as_deref(), Some(base.as_str()));
+    assert_eq!(res.resolved.head_sha.as_deref(), Some(feature.as_str()));
+    assert!(has(&res, "feature.txt"));
+    assert!(!has(&res, "main-only.txt"));
+    assert!(!has(&res, "after.txt"));
+    assert!(diff::get_diff(&repo.path, "main..HEAD", false).unwrap().files.is_empty());
+}
+
+#[test]
 fn invalid_refs_and_non_repos() {
     let repo = Repo::with_commit();
     assert_eq!(diff::resolve_ref(&repo.path, "nope").unwrap_err().code, "invalid_ref");

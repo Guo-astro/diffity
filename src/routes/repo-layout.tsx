@@ -42,22 +42,24 @@ function useWindowTitle(repoPath: string) {
   }, [repoPath]);
 }
 
+/** Checks out the PR a link opened (`?pr=`), once per navigation: the layout stays mounted across links and repos. */
 function usePrCheckout() {
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const nav = useRepoNav();
   const pr = params.get('pr');
-  const started = useRef(false);
+  const handled = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!pr || started.current) {
+    if (!pr || handled.current === location.key) {
       return;
     }
-    started.current = true;
+    handled.current = location.key;
     const next = new URLSearchParams(params);
     next.delete('pr');
     setParams(next, { replace: true });
     void checkoutPullRequest(nav.repoPath, pr, nav);
-  }, [pr, params, setParams, nav]);
+  }, [pr, params, setParams, nav, location.key]);
 }
 
 function isTyping(target: EventTarget | null): boolean {

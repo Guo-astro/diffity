@@ -51,6 +51,14 @@ describe('viewLabel', () => {
 });
 
 describe('groupThreads', () => {
+  it('keeps comments from before per-branch comments apart from this branch', () => {
+    const groups = groupThreads([thread({ id: '1' }), thread({ id: '2', unassigned: true })], 'work');
+    expect(groups.map((group) => [group.label, group.unassigned ?? false, group.count])).toEqual([
+      ['Uncommitted changes', false, 1],
+      ['Uncommitted changes · from before comments were per branch', true, 1],
+    ]);
+  });
+
   it('puts the current view first, then the most recent, files sorted with general first', () => {
     const groups = groupThreads(
       [

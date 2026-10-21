@@ -19,6 +19,7 @@ fn thread(session_id: &str, file: &str, side: Side, lines: (u32, u32), anchor: O
         author_name: Some("Claude Code".into()),
         pending: None,
         view_ref: None,
+        promoted_from: None,
     }
 }
 

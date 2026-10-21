@@ -363,6 +363,9 @@ pub struct Thread {
     /// The view the thread was left in (`main`, `main...HEAD`, …); its line numbers belong to that view's diff.
     #[serde(default)]
     pub view_ref: Option<String>,
+    /// The agent's comment this draft was made from ("Add to my review").
+    #[serde(default)]
+    pub promoted_from: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -388,6 +391,9 @@ pub struct NewThread {
     /// The view the thread is left in; defaults to the session's ref.
     #[serde(default)]
     pub view_ref: Option<String>,
+    /// The agent's comment this draft is made from; one draft per comment.
+    #[serde(default)]
+    pub promoted_from: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -491,4 +497,7 @@ pub struct RepoThread {
     /// The branch a HEAD-relative view's thread was left on, when that isn't the checked-out branch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub other_branch: Option<String>,
+    /// Left on uncommitted changes before those were kept per branch, so its branch is unknown (`is_legacy_session`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unassigned: bool,
 }

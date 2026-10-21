@@ -16,6 +16,7 @@ fn new_thread(session_id: &str, body: &str) -> NewThread {
         author_name: None,
         pending: None,
         view_ref: None,
+        promoted_from: None,
     }
 }
 
@@ -328,7 +329,7 @@ fn migrates_v1_database() {
         .unwrap()
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
     let t = store.get_thread("t1").unwrap();
     assert!(!t.pending);
     assert!(t.review_id.is_none());
@@ -381,7 +382,7 @@ fn v2_database_gains_viewed_snapshots() {
     }
     let store = Store::open(&path).unwrap();
     let version: i64 = store.conn().unwrap().pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
     let old = store.get_viewed("s1", "old.rs").unwrap().unwrap();
     assert_eq!((old.content_hash.as_str(), old.blob_id), ("h0", None));
 
@@ -458,7 +459,9 @@ fn pr_views_are_kept_per_branch() {
     let work_a = store.get_or_create_session(&path, "work").unwrap();
     common::git(&repo.path, &["checkout", "-q", "main"]);
     assert_eq!(store.get_or_create_session(&path, pr).unwrap().id, on_main.id);
-    assert_eq!(store.get_or_create_session(&path, "work").unwrap().id, work_a.id, "uncommitted changes aren't per branch");
+    assert_ne!(store.get_or_create_session(&path, "work").unwrap().id, work_a.id, "uncommitted changes are per branch");
+    assert_eq!(store.get_or_create_session(&path, "work").unwrap().scope, "main");
+    assert_eq!(store.get_or_create_session(&path, "abc1234~1..abc1234").unwrap().scope, "", "commits are shared");
 }
 
 #[test]
@@ -470,6 +473,51 @@ fn unscoped_sessions_are_adopted_by_the_first_branch() {
     let adopted = store.get_or_create_session(&path, "main").unwrap();
     assert_eq!(adopted.id, legacy.id);
     assert_eq!(adopted.scope, "main");
+}
+
+#[test]
+fn legacy_uncommitted_sessions_are_kept_on_a_branch_by_hand() {
+    let repo = common::Repo::with_commit();
+    let path = repo.path.to_string_lossy().to_string();
+    let store = Store::open_in_memory().unwrap();
+    let legacy = store.get_or_create_scoped_session(&path, "work", "").unwrap();
+    let thread = store.create_thread(&pending_thread(&legacy.id, "old note")).unwrap();
+
+    let work = store.get_or_create_session(&path, "work").unwrap();
+    assert_ne!(work.id, legacy.id, "no branch claims it");
+    assert_eq!(store.get_or_create_scoped_session(&path, "work", "").unwrap().id, legacy.id);
+
+    let (from, into) = store.keep_thread_on_branch(&thread.id).unwrap();
+    assert_eq!((from.as_str(), into.as_str()), (legacy.id.as_str(), work.id.as_str()));
+    let kept = store.list_threads(&work.id, None).unwrap();
+    assert_eq!(kept.len(), 1);
+    assert!(!kept[0].pending);
+    assert_eq!(store.keep_thread_on_branch(&thread.id).unwrap_err().code, "invalid");
+}
+
+#[test]
+fn promoted_drafts_resolve_the_agent_comment_once_posted() {
+    let store = Store::open_in_memory().unwrap();
+    let session = store.get_or_create_session("/r", "origin/main...HEAD").unwrap();
+    let agent = store
+        .create_thread(&NewThread { author_type: Some(AuthorType::Agent), ..new_thread(&session.id, "agent says") })
+        .unwrap();
+    let promote = || NewThread { promoted_from: Some(agent.id.clone()), ..pending_thread(&session.id, "my words") };
+
+    let draft = store.create_thread(&promote()).unwrap();
+    assert_eq!(draft.promoted_from.as_deref(), Some(agent.id.as_str()));
+    assert_eq!(store.create_thread(&promote()).unwrap_err().code, "invalid", "one draft per comment");
+
+    store.delete_thread(&draft.id).unwrap();
+    assert_eq!(store.get_thread(&agent.id).unwrap().status, ThreadStatus::Open);
+    let draft = store.create_thread(&promote()).unwrap();
+
+    assert!(store.resolve_promoted_sources(&["nope".into()]).unwrap().is_empty());
+    assert_eq!(store.resolve_promoted_sources(std::slice::from_ref(&draft.id)).unwrap(), vec![session.id.clone()]);
+    assert_eq!(store.get_thread(&agent.id).unwrap().status, ThreadStatus::Resolved);
+
+    store.delete_thread(&agent.id).unwrap();
+    assert_eq!(store.get_thread(&draft.id).unwrap().promoted_from, None);
 }
 
 #[test]

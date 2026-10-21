@@ -11,7 +11,7 @@ import { clearFreshComments, useCommentSync } from '../pr/pr-checkout';
 export function CommentsButton() {
   const { data, isPending, isError } = useRepoThreads();
   const viewRef = useCurrentViewRef();
-  const count = (data ?? []).filter((thread) => isOpenThread(thread) && inView(thread, viewRef)).length;
+  const count = (data ?? []).filter((thread) => isOpenThread(thread) && !thread.unassigned && inView(thread, viewRef)).length;
   const loading = isPending && !isError;
   const open = useUi((state) => state.commentsOpen);
   const fresh = useCommentSync((state) => state.fresh);

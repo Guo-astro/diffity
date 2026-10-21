@@ -286,6 +286,8 @@ export function toCommentThread(thread: Thread): CommentThread {
     reviewId: thread.reviewId,
     githubThreadId: thread.githubThreadId,
     viewRef: thread.viewRef,
+    severity: thread.severity,
+    promotedFrom: thread.promotedFrom ?? null,
   };
 }
 
@@ -305,6 +307,7 @@ export async function createThread(data: {
   anchorContent?: string;
   options?: SubmitOptions;
   viewRef?: string | null;
+  promotedFrom?: string;
 }): Promise<CommentThread> {
   const thread = await tauri.createThread({
     sessionId: data.sessionId,
@@ -318,6 +321,7 @@ export async function createThread(data: {
     authorName: data.author.name,
     pending: data.options?.pending ?? false,
     viewRef: data.viewRef ?? null,
+    promotedFrom: data.promotedFrom ?? null,
   });
   return toCommentThread(thread);
 }
@@ -337,6 +341,10 @@ export function deleteAllThreads(sessionId: string): Promise<void> {
 
 export function deleteThread(threadId: string): Promise<void> {
   return tauri.deleteThread(threadId);
+}
+
+export function keepThreadOnBranch(threadId: string): Promise<void> {
+  return tauri.keepThreadOnBranch(threadId);
 }
 
 export function editComment(commentId: string, body: string): Promise<void> {

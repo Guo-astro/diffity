@@ -105,6 +105,20 @@ pub async fn checkout_pr(
     Ok(pr)
 }
 
+/// Moves the checked-out PR branch to the PR's latest head; `reset` allows a hard reset after a rebase.
+#[tauri::command]
+pub async fn update_pr_branch(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    repo_path: String,
+    pr_number: u64,
+    reset: bool,
+) -> Result<(), AppError> {
+    state.github.update_pr_branch(&repo_path, pr_number, reset).await?;
+    let _ = app.emit("repo-changed", json!({ "repoPath": repo_path }));
+    Ok(())
+}
+
 /// `git stash push --include-untracked -m <message>` (before switching branches).
 #[tauri::command]
 pub async fn git_stash_push(
@@ -174,6 +188,13 @@ pub async fn push_review(
         .await;
     if let Err(e) = &result {
         tracing::warn!("push_review #{pr_number} failed: [{}] {}", e.code, e.message);
+    }
+    if let Ok(pushed) = &result {
+        if !pushed.dry_run {
+            for session_id in state.store.resolve_promoted_sources(&pushed.posted_thread_ids).unwrap_or_default() {
+                emit_threads_changed(&app, &session_id);
+            }
+        }
     }
     emit_repo_threads_changed(&app, &state, &repo_path);
     result

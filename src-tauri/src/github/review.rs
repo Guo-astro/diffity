@@ -486,6 +486,7 @@ mod pushable_tests {
             pending: false,
             review_id: None,
             view_ref: None,
+            promoted_from: None,
         }
     }
 
@@ -632,6 +633,7 @@ mod candidate_tests {
             pending: false,
             review_id: None,
             view_ref: None,
+            promoted_from: None,
         }
     }
 

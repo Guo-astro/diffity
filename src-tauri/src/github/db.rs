@@ -83,7 +83,7 @@ fn load_comments(conn: &Connection, thread_id: &str) -> Result<Vec<Comment>> {
 }
 
 const THREAD_COLUMNS: &str = "id, session_id, file_path, side, start_line, end_line, status, severity, \
-     anchor_content, github_thread_id, created_at, updated_at, review_id, view_ref";
+     anchor_content, github_thread_id, created_at, updated_at, review_id, view_ref, promoted_from";
 
 fn thread_from_row(conn: &Connection, r: &rusqlite::Row<'_>) -> Result<Thread> {
     let id: String = r.get(0)?;
@@ -109,6 +109,7 @@ fn thread_from_row(conn: &Connection, r: &rusqlite::Row<'_>) -> Result<Thread> {
         pending,
         review_id: r.get(12)?,
         view_ref: r.get(13)?,
+        promoted_from: r.get(14)?,
     })
 }
 
@@ -136,17 +137,23 @@ pub fn list_session_threads(store: &Store, session_id: &str) -> Result<Vec<Threa
 }
 
 /// `(session_id, ref)` for every review session of a repo seen from the checked-out branch, oldest first.
-/// Sessions of other branches (another PR's `origin/main...HEAD`) are left out.
+/// Sessions of other branches (another PR's `origin/main...HEAD`) and legacy ones (`is_legacy_session`) are left out.
 pub fn list_repo_sessions(store: &Store, repo_path: &str) -> Result<Vec<(String, String)>> {
     let scope = crate::core::store::current_scope(repo_path);
     let conn = store.conn()?;
     let mut stmt = conn.prepare(
-        "SELECT id, ref FROM review_sessions WHERE repo_path = ?1 AND (scope = '' OR scope = ?2) ORDER BY created_at, rowid",
+        "SELECT id, ref, scope FROM review_sessions WHERE repo_path = ?1 AND (scope = '' OR scope = ?2) ORDER BY created_at, rowid",
     )?;
-    let rows = stmt.query_map(params![repo_path, scope], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let rows = stmt.query_map(params![repo_path, scope], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+    })?;
     let mut out = Vec::new();
     for row in rows {
-        out.push(row?);
+        let (id, r#ref, scope) = row?;
+        if crate::core::store::is_legacy_session(&r#ref, &scope) {
+            continue;
+        }
+        out.push((id, r#ref));
     }
     Ok(out)
 }

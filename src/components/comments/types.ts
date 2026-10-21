@@ -1,5 +1,12 @@
 export const GENERAL_THREAD_FILE_PATH = '__general__';
 
+export const SEVERITY_LABELS: Record<string, string> = {
+  'must-fix': 'Must fix',
+  suggestion: 'Suggestion',
+  nit: 'Nit',
+  question: 'Question',
+};
+
 export interface CommentAuthor {
   name: string;
   avatarUrl?: string;
@@ -42,6 +49,9 @@ export interface CommentThread {
   reviewId?: string | null;
   githubThreadId?: string | null;
   viewRef?: string | null;
+  severity?: string | null;
+  /** The agent's comment this draft was made from ("Add to my review"). */
+  promotedFrom?: string | null;
 }
 
 export const DEFAULT_AUTHOR: CommentAuthor = { name: 'You', type: 'user' };

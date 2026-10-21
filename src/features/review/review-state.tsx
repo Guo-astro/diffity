@@ -18,16 +18,27 @@ interface ReviewStateValue {
   prMode: boolean;
   /** Viewing your own PR: comments are local notes for the agent; this is the PR number for optional posting. */
   ownPrNumber: number | null;
+  /** The checked-out PR (yours or someone else's) that agent comments can be copied into as review drafts. */
+  promotePr: number | null;
+  /** Why comments in this view can't go to `promotePr` (e.g. a commit that isn't the PR's head). */
+  promoteBlocked: string | null;
 }
 
-const ReviewStateContext = createContext<ReviewStateValue>({ enabled: false, sessionId: null, pendingReview: null, prMode: false, ownPrNumber: null });
+const ReviewStateContext = createContext<ReviewStateValue>({ enabled: false, sessionId: null, pendingReview: null, prMode: false, ownPrNumber: null, promotePr: null, promoteBlocked: null });
 
-export function ReviewStateProvider(props: { sessionId: string | null; prMode?: boolean; ownPrNumber?: number | null; children: ReactNode }) {
-  const { sessionId, prMode = false, ownPrNumber = null, children } = props;
+export function ReviewStateProvider(props: {
+  sessionId: string | null;
+  prMode?: boolean;
+  ownPrNumber?: number | null;
+  promotePr?: number | null;
+  promoteBlocked?: string | null;
+  children: ReactNode;
+}) {
+  const { sessionId, prMode = false, ownPrNumber = null, promotePr = null, promoteBlocked = null, children } = props;
   const pendingReview = usePendingReview(sessionId);
 
   return (
-    <ReviewStateContext.Provider value={{ enabled: sessionId !== null, sessionId, pendingReview, prMode, ownPrNumber }}>
+    <ReviewStateContext.Provider value={{ enabled: sessionId !== null, sessionId, pendingReview, prMode, ownPrNumber, promotePr, promoteBlocked }}>
       {children}
     </ReviewStateContext.Provider>
   );
