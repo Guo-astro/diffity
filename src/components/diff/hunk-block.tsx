@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { DiffHunk, DiffLine as DiffLineType } from '@/lib/diff-parser';
 import type { SyntaxToken } from '../../lib/syntax-token';
-import type { CommentThread as CommentThreadType, CommentAuthor, CommentSide, LineSelection, LineRenderProps, SubmitOptions } from '../comments/types';
+import type { CommentSide, LineRenderProps } from '../comments/types';
 import { getChangeGroups } from '../../lib/diff-utils';
 import { DiffLine } from './diff-line';
 import { HunkHeader, type ExpandControls } from './hunk-header';
@@ -10,31 +10,14 @@ import { CommentFormRow } from '../comments/comment-form-row';
 import { UndoIcon } from '../ui/icon';
 import { GuideLineNotes } from '../../features/guide/guide-notes';
 
-interface HunkBlockProps {
+interface HunkBlockProps extends LineRenderProps {
   hunk: DiffHunk;
   syntaxMap?: Map<string, SyntaxToken[]>;
   expandControls?: ExpandControls;
   topExpansionLines?: DiffLineType[];
   bottomExpansionLines?: DiffLineType[];
   expansionSyntaxMap?: Map<string, SyntaxToken[]>;
-  threads?: CommentThreadType[];
-  pendingSelection?: LineSelection | null;
-  currentAuthor?: CommentAuthor;
-  isLineSelected?: (line: number, side: CommentSide) => boolean;
-  onLineMouseDown?: (line: number, side: CommentSide) => void;
-  onLineMouseEnter?: (line: number, side: CommentSide) => void;
-  onCommentClick?: (line: number, side: CommentSide) => void;
-  onAddThread?: (filePath: string, side: CommentSide, startLine: number, endLine: number, body: string, author: CommentAuthor, options?: SubmitOptions) => void;
-  onReply?: (threadId: string, body: string, author: CommentAuthor, options?: SubmitOptions) => void;
-  onResolve?: (threadId: string) => void;
-  onUnresolve?: (threadId: string) => void;
-  onEditComment?: (commentId: string, body: string) => void;
-  onDeleteComment?: (threadId: string, commentId: string) => void;
-  onDeleteThread?: (threadId: string) => void;
-  onCancelPending?: () => void;
-  filePath?: string;
   onRevertChange?: (hunk: DiffHunk, startIndex: number, endIndex: number) => void;
-  getOriginalCode?: (side: CommentSide, startLine: number, endLine: number) => string;
 }
 
 export function renderLineWithComments(
@@ -113,19 +96,10 @@ export function renderLineWithComments(
 
 export function HunkBlock(props: HunkBlockProps) {
   const {
-    hunk, syntaxMap, expandControls, topExpansionLines, bottomExpansionLines, expansionSyntaxMap,
-    threads, pendingSelection, currentAuthor, isLineSelected,
-    onLineMouseDown, onLineMouseEnter, onCommentClick,
-    onAddThread, onReply, onResolve, onUnresolve, onDeleteComment, onDeleteThread,
-    onCancelPending, filePath, onRevertChange, getOriginalCode,
+    hunk, syntaxMap, expandControls, topExpansionLines, bottomExpansionLines, expansionSyntaxMap, onRevertChange,
   } = props;
 
-  const commentProps = {
-    isLineSelected, onLineMouseDown, onLineMouseEnter, onCommentClick,
-    threads, pendingSelection, currentAuthor,
-    onAddThread, onReply, onResolve, onUnresolve, onDeleteComment, onDeleteThread,
-    onCancelPending, filePath, getOriginalCode,
-  };
+  const commentProps: LineRenderProps = props;
 
   const changeGroups = useMemo(() => {
     if (!onRevertChange) {

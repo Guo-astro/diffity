@@ -4,7 +4,7 @@ import { cn } from '../../lib/cn';
 import { getLineBg, getChangeGroups } from '../../lib/diff-utils';
 import { renderContent } from '../../lib/render-content';
 import type { SyntaxToken } from '../../lib/syntax-token';
-import type { CommentThread as CommentThreadType, CommentAuthor, CommentSide, LineSelection, LineRenderProps, SubmitOptions } from '../comments/types';
+import type { LineRenderProps } from '../comments/types';
 import { HunkHeader, type ExpandControls } from './hunk-header';
 import { CommentLineNumber } from '../comments/comment-line-number';
 import { CommentThread } from '../comments/comment-thread';
@@ -12,31 +12,14 @@ import { CommentFormRow } from '../comments/comment-form-row';
 import { UndoIcon } from '../ui/icon';
 import { GuideLineNotes } from '../../features/guide/guide-notes';
 
-interface HunkBlockSplitProps {
+interface HunkBlockSplitProps extends LineRenderProps {
   hunk: DiffHunk;
   syntaxMap?: Map<string, SyntaxToken[]>;
   expandControls?: ExpandControls;
   topExpansionLines?: DiffLineType[];
   bottomExpansionLines?: DiffLineType[];
   expansionSyntaxMap?: Map<string, SyntaxToken[]>;
-  threads?: CommentThreadType[];
-  pendingSelection?: LineSelection | null;
-  currentAuthor?: CommentAuthor;
-  isLineSelected?: (line: number, side: CommentSide) => boolean;
-  onLineMouseDown?: (line: number, side: CommentSide) => void;
-  onLineMouseEnter?: (line: number, side: CommentSide) => void;
-  onCommentClick?: (line: number, side: CommentSide) => void;
-  onAddThread?: (filePath: string, side: CommentSide, startLine: number, endLine: number, body: string, author: CommentAuthor, options?: SubmitOptions) => void;
-  onReply?: (threadId: string, body: string, author: CommentAuthor, options?: SubmitOptions) => void;
-  onResolve?: (threadId: string) => void;
-  onUnresolve?: (threadId: string) => void;
-  onEditComment?: (commentId: string, body: string) => void;
-  onDeleteComment?: (threadId: string, commentId: string) => void;
-  onDeleteThread?: (threadId: string) => void;
-  onCancelPending?: () => void;
-  filePath?: string;
   onRevertChange?: (hunk: DiffHunk, startIndex: number, endIndex: number) => void;
-  getOriginalCode?: (side: CommentSide, startLine: number, endLine: number) => string;
 }
 
 interface SplitRow {
@@ -285,19 +268,10 @@ export function renderSplitRows(
 
 export function HunkBlockSplit(props: HunkBlockSplitProps) {
   const {
-    hunk, syntaxMap, expandControls, topExpansionLines, bottomExpansionLines, expansionSyntaxMap,
-    threads, pendingSelection, currentAuthor, isLineSelected,
-    onLineMouseDown, onLineMouseEnter, onCommentClick,
-    onAddThread, onReply, onResolve, onUnresolve, onEditComment, onDeleteComment, onDeleteThread,
-    onCancelPending, filePath, onRevertChange, getOriginalCode,
+    hunk, syntaxMap, expandControls, topExpansionLines, bottomExpansionLines, expansionSyntaxMap, onRevertChange,
   } = props;
 
-  const commentProps = {
-    isLineSelected, onLineMouseDown, onLineMouseEnter, onCommentClick,
-    threads, pendingSelection, currentAuthor,
-    onAddThread, onReply, onResolve, onUnresolve, onEditComment, onDeleteComment, onDeleteThread,
-    onCancelPending, filePath, getOriginalCode,
-  };
+  const commentProps: LineRenderProps = props;
 
   const changeGroups = useMemo(() => {
     if (!onRevertChange) {

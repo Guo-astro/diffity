@@ -3,7 +3,7 @@ import type { CodeHighlighter } from '../../hooks/use-highlighter';
 import type { ViewMode } from '../../lib/diff-utils';
 import type { SyntaxToken } from '../../lib/syntax-token';
 import type { ExpandControls } from './hunk-header';
-import type { CommentThread as CommentThreadType, CommentAuthor, CommentSide, LineSelection, SubmitOptions } from '../comments/types';
+import type { LineRenderProps } from '../comments/types';
 import { HunkBlock } from './hunk-block';
 import { HunkBlockSplit } from './hunk-block-split';
 import { buildExpansionSyntaxMap, renderExpansionRows } from './render-expansion-rows';
@@ -15,7 +15,7 @@ interface GapExpansion {
   linesFromBottom: DiffLineType[];
 }
 
-interface HunkWithGapProps {
+interface HunkWithGapProps extends LineRenderProps {
   hunk: DiffHunk;
   viewMode: ViewMode;
   syntaxMap?: Map<string, SyntaxToken[]>;
@@ -24,33 +24,13 @@ interface HunkWithGapProps {
   gapExpansion?: GapExpansion;
   gapId?: string;
   highlightCode?: CodeHighlighter;
-  threads?: CommentThreadType[];
-  pendingSelection?: LineSelection | null;
-  currentAuthor?: CommentAuthor;
-  isLineSelected?: (line: number, side: CommentSide) => boolean;
-  onLineMouseDown?: (line: number, side: CommentSide) => void;
-  onLineMouseEnter?: (line: number, side: CommentSide) => void;
-  onCommentClick?: (line: number, side: CommentSide) => void;
-  onAddThread?: (filePath: string, side: CommentSide, startLine: number, endLine: number, body: string, author: CommentAuthor, options?: SubmitOptions) => void;
-  onReply?: (threadId: string, body: string, author: CommentAuthor, options?: SubmitOptions) => void;
-  onResolve?: (threadId: string) => void;
-  onUnresolve?: (threadId: string) => void;
-  onEditComment?: (commentId: string, body: string) => void;
-  onDeleteComment?: (threadId: string, commentId: string) => void;
-  onDeleteThread?: (threadId: string) => void;
-  onCancelPending?: () => void;
-  filePath?: string;
   onRevertChange?: (hunk: DiffHunk, startIndex: number, endIndex: number) => void;
-  getOriginalCode?: (side: CommentSide, startLine: number, endLine: number) => string;
 }
 
 export function HunkWithGap(props: HunkWithGapProps) {
   const {
-    hunk, viewMode, syntaxMap, expandControls, topExpansionLines, gapExpansion, gapId, highlightCode,
-    threads, pendingSelection, currentAuthor, isLineSelected,
-    onLineMouseDown, onLineMouseEnter, onCommentClick,
-    onAddThread, onReply, onResolve, onUnresolve, onEditComment, onDeleteComment, onDeleteThread,
-    onCancelPending, filePath, onRevertChange, getOriginalCode,
+    hunk, viewMode, syntaxMap, expandControls, topExpansionLines, gapExpansion, gapId, highlightCode, onRevertChange,
+    ...commentProps
   } = props;
 
   const HunkComponent = viewMode === 'split' ? HunkBlockSplit : HunkBlock;
@@ -63,13 +43,6 @@ export function HunkWithGap(props: HunkWithGapProps) {
   const expansionSyntaxMap = allExpansionLines.length > 0
     ? buildExpansionSyntaxMap(allExpansionLines, syntaxMap, highlightCode)
     : undefined;
-
-  const commentProps = {
-    isLineSelected, onLineMouseDown, onLineMouseEnter, onCommentClick,
-    threads, pendingSelection, currentAuthor,
-    onAddThread, onReply, onResolve, onUnresolve, onEditComment, onDeleteComment, onDeleteThread,
-    onCancelPending, filePath,
-  };
 
   return (
     <>
@@ -85,30 +58,14 @@ export function HunkWithGap(props: HunkWithGapProps) {
         </tbody>
       )}
       <HunkComponent
+        {...commentProps}
         hunk={hunk}
         syntaxMap={syntaxMap}
         expandControls={expandControls}
         topExpansionLines={topExpansionLines && topExpansionLines.length > 0 ? topExpansionLines : undefined}
         bottomExpansionLines={gapExpansion && gapExpansion.linesFromBottom.length > 0 ? gapExpansion.linesFromBottom : undefined}
         expansionSyntaxMap={expansionSyntaxMap}
-        threads={threads}
-        pendingSelection={pendingSelection}
-        currentAuthor={currentAuthor}
-        isLineSelected={isLineSelected}
-        onLineMouseDown={onLineMouseDown}
-        onLineMouseEnter={onLineMouseEnter}
-        onCommentClick={onCommentClick}
-        onAddThread={onAddThread}
-        onReply={onReply}
-        onResolve={onResolve}
-        onUnresolve={onUnresolve}
-        onEditComment={onEditComment}
-        onDeleteComment={onDeleteComment}
-        onDeleteThread={onDeleteThread}
-        onCancelPending={onCancelPending}
-        filePath={filePath}
         onRevertChange={onRevertChange}
-        getOriginalCode={getOriginalCode}
       />
     </>
   );
