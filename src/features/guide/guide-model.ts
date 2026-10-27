@@ -17,6 +17,7 @@ export interface ReadingChapter {
   key: string;
   title: string;
   summary: string;
+  points: string[];
   focus: string[];
   attention: GuideAttention;
   files: DiffFile[];
@@ -50,7 +51,7 @@ export function readingChapters(guide: Guide, files: DiffFile[]): ReadingChapter
     }
     const kept = new Set(chapterFiles.map((file) => getFilePath(file)));
     const notes = (chapter.notes ?? []).filter((note) => kept.has(note.path));
-    chapters.push({ ...chapter, key: String(index), files: chapterFiles, notes, ...lineCounts(chapterFiles), extra: false });
+    chapters.push({ ...chapter, key: String(index), points: chapter.points ?? [], files: chapterFiles, notes, ...lineCounts(chapterFiles), extra: false });
   });
   const rest = files.filter((file) => !placed.has(getFilePath(file)));
   if (rest.length > 0) {
@@ -58,6 +59,7 @@ export function readingChapters(guide: Guide, files: DiffFile[]): ReadingChapter
       key: 'extra',
       title: NOT_IN_GUIDE_TITLE,
       summary: 'These files changed after the guide was written, so it does not explain them.',
+      points: [],
       focus: [],
       attention: 'normal',
       files: rest,

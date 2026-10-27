@@ -26,8 +26,18 @@ The reviewer can read *what* the code does in the diff. Tell them *why*: the pro
 
 ## Write it
 
-Write for a reviewer who knows the codebase a little and has not seen this change: simple English, short sentences, common words, no filler, no praise. Notes and focus points are optional and sparing; add one only where it saves the reviewer real time, never to say what the code plainly shows. A note shows in the diff next to its line, so pin it to the line it is about whenever the point is about one spot; leave out `line` only for a point about the whole file.
+Write it the way you would explain the change to a teammate sitting next to you: plain words, short sentences, no filler, no praise. Say the one thing that matters and stop; the reviewer is about to read the code anyway.
+
+- Each field has a word limit and `set_guide` rejects text over it. Aim well under it.
+- At most one `code` name per sentence. A sentence full of identifiers reads like the diff, not like an explanation.
+- A chapter summary says why the chapter exists. Put the rest in `points`, one fact each, or leave it out.
+
+Too dense: "The data lives on the existing `youtube` Tiptap node as `duration`, `chapters` and `transcript` attributes, so it moves with the content through versions and publishing, and the node view shows a details panel only when the host passes `onFetchYoutubeDetails`."
+
+Better: "Video details are stored on the YouTube embed itself, so they get saved and published with the article." Then a point: "Only the video editor gets the details panel; plain articles keep the old embed."
+
+Notes and focus points are optional and sparing; add one only where it saves the reviewer real time, never to say what the code plainly shows. A note shows in the diff next to its line, so pin it to the line it is about whenever the point is about one spot; leave out `line` only for a point about the whole file.
 
 ## Save
 
-Call `set_guide` once with the whole guide. If it returns an error, fix exactly what it names and call it again. Then reply with one line: the number of chapters and their titles.
+Call `set_guide` once with the whole guide. If it returns an error, fix exactly what it names (cut text that is too long, do not just drop it) and call it again. Then reply with one line: the number of chapters and their titles.

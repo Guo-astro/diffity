@@ -117,17 +117,11 @@ export function ChapterStory(props: ChapterStoryProps) {
       </Eyebrow>
       <h1 className={cn('mt-1.5 font-semibold text-text', compact ? 'text-[15px] leading-[22px]' : 'text-xl leading-7')}>{chapter.title}</h1>
       {chapter.summary && <Prose content={chapter.summary} className={compact ? 'mt-2 text-[13px] leading-[21px]' : 'mt-3'} />}
+      {chapter.points.length > 0 && <Bullets items={chapter.points} className="mt-3" />}
       {chapter.focus.length > 0 && (
         <div className="mt-4">
           <div className="text-xs font-medium text-text-secondary">While reading, check</div>
-          <ul className="mt-1.5 flex flex-col gap-1">
-            {chapter.focus.map((item) => (
-              <li key={item} className="flex items-start gap-2 text-[13px] leading-5 text-text">
-                <span className="mt-[7px] w-1 h-1 rounded-full bg-text-muted shrink-0" />
-                <span className="select-text [&_p]:m-0"><MarkdownContent content={item} /></span>
-              </li>
-            ))}
-          </ul>
+          <Bullets items={chapter.focus} className="mt-1.5" />
         </div>
       )}
       <ChapterFiles chapter={chapter} reviewedFiles={reviewedFiles} onFileClick={onFileClick} />
@@ -144,6 +138,21 @@ export function ChapterStory(props: ChapterStoryProps) {
         />
       </div>
     </div>
+  );
+}
+
+function Bullets(props: { items: string[]; className?: string }) {
+  const { items, className } = props;
+
+  return (
+    <ul className={cn('flex flex-col gap-1', className)}>
+      {items.map((item) => (
+        <li key={item} className="flex items-start gap-2 text-[13px] leading-5 text-text">
+          <span className="mt-[7px] w-1 h-1 rounded-full bg-text-muted shrink-0" />
+          <span className="select-text [&_p]:m-0"><MarkdownContent content={item} /></span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

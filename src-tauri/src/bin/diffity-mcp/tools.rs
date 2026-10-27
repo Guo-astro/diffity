@@ -125,9 +125,9 @@ pub fn all() -> Vec<Tool> {
             json!({
                 "type": "object",
                 "properties": {
-                    "summary": { "type": "string", "description": "Markdown, 2-4 short sentences: the problem this change solves and how it goes about it. Why over what." },
-                    "before": { "type": "string", "description": "How things behaved before, in 1-2 sentences a user or caller would recognise. Omit for something brand new." },
-                    "after": { "type": "string", "description": "How they behave now, in 1-2 sentences a user or caller would recognise." },
+                    "summary": { "type": "string", "description": "Markdown, at most 50 words: the problem this change solves and how it goes about it, said plainly. Why over what." },
+                    "before": { "type": "string", "description": "How things behaved before, at most 30 words a user or caller would recognise. Omit for something brand new." },
+                    "after": { "type": "string", "description": "How they behave now, at most 30 words a user or caller would recognise." },
                     "diagram": { "type": "string", "description": "Only when the change adds or reshapes a flow: a Mermaid flowchart of 4-10 nodes with real names, shown about 700px wide, so `flowchart LR` for up to 5 steps in a row and `flowchart TD` for longer chains. Mark new nodes with :::added and changed ones with :::changed; no classDef, style or init lines. Quote labels with brackets, parentheses or punctuation, e.g. A[\"takeShare()\"]. No markdown fences." },
                     "chapters": {
                         "type": "array",
@@ -137,8 +137,9 @@ pub fn all() -> Vec<Tool> {
                             "type": "object",
                             "properties": {
                                 "title": { "type": "string", "description": "2-6 words naming the idea, e.g. \"Cache file reads\"; never a file name." },
-                                "summary": { "type": "string", "description": "Markdown, 2-4 plain sentences: why these files change and what they achieve together, how this builds on the chapters before, and anything non-obvious the code relies on. Why over what; do not walk through the code." },
-                                "focus": { "type": "array", "items": { "type": "string" }, "description": "0-3 short things worth checking across the chapter, e.g. \"An empty list returns early\". Pointers for attention, not review findings. Empty when nothing stands out." },
+                                "summary": { "type": "string", "description": "Markdown, 1-2 sentences, at most 40 words: why these files change and what they achieve together. Why over what; do not walk through the code." },
+                                "points": { "type": "array", "items": { "type": "string" }, "description": "0-3 short facts, at most 20 words each, that make the files easier to read: how it builds on an earlier chapter, a non-obvious thing the code relies on, an odd choice and its reason. Empty when the summary is enough." },
+                                "focus": { "type": "array", "items": { "type": "string" }, "description": "0-3 short things worth checking across the chapter, at most 20 words each, e.g. \"An empty list returns early\". Pointers for attention, not review findings. Empty when nothing stands out." },
                                 "attention": { "type": "string", "enum": ["high", "normal", "low"], "description": "high: the core logic, read every line. normal: supporting code. low: tests, generated files, lockfiles, renames, config to skim." },
                                 "files": { "type": "array", "items": { "type": "string" }, "minItems": 1, "description": "Paths exactly as get_diff lists them, most important first." },
                                 "notes": {
@@ -150,7 +151,7 @@ pub fn all() -> Vec<Tool> {
                                             "path": { "type": "string", "description": "One of this chapter's files." },
                                             "line": { "type": "integer", "minimum": 1, "description": "The line the note is about, numbered as in the hunk headers; the note shows right below it. Give it whenever the point is about one spot. Omit only for a note about the whole file." },
                                             "side": { "type": "string", "enum": ["new", "old"], "description": "\"old\" for a removed line; \"new\" (default) otherwise." },
-                                            "text": { "type": "string", "description": "1-2 sentences of Markdown." },
+                                            "text": { "type": "string", "description": "1-2 sentences of Markdown, at most 40 words." },
                                             "critical": { "type": "boolean", "description": "Only when the reviewer should take extra care: security, data loss, hard to revert, easy to get wrong." }
                                         },
                                         "required": ["path", "text"]

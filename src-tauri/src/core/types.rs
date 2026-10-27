@@ -273,8 +273,11 @@ pub struct GuideNote {
 #[serde(rename_all = "camelCase")]
 pub struct GuideChapter {
     pub title: String,
-    /// Markdown: what this part does and why, in plain words.
+    /// Markdown: why this part exists, in a sentence or two.
     pub summary: String,
+    /// Short facts that make the files easier to read.
+    #[serde(default)]
+    pub points: Vec<String>,
     /// What to check while reading these files.
     #[serde(default)]
     pub focus: Vec<String>,

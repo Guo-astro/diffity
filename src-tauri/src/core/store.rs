@@ -1641,6 +1641,7 @@ mod tests {
                 chapters: vec![GuideChapter {
                     title: "Cache".into(),
                     summary: "Keeps files in memory".into(),
+                    points: vec!["Keyed by path".into()],
                     focus: vec!["Eviction order".into()],
                     attention: GuideAttention::High,
                     files: vec!["src/cache.ts".into()],

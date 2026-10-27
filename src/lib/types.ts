@@ -225,6 +225,8 @@ export interface GuideChapter {
   title: string;
   /** Markdown. */
   summary: string;
+  /** Short facts that make the files easier to read; missing in guides written before it existed. */
+  points?: string[];
   /** What to check while reading. */
   focus: string[];
   attention: GuideAttention;

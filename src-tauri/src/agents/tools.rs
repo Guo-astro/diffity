@@ -107,6 +107,8 @@ struct GuideChapterArgs {
     title: String,
     summary: String,
     #[serde(default)]
+    points: Vec<String>,
+    #[serde(default)]
     focus: Vec<String>,
     attention: Option<String>,
     files: Vec<String>,
@@ -417,6 +419,35 @@ fn non_empty(text: Option<String>) -> Option<String> {
     text.map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
 }
 
+fn bullets(items: Vec<String>) -> Vec<String> {
+    items.into_iter().map(|item| item.trim().to_string()).filter(|item| !item.is_empty()).collect()
+}
+
+/// Word limits for the guide. A reviewer skims it, so text over a limit goes back to the agent to be cut.
+const SUMMARY_WORDS: usize = 50;
+const BEFORE_AFTER_WORDS: usize = 30;
+const TITLE_WORDS: usize = 6;
+const CHAPTER_SUMMARY_WORDS: usize = 40;
+const BULLET_WORDS: usize = 20;
+const MAX_BULLETS: usize = 3;
+const NOTE_WORDS: usize = 40;
+
+fn check_words(problems: &mut Vec<String>, what: &str, text: &str, max: usize) {
+    let words = text.split_whitespace().count();
+    if words > max {
+        problems.push(format!("{what} is {words} words (max {max})"));
+    }
+}
+
+fn check_bullets(problems: &mut Vec<String>, what: &str, items: &[String]) {
+    if items.len() > MAX_BULLETS {
+        problems.push(format!("{what} has {} items (max {MAX_BULLETS})", items.len()));
+    }
+    for (i, item) in items.iter().enumerate() {
+        check_words(problems, &format!("{what} item {}", i + 1), item, BULLET_WORDS);
+    }
+}
+
 /// Largest patch handed to a guide run up front; a bigger one is read through `get_diff` as needed.
 pub const GUIDE_INLINE_LIMIT: usize = 150_000;
 
@@ -461,6 +492,16 @@ fn build_guide(a: GuideArgs, diff: &DiffResult) -> Result<(GuideContent, Vec<Str
             .find(|f| f.path == file || f.old_path.as_deref() == Some(file))
             .map(|f| f.path.clone())
     };
+    let before = non_empty(a.before);
+    let after = non_empty(a.after);
+    let mut problems = Vec::new();
+    check_words(&mut problems, "summary", &summary, SUMMARY_WORDS);
+    if let Some(text) = &before {
+        check_words(&mut problems, "before", text, BEFORE_AFTER_WORDS);
+    }
+    if let Some(text) = &after {
+        check_words(&mut problems, "after", text, BEFORE_AFTER_WORDS);
+    }
     let mut seen = std::collections::HashSet::new();
     let mut unknown = Vec::new();
     let mut chapters = Vec::new();
@@ -469,6 +510,13 @@ fn build_guide(a: GuideArgs, diff: &DiffResult) -> Result<(GuideContent, Vec<Str
         if title.is_empty() {
             return Err(AppError::invalid("every chapter needs a title"));
         }
+        let summary = chapter.summary.trim().to_string();
+        let points = bullets(chapter.points);
+        let focus = bullets(chapter.focus);
+        check_words(&mut problems, &format!("chapter \"{title}\" title"), &title, TITLE_WORDS);
+        check_words(&mut problems, &format!("chapter \"{title}\" summary"), &summary, CHAPTER_SUMMARY_WORDS);
+        check_bullets(&mut problems, &format!("chapter \"{title}\" points"), &points);
+        check_bullets(&mut problems, &format!("chapter \"{title}\" focus"), &focus);
         let mut files = Vec::new();
         for raw in &chapter.files {
             match resolve(raw) {
@@ -496,6 +544,7 @@ fn build_guide(a: GuideArgs, diff: &DiffResult) -> Result<(GuideContent, Vec<Str
                     files.join(", ")
                 )));
             };
+            check_words(&mut problems, &format!("the note on `{path}`"), &text, NOTE_WORDS);
             let side = parse_side(note.side.as_deref())?;
             // A line the diff does not show cannot carry the note, so it stays on the file.
             let line = note.line.filter(|&line| {
@@ -505,13 +554,9 @@ fn build_guide(a: GuideArgs, diff: &DiffResult) -> Result<(GuideContent, Vec<Str
         }
         chapters.push(GuideChapter {
             title,
-            summary: chapter.summary.trim().to_string(),
-            focus: chapter
-                .focus
-                .into_iter()
-                .map(|f| f.trim().to_string())
-                .filter(|f| !f.is_empty())
-                .collect(),
+            summary,
+            points,
+            focus,
             attention: parse_attention(chapter.attention.as_deref())?,
             files,
             notes,
@@ -528,6 +573,12 @@ fn build_guide(a: GuideArgs, diff: &DiffResult) -> Result<(GuideContent, Vec<Str
     if chapters.is_empty() {
         return Err(AppError::invalid("every chapter must list at least one file from the diff"));
     }
+    if !problems.is_empty() {
+        return Err(AppError::invalid(format!(
+            "too long for a reviewer to skim. Cut these, keeping the why, and call set_guide again with the whole guide: {}",
+            problems.join("; ")
+        )));
+    }
     let leftover: Vec<String> = diff
         .files
         .iter()
@@ -538,6 +589,7 @@ fn build_guide(a: GuideArgs, diff: &DiffResult) -> Result<(GuideContent, Vec<Str
         chapters.push(GuideChapter {
             title: LEFTOVER_CHAPTER.to_string(),
             summary: "Files the guide does not walk through.".to_string(),
+            points: Vec::new(),
             focus: Vec::new(),
             attention: GuideAttention::Low,
             files: leftover.clone(),
@@ -547,8 +599,8 @@ fn build_guide(a: GuideArgs, diff: &DiffResult) -> Result<(GuideContent, Vec<Str
     Ok((
         GuideContent {
             summary,
-            before: non_empty(a.before),
-            after: non_empty(a.after),
+            before,
+            after,
             diagram: non_empty(a.diagram),
             chapters,
         },
@@ -810,6 +862,7 @@ mod tests {
         GuideChapterArgs {
             title: title.into(),
             summary: "s".into(),
+            points: Vec::new(),
             focus: vec![" ".into(), "Check x".into()],
             attention: None,
             files: files.iter().map(|f| f.to_string()).collect(),
@@ -908,6 +961,22 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.message.contains("src/nope.ts"), "{}", err.message);
+    }
+
+    #[test]
+    fn guide_rejects_text_over_the_word_limits_all_at_once() {
+        let diff = diff_with(&["src/a.ts"]);
+        let mut core = chapter("Core", &["src/a.ts"]);
+        core.summary = "word ".repeat(CHAPTER_SUMMARY_WORDS + 1);
+        core.points = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        let err = build_guide(
+            GuideArgs { summary: "word ".repeat(SUMMARY_WORDS + 1), before: None, after: None, diagram: None, chapters: vec![core] },
+            &diff,
+        )
+        .unwrap_err();
+        assert!(err.message.contains("summary is 51 words (max 50)"), "{}", err.message);
+        assert!(err.message.contains("chapter \"Core\" summary is 41 words"), "{}", err.message);
+        assert!(err.message.contains("chapter \"Core\" points has 4 items"), "{}", err.message);
     }
 
     #[test]

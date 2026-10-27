@@ -22,7 +22,7 @@ const guide = (chapters: Guide['chapters']): Guide => ({
   chapters,
 });
 
-const chapter = (title: string, paths: string[]) => ({ title, summary: '', focus: [], attention: 'normal' as const, files: paths, notes: [] });
+const chapter = (title: string, paths: string[]) => ({ title, summary: '', points: [], focus: [], attention: 'normal' as const, files: paths, notes: [] });
 
 describe('readingChapters', () => {
   it('follows the guide order and counts lines per chapter', () => {
